@@ -6,3 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+image = "0.24"
+ash = {version = "0.37", default-features = false, features = ["debug"]}
+log = {version = "0.4"}
+env_logger = "0.10.0"
+
+[features]
+"default" = ["load_vulkan", "vulkan_vl"]
+"load_vulkan" = ["ash/loaded"]
+"link_vulkan" = ["ash/linked"]
+"vulkan_vl" = []
