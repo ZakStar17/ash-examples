@@ -6,6 +6,8 @@ use std::os::raw::{c_char, c_void};
 
 use crate::utility;
 
+const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
+
 // Checks if all required extensions exist and are supported by the host system
 // If found returns a list of required but not available extensions as an error
 fn test_instance_extension_support(
@@ -19,7 +21,7 @@ fn test_instance_extension_support(
       rust_id.to_str().unwrap()
     })
     .collect();
-  log::info!("Instance required extensions: {:?}", required);
+  log::info!("Required instance extensions: {:?}", required);
 
   let mut available: Vec<String> = entry
     .enumerate_instance_extension_properties(None)
@@ -37,7 +39,7 @@ fn test_instance_extension_support(
     .collect();
   available.sort();
 
-  log::debug!("Instance available extensions: {:?}", available);
+  log::debug!("Available instance extensions: {:?}", available);
 
   let mut unavailable = Vec::new();
   for name in required.into_iter() {
@@ -52,7 +54,6 @@ fn test_instance_extension_support(
   if unavailable.is_empty() {
     Ok(())
   } else {
-    log::warn!("Instance unavailable extensions: {:?}", unavailable);
     Err(unavailable)
   }
 }
@@ -62,14 +63,34 @@ pub fn create_instance(
   #[cfg(feature = "vulkan_vl")] vl_pointers: &Vec<*const c_char>,
   #[cfg(feature = "vulkan_vl")] debug_create_info: &vk::DebugUtilsMessengerCreateInfoEXT,
 ) -> ash::Instance {
+  let max_supported_version = match entry.try_enumerate_instance_version() {
+    // Vulkan 1.1+
+    Ok(opt) => match opt {
+      Some(version) => version,
+      None => vk::API_VERSION_1_0,
+    },
+    // Vulkan 1.0
+    Err(_) => vk::API_VERSION_1_0,
+  };
+
+  log::info!(
+    "Vulkan library max supported version: {}.{}.{}",
+    vk::api_version_major(max_supported_version),
+    vk::api_version_minor(max_supported_version),
+    vk::api_version_patch(max_supported_version)
+  );
+
+  if max_supported_version < TARGET_API_VERSION {
+    panic!("Vulkan implementation API maximum supported version is less than the one targeted by the application");
+  }
+
   let app_name = CString::new("Ash By Example").unwrap();
-  let engine_name = CString::new("No engine").unwrap();
   let app_info = vk::ApplicationInfo {
     s_type: vk::StructureType::APPLICATION_INFO,
     api_version: vk::API_VERSION_1_3,
     p_application_name: app_name.as_ptr(),
     application_version: vk::make_api_version(0, 1, 0, 0),
-    p_engine_name: engine_name.as_ptr(),
+    p_engine_name: ptr::null(),
     engine_version: vk::make_api_version(0, 1, 0, 0),
     p_next: ptr::null(),
   };

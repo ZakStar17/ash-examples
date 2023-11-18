@@ -8,8 +8,13 @@ mod utility;
 mod validation_layers;
 
 #[cfg(all(feature = "link_vulkan", feature = "load_vulkan"))]
-compile_error!("Features \"link_vulkan\" and \"load_vulkan\" were included at the same time. \
-Use \"load_vulkan\" to load Vulkan library at runtime or \"link_vulkan\" to link it at compile time");
+compile_error!(
+  "\
+    Features \"link_vulkan\" and \"load_vulkan\" \
+    were included at the same time. \
+    Choose between \"load_vulkan\" to load the Vulkan library \
+    at runtime or \"link_vulkan\" to link it at compile time."
+);
 
 #[allow(unreachable_code)]
 unsafe fn get_entry() -> ash::Entry {
@@ -31,8 +36,9 @@ unsafe fn get_entry() -> ash::Entry {
     },
   };
   panic!(
-    "No compile feature was included for accessing Vulkan library\n\
-Compile with \"link_vulkan\" or \"load_vulkan\" features"
+    "No compile feature was included for accessing the Vulkan library.\n\
+    Choose between \"load_vulkan\" to load the Vulkan library \
+    at runtime or \"link_vulkan\" to link it at compile time."
   );
 }
 
