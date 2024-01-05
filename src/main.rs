@@ -1,7 +1,10 @@
 #[cfg(feature = "vulkan_vl")]
 use validation_layers::{get_validation_layers, DebugUtils};
 
+use crate::physical_device::select_physical_device;
+
 mod instance;
+mod physical_device;
 mod utility;
 
 #[cfg(feature = "vulkan_vl")]
@@ -64,7 +67,9 @@ fn main() {
   #[cfg(not(feature = "vulkan_vl"))]
   let instance = instance::create_instance(&entry);
 
-  println!("Created instance successfully!");
+  let (physical_device, queue_family_indices) = unsafe { select_physical_device(&instance, &[]) };
+
+  println!("Successfully selected the physical device!");
 
   // Cleanup
   unsafe {
