@@ -4,10 +4,17 @@ use log::{debug, info};
 use crate::utility::{self, c_char_array_to_string};
 
 #[derive(Debug)]
-pub struct QueueFamilyIndices {
-  pub graphics: u32,
-  pub compute: Option<u32>,
-  pub transfer: Option<u32>,
+pub struct QueueFamily {
+  pub index: u32,
+  pub queue_count: u32,
+}
+
+#[derive(Debug)]
+pub struct QueueFamilies {
+  pub graphics: QueueFamily,
+  pub compute: Option<QueueFamily>,
+  pub transfer: Option<QueueFamily>,
+  pub unique_indices: Vec<u32>,
 }
 
 enum Vendor {
@@ -98,7 +105,7 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
 pub unsafe fn select_physical_device(
   instance: &ash::Instance,
   required_device_extensions: &[String],
-) -> (vk::PhysicalDevice, QueueFamilyIndices) {
+) -> (vk::PhysicalDevice, QueueFamilies) {
   let (physical_device, queue_family) = instance
     .enumerate_physical_devices()
     .expect("Failed to enumerate physical devices")
@@ -127,16 +134,20 @@ pub unsafe fn select_physical_device(
         .iter()
         .enumerate()
       {
+        let obj = QueueFamily {
+          index: i as u32,
+          queue_count: family.queue_count,
+        };
         if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-          graphics = Some(i as u32);
+          graphics = Some(obj);
         } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
           // only set if family does not contain graphics flag
           // if a dedicated compute family is not found, the application will use the graphics one
-          compute = Some(i as u32)
+          compute = Some(obj);
         } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
           // only set if family does not contain graphics nor compute flag
           // if a dedicated transfer family is not found, the application will use the graphics one
-          transfer = Some(i as u32);
+          transfer = Some(obj);
         }
       }
 
@@ -151,12 +162,22 @@ pub unsafe fn select_physical_device(
         }
       }
 
+      let mut unique_indices = Vec::with_capacity(3);
+      unique_indices.push(graphics.as_ref().unwrap().index);
+      if let Some(f) = compute.as_ref() {
+        unique_indices.push(f.index);
+      }
+      if let Some(f) = transfer.as_ref() {
+        unique_indices.push(f.index);
+      }
+
       Some((
         physical_device,
-        QueueFamilyIndices {
+        QueueFamilies {
           graphics: graphics.unwrap(),
           compute,
           transfer,
+          unique_indices,
         },
       ))
     })
@@ -230,6 +251,8 @@ fn check_extension_support(
     .into_iter()
     .map(|prop| utility::c_char_array_to_string(&prop.extension_name))
     .collect();
+
+  debug!("Available device extensions: {:?}", available_extensions);
 
   match utility::contains_all(&mut available_extensions, extensions) {
     Ok(_) => true,

@@ -6,15 +6,7 @@ use std::{
   ptr,
 };
 
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
-
-// array of validation layers that should be loaded
-// validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
-const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
+use crate::VALIDATION_LAYERS;
 
 fn check_validation_layers_support(entry: &ash::Entry) -> Result<(), Vec<CString>> {
   let properties: Vec<vk::LayerProperties> = entry.enumerate_instance_layer_properties().unwrap();
