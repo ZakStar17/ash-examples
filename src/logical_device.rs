@@ -4,6 +4,9 @@ use std::{cmp::min, ffi::CString, os::raw::c_char, ptr};
 
 use crate::physical_device::QueueFamilies;
 
+// The application will only use one of each queue type
+// Compute and transfer queues can be queried from the graphics queue family if
+// their own families do not exist
 pub struct Queues {
   pub graphics: vk::Queue,
   pub compute: vk::Queue,
@@ -18,12 +21,16 @@ pub fn create_logical_device(
   #[cfg(feature = "vulkan_vl")] vl_pointers: &Vec<*const c_char>,
 ) -> (ash::Device, Queues) {
   let mut queues_create_infos = Vec::with_capacity(3);
+
+  // These priorities will only matter if the compute or transfer queues get queried from the
+  // graphics family
+  // Queue priority is completely managed by the driver, which may sometimes starve low priority
+  // queues or otherwise do nothing, so use with caution
+  // The possible values are between 0.0 (low priority) and 1.0 (high priority)
   let queue_priorities = [1.0_f32; 3]; // should remain alive trough device creation
   let queue_priorities_ptr = queue_priorities.as_ptr();
 
-  // add graphic queue create info
-  // if transfer and compute don't have their unique queue families,
-  // the queues will try to be allocated from the graphics family
+  // add graphics queue create info
   queues_create_infos.push(vk::DeviceQueueCreateInfo {
     s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
     queue_family_index: families.graphics.index,
@@ -37,6 +44,7 @@ pub fn create_logical_device(
     flags: vk::DeviceQueueCreateFlags::empty(),
   });
 
+  // set transfer or compute queue family to graphics if their family is None
   for opt in [&families.compute, &families.transfer] {
     if let Some(f) = opt {
       queues_create_infos.push(vk::DeviceQueueCreateInfo {
@@ -58,6 +66,7 @@ pub fn create_logical_device(
     device_extensions_c.iter().map(|s| s.as_ptr()).collect();
 
   // use no features
+  // tutorial note: I may change this later depending on what I choose to add
   let features = vk::PhysicalDeviceFeatures::default();
 
   #[allow(unused_mut)]
@@ -76,6 +85,7 @@ pub fn create_logical_device(
     flags: vk::DeviceCreateFlags::empty(),
   };
 
+  // add validation layers if enabled
   #[cfg(feature = "vulkan_vl")]
   #[allow(deprecated)]
   {

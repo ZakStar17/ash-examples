@@ -82,7 +82,6 @@ fn main() {
 
     (instance, debug_utils)
   };
-
   #[cfg(not(feature = "vulkan_vl"))]
   let instance = instance::create_instance(&entry);
 
@@ -106,11 +105,11 @@ fn main() {
     &queue_family_indices,
   );
 
-  println!("Successfully created a logical device!");
+  println!("Successfully created the logical device!");
 
   // Cleanup
   unsafe {
-    log::debug!("Destroying device");
+    log::debug!("Destroying logical device");
     logical_device.destroy_device(None);
 
     #[cfg(feature = "vulkan_vl")]
