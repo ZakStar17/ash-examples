@@ -3,7 +3,7 @@ use std::ffi::CStr;
 #[cfg(feature = "vulkan_vl")]
 use validation_layers::{get_validation_layers, DebugUtils};
 
-use crate::{physical_device::select_physical_device, logical_device::create_logical_device};
+use crate::{logical_device::create_logical_device, physical_device::select_physical_device};
 
 mod instance;
 mod logical_device;
@@ -109,6 +109,12 @@ fn main() {
 
   // Cleanup
   unsafe {
+    // wait until all operations have finished and the device is safe to destroy
+    logical_device
+      .device_wait_idle()
+      .expect("Failed to wait for the device to become idle");
+
+    // destroying a logical device also implicitly destroys all associated queues
     log::debug!("Destroying logical device");
     logical_device.destroy_device(None);
 
