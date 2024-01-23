@@ -2,6 +2,17 @@ use std::ffi::{c_char, CStr};
 
 use ash::vk;
 
+// this module contains general functions used in other modules
+
+pub fn parse_vulkan_api_version(v: u32) -> String {
+  format!(
+    "{}.{}.{}",
+    vk::api_version_major(v),
+    vk::api_version_minor(v),
+    vk::api_version_patch(v)
+  )
+}
+
 pub fn i8_array_to_string(arr: &[i8]) -> Result<String, std::string::FromUtf8Error> {
   let mut bytes = Vec::with_capacity(arr.len());
   for &b in arr {
@@ -21,24 +32,30 @@ pub fn c_char_array_to_string(arr: &[c_char]) -> String {
     .to_owned()
 }
 
-pub fn parse_vulkan_api_version(v: u32) -> String {
-  format!(
-    "{}.{}.{}",
-    vk::api_version_major(v),
-    vk::api_version_minor(v),
-    vk::api_version_patch(v)
-  )
-}
 
-pub fn contains_all<'a, T>(slice: &mut [T], other: &'a [T]) -> Result<(), &'a T>
+// returns all values from the iterator not contained in the slice
+pub fn not_in_slice<'a, 'b, A: Ord, B, F>(
+  available: &'a mut [A],
+  required: &mut dyn Iterator<Item = &'b B>,
+  cmp: F,
+) -> Vec<&'b B>
 where
-  T: Eq + Ord,
+  F: Fn(&'a A, &'b B) -> std::cmp::Ordering,
 {
-  slice.sort();
-  for item in other.iter() {
-    if let Err(_) = slice.binary_search(item) {
-      return Err(item);
+  available.sort();
+
+  let mut unavailable = Vec::new();
+  for b in required {
+    if available.binary_search_by(|a| cmp(a, b)).is_err() {
+      unavailable.push(b);
     }
   }
-  return Ok(());
+  unavailable
+}
+
+pub fn not_in_string_slice<'a, 'b>(
+  available: &'a mut [String],
+  required: &mut dyn Iterator<Item = &'b &str>,
+) -> Vec<&'b &'b str> {
+  not_in_slice(available, required, |av, req| av.as_str().cmp(req))
 }
