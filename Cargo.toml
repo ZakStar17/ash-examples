@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 ash = {version = "0.37", default-features = false, features = ["debug"]}
 log = {version = "0.4"}
-env_logger = "0.10.0"
+env_logger = "0.11.0"
 
 [features]
-"default" = ["load_vulkan", "vulkan_vl"]
-"load_vulkan" = ["ash/loaded"]
-"link_vulkan" = ["ash/linked"]
-"vulkan_vl" = []
+"default" = ["load", "vl"]
+"load" = ["ash/loaded"]
+"link" = ["ash/linked"]
+"vl" = []
