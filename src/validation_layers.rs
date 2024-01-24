@@ -1,58 +1,87 @@
 use ash::vk::{self, DebugUtilsMessengerCreateInfoEXT};
 
-use std::{
-  ffi::{CStr, CString},
-  os::raw::c_void,
-  ptr,
-};
+use std::{ffi::CStr, os::raw::c_void, ptr};
 
-use crate::VALIDATION_LAYERS;
+use crate::{utility, VALIDATION_LAYERS};
 
-fn check_validation_layers_support(entry: &ash::Entry) -> Result<(), Vec<CString>> {
-  let properties: Vec<vk::LayerProperties> = entry.enumerate_instance_layer_properties().unwrap();
-  let mut available: Vec<&CStr> = properties
-    .iter()
-    .map(|p| {
-      let i8slice: &[i8] = &p.layer_name;
-      let slice: &[u8] =
-        unsafe { std::slice::from_raw_parts(i8slice.as_ptr() as *const u8, i8slice.len()) };
-      CStr::from_bytes_until_nul(slice).expect("Failed to read system available validation layers")
-    })
-    .collect();
-  available.sort();
+#[derive(Debug)]
+struct LayerProperties {
+  name: String,
+  _description: String,
+  _implementation_version: String,
+}
 
-  log::debug!("System available validation layers: {:?}", available);
-  log::info!("Checking for validation layers ({:?})", VALIDATION_LAYERS);
-
-  let mut unavailable = Vec::new();
-  for name in VALIDATION_LAYERS {
-    if let Err(_) = available.binary_search_by(|&av| av.cmp(name)) {
-      unavailable.push(name.to_owned());
-    }
-  }
-
-  if unavailable.is_empty() {
-    Ok(())
-  } else {
-    Err(unavailable)
+impl PartialEq for LayerProperties {
+  fn eq(&self, other: &Self) -> bool {
+    self.name.eq(&other.name)
   }
 }
 
-// returns a vec of wanted validation layers that are possible to load
-pub fn get_validation_layers(entry: &ash::Entry) -> Vec<&'static CStr> {
-  if let Err(mut unavailable) = check_validation_layers_support(entry) {
-    unavailable.sort();
+impl PartialOrd for LayerProperties {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    self.name.partial_cmp(&other.name)
+  }
+}
+
+impl Eq for LayerProperties {}
+
+impl Ord for LayerProperties {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.name.cmp(&other.name)
+  }
+}
+
+// check if all validation layers are supported
+// panics with a list of unsupported validation layers
+pub fn get_supported_validation_layers(entry: &ash::Entry) -> Vec<&'static CStr> {
+  log::info!("Checking for validation layers");
+
+  // supposedly this only fails if there is no available memory
+  let properties: Vec<vk::LayerProperties> = entry.enumerate_instance_layer_properties().unwrap();
+
+  let mut available: Vec<LayerProperties> = properties
+    .iter()
+    .filter_map(
+      |props| match utility::i8_array_to_string(&props.layer_name) {
+        Ok(s) => Some((props, s)),
+        Err(_) => {
+          log::warn!(
+          "There exists an available validation layer with an invalid name that couldn't be decoded"
+        );
+          None
+        }
+      },
+    )
+    .map(|(props, name)| LayerProperties {
+      name,
+      _description: utility::i8_array_to_string(&props.description)
+        .unwrap_or(String::from("<Couldn't be decoded>")),
+      _implementation_version: utility::parse_vulkan_api_version(props.implementation_version),
+    })
+    .collect();
+
+  log::debug!("Available validation layers: {:#?}", available);
+
+  let unavailable = utility::not_in_slice(
+    available.as_mut_slice(),
+    &mut VALIDATION_LAYERS.iter(),
+    |av, req| av.name.as_str().cmp(req.to_str().unwrap()),
+  );
+
+  if !unavailable.is_empty() {
+    let unavailable_str: Vec<&str> = unavailable
+      .iter()
+      .map(|cname| cname.to_str().unwrap())
+      .collect();
     log::error!(
-      "Some validation layers could not be found and will not be loaded: {:?}",
-      unavailable
+      "Some requested validation layers are not available: {:?}",
+      unavailable_str
     );
+
     VALIDATION_LAYERS
+      .clone()
       .into_iter()
-      .filter(|&name| {
-        unavailable
-          .binary_search_by(|s| s.as_c_str().cmp(name))
-          .is_err()
-      })
+      .filter(|v| !unavailable.contains(&v))
       .collect()
   } else {
     VALIDATION_LAYERS.to_vec()

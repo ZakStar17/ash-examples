@@ -1,20 +1,16 @@
 use ash::vk;
 use log::{debug, info};
 
-use crate::utility::{self, c_char_array_to_string};
+use crate::{
+  utility::{self, c_char_array_to_string},
+  REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+};
 
 #[derive(Debug)]
-pub struct QueueFamily {
-  pub index: u32,
-  pub queue_count: u32,
-}
-
-#[derive(Debug)]
-pub struct QueueFamilies {
-  pub graphics: QueueFamily,
-  pub compute: Option<QueueFamily>,
-  pub transfer: Option<QueueFamily>,
-  pub unique_indices: Vec<u32>,
+pub struct QueueFamilyIndices {
+  pub graphics: u32,
+  pub compute: Option<u32>,
+  pub transfer: Option<u32>,
 }
 
 enum Vendor {
@@ -29,6 +25,7 @@ enum Vendor {
 
 impl Vendor {
   fn from_id(id: u32) -> Self {
+    // some known ids
     match id {
       0x1002 => Self::AMD,
       0x1010 => Self::ImgTec,
@@ -81,8 +78,8 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let driver_version = vendor.parse_driver_version(properties.driver_version);
 
   info!(
-    "\nFound physical device \"{}\":
-    Api Version: {},
+    "\nFound the physical device \"{}\":
+    API Version: {},
     Vendor: {},
     Driver Version: {},
     ID: {},
@@ -102,21 +99,49 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   );
 }
 
+fn check_extension_support(instance: &ash::Instance, device: &vk::PhysicalDevice) -> bool {
+  let properties = unsafe {
+    instance
+      .enumerate_device_extension_properties(*device)
+      .expect("Failed to get device extension properties")
+  };
+
+  let mut available: Vec<String> = properties
+    .into_iter()
+    .map(|prop| utility::c_char_array_to_string(&prop.extension_name))
+    .collect();
+
+  utility::not_in_slice(
+    available.as_mut_slice(),
+    &mut REQUIRED_DEVICE_EXTENSIONS.iter(),
+    |av, req| av.as_str().cmp(req.to_str().unwrap()),
+  )
+  .is_empty()
+}
+
 pub unsafe fn select_physical_device(
   instance: &ash::Instance,
-  required_device_extensions: &[String],
-) -> (vk::PhysicalDevice, QueueFamilies) {
-  let (physical_device, queue_family) = instance
+) -> (vk::PhysicalDevice, QueueFamilyIndices) {
+  let (physical_device, queue_families) = instance
     .enumerate_physical_devices()
     .expect("Failed to enumerate physical devices")
     .into_iter()
     .filter(|physical_device| {
-      // filter devices that are not supported
+      // Filter devices that are not supported
+      // You should check for any feature or limit support that your application might need
 
       let properties = instance.get_physical_device_properties(*physical_device);
       log_device_properties(&properties);
 
-      if !check_extension_support(instance, physical_device, required_device_extensions) {
+      if properties.api_version < TARGET_API_VERSION {
+        info!(
+          "Skipped physical device: Device API version is less than targeted by the application"
+        );
+        return false;
+      }
+
+      // check if device supports all required extensions
+      if !check_extension_support(instance, physical_device) {
         info!("Skipped physical device: Device does not support required extensions");
         return false;
       }
@@ -124,7 +149,11 @@ pub unsafe fn select_physical_device(
       true
     })
     .filter_map(|physical_device| {
-      // filter devices that not support specific queue families
+      // Filter devices that not support specific queue families
+      // Your application may not need any graphics capabilities or otherwise need features only
+      //    supported by specific queues, so alter to your case accordingly
+      // Generally you only need one queue from each family unless you are doing highly concurrent
+      //    operations that don't share much data
 
       let mut graphics = None;
       let mut compute = None;
@@ -134,80 +163,62 @@ pub unsafe fn select_physical_device(
         .iter()
         .enumerate()
       {
-        let obj = QueueFamily {
-          index: i as u32,
-          queue_count: family.queue_count,
-        };
         if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-          graphics = Some(obj);
+          graphics = Some(i as u32);
         } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
           // only set if family does not contain graphics flag
           // if a dedicated compute family is not found, the application will use the graphics one
-          compute = Some(obj);
+          compute = Some(i as u32)
         } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
           // only set if family does not contain graphics nor compute flag
           // if a dedicated transfer family is not found, the application will use the graphics one
-          transfer = Some(obj);
+          transfer = Some(i as u32);
         }
       }
 
       if graphics.is_none() {
-        if !instance
-          .get_physical_device_queue_family_properties(physical_device)
-          .into_iter()
-          .any(|family| family.queue_flags.contains(vk::QueueFlags::GRAPHICS))
-        {
-          info!("Skipped physical device: Device does not support graphics");
-          return None;
-        }
-      }
-
-      let mut unique_indices = Vec::with_capacity(3);
-      unique_indices.push(graphics.as_ref().unwrap().index);
-      if let Some(f) = compute.as_ref() {
-        unique_indices.push(f.index);
-      }
-      if let Some(f) = transfer.as_ref() {
-        unique_indices.push(f.index);
+        info!("Skipped physical device: Device does not support graphics");
+        return None;
       }
 
       Some((
         physical_device,
-        QueueFamilies {
+        QueueFamilyIndices {
           graphics: graphics.unwrap(),
           compute,
           transfer,
-          unique_indices,
         },
       ))
     })
     .min_by_key(|(physical_device, _)| {
-      // select the best device out of the available
-      // a full application may use multiple metrics like limits, queue families and even the
+      // Assign a score to each device and select the best one available
+      // A full application may use multiple metrics like limits, queue families and even the
       //    device id to rank each device that a user can have
-      // here we will just rank the devices by type and select the commonly most powerful one
-      let t = instance
+
+      // here we just rank the devices by type and select the commonly most powerful one
+      match instance
         .get_physical_device_properties(*physical_device)
-        .device_type;
-      if t == vk::PhysicalDeviceType::DISCRETE_GPU {
-        0
-      } else if t == vk::PhysicalDeviceType::INTEGRATED_GPU {
-        1
-      } else if t == vk::PhysicalDeviceType::VIRTUAL_GPU {
-        2
-      } else if t == vk::PhysicalDeviceType::CPU {
-        3
-      } else if t == vk::PhysicalDeviceType::OTHER {
-        4
-      } else {
-        5
+        .device_type
+      {
+        vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+        vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+        vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+        vk::PhysicalDeviceType::CPU => 3,
+        vk::PhysicalDeviceType::OTHER => 4,
+        _ => 5,
       }
     })
     .expect("No supported physical device available");
 
+  let selected_properties = instance.get_physical_device_properties(physical_device);
+  info!(
+    "Using the physical device \"{}\"",
+    c_char_array_to_string(&selected_properties.device_name)
+  );
+
   print_debug_info(instance, physical_device);
 
-  (physical_device, queue_family)
+  (physical_device, queue_families)
 }
 
 fn print_debug_info(instance: &ash::Instance, physical_device: vk::PhysicalDevice) {
@@ -215,12 +226,11 @@ fn print_debug_info(instance: &ash::Instance, physical_device: vk::PhysicalDevic
   debug!("Available memory heaps:");
   for i in 0..mem_properties.memory_heap_count {
     let heap = mem_properties.memory_heaps[i as usize];
-    let flags = if heap.flags.is_empty() {
-      String::from("no flags")
+    let heap_flags = if heap.flags.is_empty() {
+      String::from("no heap flags")
     } else {
-      format!("flags {:?}", heap.flags)
+      format!("heap flags {:?}", heap.flags)
     };
-    debug!("{}: {}mb with {}", i, heap.size / 1000000, flags);
     let mem_type_flags: Vec<vk::MemoryPropertyFlags> = mem_properties.memory_types
       [0..(mem_properties.memory_type_count as usize)]
       .iter()
@@ -232,30 +242,12 @@ fn print_debug_info(instance: &ash::Instance, physical_device: vk::PhysicalDevic
         }
       })
       .collect();
-    debug!("Available type flags: {:?}", mem_type_flags)
-  }
-}
-
-fn check_extension_support(
-  instance: &ash::Instance,
-  device: &vk::PhysicalDevice,
-  extensions: &[String],
-) -> bool {
-  let available_extensions = unsafe {
-    instance
-      .enumerate_device_extension_properties(*device)
-      .expect("Failed to get device extension properties.")
-  };
-
-  let mut available_extensions: Vec<String> = available_extensions
-    .into_iter()
-    .map(|prop| utility::c_char_array_to_string(&prop.extension_name))
-    .collect();
-
-  debug!("Available device extensions: {:?}", available_extensions);
-
-  match utility::contains_all(&mut available_extensions, extensions) {
-    Ok(_) => true,
-    Err(_) => false,
+    debug!(
+      "  {} -> {}mb with {} and {:?} memory type flags",
+      i,
+      heap.size / 1000000,
+      heap_flags,
+      mem_type_flags
+    );
   }
 }
