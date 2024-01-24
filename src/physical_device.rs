@@ -7,10 +7,17 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct QueueFamilyIndices {
-  pub graphics: u32,
-  pub compute: Option<u32>,
-  pub transfer: Option<u32>,
+pub struct QueueFamily {
+  pub index: u32,
+  pub queue_count: u32,
+}
+
+#[derive(Debug)]
+pub struct QueueFamilies {
+  pub graphics: QueueFamily,
+  pub compute: Option<QueueFamily>,
+  pub transfer: Option<QueueFamily>,
+  pub unique_indices: Box<[u32]>,
 }
 
 enum Vendor {
@@ -121,7 +128,7 @@ fn check_extension_support(instance: &ash::Instance, device: &vk::PhysicalDevice
 
 pub unsafe fn select_physical_device(
   instance: &ash::Instance,
-) -> (vk::PhysicalDevice, QueueFamilyIndices) {
+) -> (vk::PhysicalDevice, QueueFamilies) {
   let (physical_device, queue_families) = instance
     .enumerate_physical_devices()
     .expect("Failed to enumerate physical devices")
@@ -164,15 +171,24 @@ pub unsafe fn select_physical_device(
         .enumerate()
       {
         if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-          graphics = Some(i as u32);
+          graphics = Some(QueueFamily {
+            index: i as u32,
+            queue_count: family.queue_count,
+          });
         } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
           // only set if family does not contain graphics flag
           // if a dedicated compute family is not found, the application will use the graphics one
-          compute = Some(i as u32)
+          compute = Some(QueueFamily {
+            index: i as u32,
+            queue_count: family.queue_count,
+          });
         } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
           // only set if family does not contain graphics nor compute flag
           // if a dedicated transfer family is not found, the application will use the graphics one
-          transfer = Some(i as u32);
+          transfer = Some(QueueFamily {
+            index: i as u32,
+            queue_count: family.queue_count,
+          });
         }
       }
 
@@ -181,22 +197,29 @@ pub unsafe fn select_physical_device(
         return None;
       }
 
+      // commonly used
+      let unique_indices = [graphics.as_ref(), compute.as_ref(), transfer.as_ref()]
+        .into_iter()
+        .filter_map(|opt| opt.map(|f| f.index))
+        .collect();
+
       Some((
         physical_device,
-        QueueFamilyIndices {
+        QueueFamilies {
           graphics: graphics.unwrap(),
           compute,
           transfer,
+          unique_indices,
         },
       ))
     })
-    .min_by_key(|(physical_device, _)| {
+    .min_by_key(|(physical_device, families)| {
       // Assign a score to each device and select the best one available
       // A full application may use multiple metrics like limits, queue families and even the
       //    device id to rank each device that a user can have
 
-      // here we just rank the devices by type and select the commonly most powerful one
-      match instance
+      // rank the devices by the commonly most powerful one
+      let device_score = match instance
         .get_physical_device_properties(*physical_device)
         .device_type
       {
@@ -206,7 +229,12 @@ pub unsafe fn select_physical_device(
         vk::PhysicalDeviceType::CPU => 3,
         vk::PhysicalDeviceType::OTHER => 4,
         _ => 5,
-      }
+      };
+
+      // choose a device if it has dedicated queues
+      let queue_score = 3 - families.unique_indices.len();
+
+      (queue_score << 3) + device_score
     })
     .expect("No supported physical device available");
 
