@@ -46,7 +46,7 @@ fn main() {
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry);
 
-  println!("Created instance successfully!");
+  println!("Successfully created an Instance!");
 
   // Cleanup
   unsafe {
@@ -56,7 +56,7 @@ fn main() {
       debug_utils.destroy_self();
     }
 
-    log::debug!("Destroying instance");
+    log::debug!("Destroying Instance");
     instance.destroy_instance(None);
   }
 }

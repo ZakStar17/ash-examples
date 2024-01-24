@@ -14,7 +14,7 @@ pub fn parse_vulkan_api_version(v: u32) -> String {
 pub fn i8_array_to_string(arr: &[i8]) -> Result<String, std::string::FromUtf8Error> {
   let mut bytes = Vec::with_capacity(arr.len());
   for &b in arr {
-    if b == 0 {
+    if b == '\0' as i8 {
       break;
     }
     bytes.push(b as u8)
@@ -23,28 +23,31 @@ pub fn i8_array_to_string(arr: &[i8]) -> Result<String, std::string::FromUtf8Err
 }
 
 // returns all values from the iterator not contained in the slice
-pub fn not_in_slice<'a, 'b, A: Ord, B, F>(
-  available: &'a mut [A],
-  required: &mut dyn Iterator<Item = &'b B>,
-  cmp: F,
-) -> Vec<&'b B>
+pub fn not_in_slice<'a, 'b, A: Ord, B: ?Sized, F>(
+  slice: &'a mut [A],
+  iter: &mut dyn Iterator<Item = &'b B>,
+  f: F, // comparison function between items in slice and iter
+) -> Box<[&'b B]>
 where
   F: Fn(&'a A, &'b B) -> std::cmp::Ordering,
 {
-  available.sort();
-
-  let mut unavailable = Vec::new();
-  for b in required {
-    if available.binary_search_by(|a| cmp(a, b)).is_err() {
-      unavailable.push(b);
-    }
-  }
-  unavailable
+  slice.sort();
+  iter
+    .filter(|b| slice.binary_search_by(|a| f(a, b)).is_err())
+    .collect()
 }
 
-pub fn not_in_string_slice<'a, 'b>(
-  available: &'a mut [String],
-  required: &mut dyn Iterator<Item = &'b &str>,
-) -> Vec<&'b &'b str> {
-  not_in_slice(available, required, |av, req| av.as_str().cmp(req))
+// returns all values from the iterator contained in the slice
+pub fn in_slice<'a, 'b, A: Ord, B: ?Sized, F>(
+  slice: &'a mut [A],
+  iter: &mut dyn Iterator<Item = &'b B>,
+  f: F, // comparison function between items in slice and iter
+) -> Box<[&'b B]>
+where
+  F: Fn(&'a A, &'b B) -> std::cmp::Ordering,
+{
+  slice.sort();
+  iter
+    .filter(|b| slice.binary_search_by(|a| f(a, b)).is_ok())
+    .collect()
 }
