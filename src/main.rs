@@ -39,6 +39,8 @@ pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Instance creation");
 pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
+pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
+
 fn main() {
   env_logger::init();
 
@@ -49,7 +51,7 @@ fn main() {
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry);
 
-  let (physical_device, queue_family_indices) = unsafe { select_physical_device(&instance, &[]) };
+  let (_physical_device, _queue_family_indices) = unsafe { select_physical_device(&instance) };
 
   println!("Successfully selected the physical device!");
 

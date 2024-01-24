@@ -32,7 +32,6 @@ pub fn c_char_array_to_string(arr: &[c_char]) -> String {
     .to_owned()
 }
 
-
 // returns all values from the iterator not contained in the slice
 pub fn not_in_slice<'a, 'b, A: Ord, B, F>(
   available: &'a mut [A],
