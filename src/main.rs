@@ -41,8 +41,12 @@ fn main() {
 
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
+  // used later in logical device creation
   #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) = instance::create_instance(&entry);
+  let validation_layers = validation_layers::get_supported_validation_layers(&entry);
+
+  #[cfg(feature = "vl")]
+  let (instance, mut debug_utils) = instance::create_instance(&entry, validation_layers.as_ref());
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry);
 

@@ -31,7 +31,7 @@ impl Ord for LayerProperties {
   }
 }
 
-// returns a list of all validation layers that have been found from the requested VALIDATION_LAYERS
+// returns a subset of VALIDATION_LAYERS that are available
 pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr]> {
   log::info!("Checking for validation layers");
 

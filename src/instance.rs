@@ -84,13 +84,11 @@ fn get_app_info() -> vk::ApplicationInfo {
 #[cfg(feature = "vl")]
 pub fn create_instance(
   entry: &ash::Entry,
+  validation_layers: &[&'static CStr],
 ) -> (ash::Instance, crate::validation_layers::DebugUtils) {
   use std::{ffi::c_void, ptr::addr_of};
 
-  use crate::{
-    validation_layers::{self, DebugUtils},
-    ADDITIONAL_VALIDATION_FEATURES,
-  };
+  use crate::{validation_layers::DebugUtils, ADDITIONAL_VALIDATION_FEATURES};
 
   check_target_api_version(entry);
 
@@ -110,15 +108,14 @@ pub fn create_instance(
 
   let app_info = get_app_info();
 
-  let validation_layers = validation_layers::get_supported_validation_layers(&entry);
-  // valid for as long as "validation_layers"
+  // valid until the end of scope
   let vl_pointers: Vec<*const std::ffi::c_char> =
     validation_layers.iter().map(|name| name.as_ptr()).collect();
 
   // required to be passed in instance creation p_next chain
   let debug_create_info = DebugUtils::get_debug_messenger_create_info();
 
-  // you can enable/disable additional features by passing a ValidationFeaturesEXT struct
+  // enable/disable some validation features by passing a ValidationFeaturesEXT struct
   let additional_features = vk::ValidationFeaturesEXT {
     s_type: vk::StructureType::VALIDATION_FEATURES_EXT,
     p_next: addr_of!(debug_create_info) as *const c_void,
