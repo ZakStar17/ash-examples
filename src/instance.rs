@@ -84,11 +84,13 @@ fn get_app_info() -> vk::ApplicationInfo {
 #[cfg(feature = "vl")]
 pub fn create_instance(
   entry: &ash::Entry,
-  validation_layers: &[&'static CStr],
 ) -> (ash::Instance, crate::validation_layers::DebugUtils) {
   use std::{ffi::c_void, ptr::addr_of};
 
-  use crate::{validation_layers::DebugUtils, ADDITIONAL_VALIDATION_FEATURES};
+  use crate::{
+    validation_layers::{self, DebugUtils},
+    ADDITIONAL_VALIDATION_FEATURES,
+  };
 
   check_target_api_version(entry);
 
@@ -109,6 +111,7 @@ pub fn create_instance(
   let app_info = get_app_info();
 
   // valid until the end of scope
+  let validation_layers = validation_layers::get_supported_validation_layers(&entry);
   let vl_pointers: Vec<*const std::ffi::c_char> =
     validation_layers.iter().map(|name| name.as_ptr()).collect();
 
