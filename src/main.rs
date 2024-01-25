@@ -1,5 +1,6 @@
 mod entry;
 mod instance;
+mod logical_device;
 mod physical_device;
 mod utility;
 
@@ -55,23 +56,10 @@ fn main() {
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry);
 
-  let (_physical_device, _queue_family_indices) = unsafe { select_physical_device(&instance) };
+  let (physical_device, queue_family_indices) = unsafe { select_physical_device(&instance) };
 
-  #[cfg(feature = "vulkan_vl")]
-  let (logical_device, queues) = create_logical_device(
-    &instance,
-    &physical_device,
-    &device_extensions,
-    &queue_family_indices,
-    &vl_pointers,
-  );
-  #[cfg(not(feature = "vulkan_vl"))]
-  let (logical_device, queues) = create_logical_device(
-    &instance,
-    &physical_device,
-    &device_extensions,
-    &queue_family_indices,
-  );
+  let (logical_device, _queues) =
+    logical_device::create_logical_device(&instance, &physical_device, &queue_family_indices);
 
   println!("Successfully created the logical device!");
 

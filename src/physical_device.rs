@@ -12,7 +12,6 @@ pub struct QueueFamily {
   pub queue_count: u32,
 }
 
-
 // Specialized compute and transfer queue families may not be available
 // If so, they will be substituted by the graphics queue family, as a queue family that supports
 //    graphics implicitly also supports compute and transfer operations
