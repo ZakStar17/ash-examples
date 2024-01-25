@@ -1,18 +1,20 @@
 use ash::vk;
-use std::ptr::{self};
+use std::{
+  ffi::CStr,
+  ptr::{self},
+};
 
 use crate::{utility, APPLICATION_NAME, APPLICATION_VERSION, TARGET_API_VERSION};
 
 // Checks if all required extensions exist and are supported by the host system
-// If found returns a list of required but not available extensions as an error
+// Returns unavailable extensions as an error
 fn check_instance_extension_support<'a>(
   entry: &ash::Entry,
-  extensions: &'a Vec<&'a str>,
-) -> Result<(), Vec<&'a &'a str>> {
-  let required = extensions;
+  required_extensions: &'a [&'a CStr],
+) -> Result<(), Box<[&'a &'a CStr]>> {
   log::info!(
     "Required Instance extensions by the application: {:?}",
-    required
+    required_extensions
   );
 
   let mut available: Vec<String> = entry
@@ -34,7 +36,11 @@ fn check_instance_extension_support<'a>(
 
   log::debug!("Available Instance extensions: {:?}", available);
 
-  let unavailable = utility::not_in_string_slice(available.as_mut_slice(), &mut required.iter());
+  let unavailable = utility::not_in_slice(
+    available.as_mut_slice(),
+    &mut required_extensions.iter(),
+    |a, b| a.as_str().cmp(b.to_str().unwrap()),
+  );
   if unavailable.is_empty() {
     Ok(())
   } else {
@@ -78,27 +84,22 @@ fn get_app_info() -> vk::ApplicationInfo {
 #[cfg(feature = "vl")]
 pub fn create_instance(
   entry: &ash::Entry,
+  validation_layers: &[&'static CStr],
 ) -> (ash::Instance, crate::validation_layers::DebugUtils) {
   use std::{ffi::c_void, ptr::addr_of};
 
-  use crate::{
-    validation_layers::{self, DebugUtils},
-    ADDITIONAL_VALIDATION_FEATURES,
-  };
+  use crate::{validation_layers::DebugUtils, ADDITIONAL_VALIDATION_FEATURES};
 
   check_target_api_version(entry);
 
   let required_extensions = vec![ash::extensions::ext::DebugUtils::name()];
-  let required_extensions_str = required_extensions
-    .iter()
-    .map(|cs| cs.to_str().unwrap())
-    .collect();
-  check_instance_extension_support(entry, &required_extensions_str).unwrap_or_else(|unavailable| {
+  if let Err(unavailable) = check_instance_extension_support(entry, required_extensions.as_slice())
+  {
     panic!(
       "Some unavailable Instance extensions are strictly required: {:?}",
       unavailable
     )
-  });
+  };
   // required to be alive until the end of instance creation
   let required_extensions_ptr: Vec<*const i8> = required_extensions
     .iter()
@@ -107,15 +108,14 @@ pub fn create_instance(
 
   let app_info = get_app_info();
 
-  let validation_layers = validation_layers::get_supported_validation_layers(&entry);
-  // valid for as long as "validation_layers"
+  // valid until the end of scope
   let vl_pointers: Vec<*const std::ffi::c_char> =
     validation_layers.iter().map(|name| name.as_ptr()).collect();
 
   // required to be passed in instance creation p_next chain
   let debug_create_info = DebugUtils::get_debug_messenger_create_info();
 
-  // you can enable/disable additional features by passing a ValidationFeaturesEXT struct
+  // enable/disable some validation features by passing a ValidationFeaturesEXT struct
   let additional_features = vk::ValidationFeaturesEXT {
     s_type: vk::StructureType::VALIDATION_FEATURES_EXT,
     p_next: addr_of!(debug_create_info) as *const c_void,
@@ -154,12 +154,13 @@ pub fn create_instance(entry: &ash::Entry) -> ash::Instance {
   check_target_api_version(entry);
 
   let required_extensions = vec![];
-  check_instance_extension_support(entry, &required_extensions).unwrap_or_else(|unavailable| {
+  if let Err(unavailable) = check_instance_extension_support(entry, required_extensions.as_slice())
+  {
     panic!(
       "Some unavailable Instance extensions are strictly required: {:?}",
       unavailable
     )
-  });
+  };
   // required to be alive until the end of instance creation
   let required_extensions_ptr: Vec<*const i8> = required_extensions
     .iter()

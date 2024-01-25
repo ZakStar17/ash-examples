@@ -31,15 +31,14 @@ impl Ord for LayerProperties {
   }
 }
 
-// check if all validation layers are supported
-// panics with a list of unsupported validation layers
-pub fn get_supported_validation_layers(entry: &ash::Entry) -> Vec<&'static CStr> {
+// returns a subset of VALIDATION_LAYERS that are available
+pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr]> {
   log::info!("Checking for validation layers");
 
-  // supposedly this only fails if there is no available memory
+  // supposedly only fails if there is no available memory
   let properties: Vec<vk::LayerProperties> = entry.enumerate_instance_layer_properties().unwrap();
 
-  let mut available: Vec<LayerProperties> = properties
+  let mut all: Vec<LayerProperties> = properties
     .iter()
     .filter_map(
       |props| match utility::i8_array_to_string(&props.layer_name) {
@@ -60,32 +59,26 @@ pub fn get_supported_validation_layers(entry: &ash::Entry) -> Vec<&'static CStr>
     })
     .collect();
 
-  log::debug!("Available validation layers: {:#?}", available);
+  log::debug!("System validation layers: {:#?}", all);
 
-  let unavailable = utility::not_in_slice(
-    available.as_mut_slice(),
-    &mut VALIDATION_LAYERS.iter(),
+  let available = utility::in_slice(
+    all.as_mut_slice(),
+    &mut VALIDATION_LAYERS.clone().into_iter(),
     |av, req| av.name.as_str().cmp(req.to_str().unwrap()),
   );
 
-  if !unavailable.is_empty() {
-    let unavailable_str: Vec<&str> = unavailable
+  if available.len() != VALIDATION_LAYERS.len() {
+    let unavailable: Vec<&&CStr> = VALIDATION_LAYERS
       .iter()
-      .map(|cname| cname.to_str().unwrap())
+      .filter(|s| !available.contains(s))
       .collect();
     log::error!(
       "Some requested validation layers are not available: {:?}",
-      unavailable_str
+      unavailable
     );
-
-    VALIDATION_LAYERS
-      .clone()
-      .into_iter()
-      .filter(|v| !unavailable.contains(&v))
-      .collect()
-  } else {
-    VALIDATION_LAYERS.to_vec()
   }
+
+  available
 }
 
 unsafe extern "system" fn vulkan_debug_utils_callback(

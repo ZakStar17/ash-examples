@@ -12,6 +12,10 @@ pub struct QueueFamily {
   pub queue_count: u32,
 }
 
+
+// Specialized compute and transfer queue families may not be available
+// If so, they will be substituted by the graphics queue family, as a queue family that supports
+//    graphics implicitly also supports compute and transfer operations
 #[derive(Debug)]
 pub struct QueueFamilies {
   pub graphics: QueueFamily,
@@ -30,6 +34,7 @@ enum Vendor {
   Unknown(u32),
 }
 
+// support struct for displaying vendor information
 impl Vendor {
   fn from_id(id: u32) -> Self {
     // some known ids
@@ -45,9 +50,9 @@ impl Vendor {
   }
 
   fn parse_driver_version(&self, v: u32) -> String {
-    // different vendors can use their own version formats
-    // add vendor specific parsing here if different from Vulkan, which is
-    // variant (3 bits), major (7 bits), minor (10 bits), patch (12 bits)
+    // Different vendors can use their own version formats
+    // The Vulkan format is (3 bits), major (7 bits), minor (10 bits), patch (12 bits), so vendors
+    // with other formats need their own parsing code
     match self {
       Self::NVIDIA => {
         // major (10 bits), minor (8 bits), secondary branch (8 bits), tertiary branch (6 bits)
@@ -85,7 +90,7 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let driver_version = vendor.parse_driver_version(properties.driver_version);
 
   info!(
-    "\nFound the physical device \"{}\":
+    "\nFound physical device \"{}\":
     API Version: {},
     Vendor: {},
     Driver Version: {},
@@ -149,7 +154,7 @@ pub unsafe fn select_physical_device(
 
       // check if device supports all required extensions
       if !check_extension_support(instance, physical_device) {
-        info!("Skipped physical device: Device does not support required extensions");
+        info!("Skipped physical device: Device does not support all required extensions");
         return false;
       }
 
@@ -160,7 +165,7 @@ pub unsafe fn select_physical_device(
       // Your application may not need any graphics capabilities or otherwise need features only
       //    supported by specific queues, so alter to your case accordingly
       // Generally you only need one queue from each family unless you are doing highly concurrent
-      //    operations that don't share much data
+      //    operations
 
       let mut graphics = None;
       let mut compute = None;
@@ -177,14 +182,12 @@ pub unsafe fn select_physical_device(
           });
         } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
           // only set if family does not contain graphics flag
-          // if a dedicated compute family is not found, the application will use the graphics one
           compute = Some(QueueFamily {
             index: i as u32,
             queue_count: family.queue_count,
           });
         } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
           // only set if family does not contain graphics nor compute flag
-          // if a dedicated transfer family is not found, the application will use the graphics one
           transfer = Some(QueueFamily {
             index: i as u32,
             queue_count: family.queue_count,
@@ -218,7 +221,13 @@ pub unsafe fn select_physical_device(
       // A full application may use multiple metrics like limits, queue families and even the
       //    device id to rank each device that a user can have
 
-      // rank the devices by the commonly most powerful one
+      let queue_family_importance = 3;
+      let device_score_importance = 0;
+
+      // rank devices by number of specialized queue families
+      let queue_score = 3 - families.unique_indices.len();
+
+      // rank devices by commonly most powerful device type
       let device_score = match instance
         .get_physical_device_properties(*physical_device)
         .device_type
@@ -231,16 +240,13 @@ pub unsafe fn select_physical_device(
         _ => 5,
       };
 
-      // choose a device if it has dedicated queues
-      let queue_score = 3 - families.unique_indices.len();
-
-      (queue_score << 3) + device_score
+      (queue_score << queue_family_importance) + (device_score << device_score_importance)
     })
     .expect("No supported physical device available");
 
   let selected_properties = instance.get_physical_device_properties(physical_device);
   info!(
-    "Using the physical device \"{}\"",
+    "Using physical device \"{}\"",
     c_char_array_to_string(&selected_properties.device_name)
   );
 
