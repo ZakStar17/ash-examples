@@ -1,3 +1,5 @@
+use std::ops::BitOr;
+
 use ash::vk;
 use log::{debug, info};
 
@@ -21,6 +23,22 @@ pub struct QueueFamilies {
   pub compute: Option<QueueFamily>,
   pub transfer: Option<QueueFamily>,
   pub unique_indices: Box<[u32]>,
+}
+
+impl QueueFamilies {
+  pub fn get_compute_index(&self) -> u32 {
+    match self.compute.as_ref() {
+      Some(family) => family.index,
+      None => self.graphics.index,
+    }
+  }
+
+  pub fn get_transfer_index(&self) -> u32 {
+    match self.transfer.as_ref() {
+      Some(family) => family.index,
+      None => self.graphics.index,
+    }
+  }
 }
 
 enum Vendor {
@@ -130,10 +148,10 @@ fn check_extension_support(instance: &ash::Instance, device: &vk::PhysicalDevice
   .is_empty()
 }
 
-pub unsafe fn select_physical_device(
+unsafe fn select_physical_device(
   instance: &ash::Instance,
-) -> (vk::PhysicalDevice, QueueFamilies) {
-  let (physical_device, queue_families) = instance
+) -> Option<(vk::PhysicalDevice, QueueFamilies)> {
+  instance
     .enumerate_physical_devices()
     .expect("Failed to enumerate physical devices")
     .into_iter()
@@ -241,46 +259,105 @@ pub unsafe fn select_physical_device(
 
       (queue_score << queue_family_importance) + (device_score << device_score_importance)
     })
-    .expect("No supported physical device available");
-
-  let selected_properties = instance.get_physical_device_properties(physical_device);
-  info!(
-    "Using physical device \"{}\"",
-    c_char_array_to_string(&selected_properties.device_name)
-  );
-
-  print_debug_info(instance, physical_device);
-
-  (physical_device, queue_families)
 }
 
-fn print_debug_info(instance: &ash::Instance, physical_device: vk::PhysicalDevice) {
+// in order to not query physical device info multiple times, this struct saves the additional information
+pub struct PhysicalDevice {
+  pub vk_device: vk::PhysicalDevice,
+  pub queue_families: QueueFamilies,
+  mem_properties: vk::PhysicalDeviceMemoryProperties,
+}
+
+impl PhysicalDevice {
+  pub unsafe fn select(instance: &ash::Instance) -> PhysicalDevice {
+    let (physical_device, queue_families) =
+      select_physical_device(instance).expect("No supported physical device available");
+
+    let properties = instance.get_physical_device_properties(physical_device);
+    let mem_properties = instance.get_physical_device_memory_properties(physical_device);
+
+    info!(
+      "Using physical device \"{}\"",
+      c_char_array_to_string(&properties.device_name)
+    );
+    print_device_memory_debug_info(instance, physical_device);
+
+    PhysicalDevice {
+      vk_device: physical_device,
+      mem_properties,
+      queue_families,
+    }
+  }
+
+  pub fn find_memory_type(
+    &self,
+    required_memory_type_bits: u32,
+    required_properties: vk::MemoryPropertyFlags,
+  ) -> Result<u32, ()> {
+    for (i, memory_type) in self.mem_properties.memory_types.iter().enumerate() {
+      let valid_type = required_memory_type_bits & (1 << i) > 0;
+      if valid_type && memory_type.property_flags.contains(required_properties) {
+        return Ok(i as u32);
+      }
+    }
+
+    Err(())
+  }
+
+  // Tries to find optimal memory type. If it fails, tries to find a memory type with only
+  // required flags
+  pub fn find_optimal_memory_type(
+    &self,
+    required_memory_type_bits: u32,
+    required_properties: vk::MemoryPropertyFlags,
+    optional_properties: vk::MemoryPropertyFlags,
+  ) -> Result<u32, ()> {
+    self
+      .find_memory_type(
+        required_memory_type_bits,
+        required_properties.bitor(optional_properties),
+      )
+      .or_else(|()| self.find_memory_type(required_memory_type_bits, required_properties))
+  }
+
+  pub fn get_memory_type(&self, type_i: u32) -> vk::MemoryType {
+    self.mem_properties.memory_types[type_i as usize]
+  }
+}
+
+fn print_device_memory_debug_info(instance: &ash::Instance, physical_device: vk::PhysicalDevice) {
   let mem_properties = unsafe { instance.get_physical_device_memory_properties(physical_device) };
   debug!("Available memory heaps:");
-  for i in 0..mem_properties.memory_heap_count {
-    let heap = mem_properties.memory_heaps[i as usize];
+  for heap_i in 0..mem_properties.memory_heap_count {
+    let heap = mem_properties.memory_heaps[heap_i as usize];
     let heap_flags = if heap.flags.is_empty() {
       String::from("no heap flags")
     } else {
-      format!("heap flags {:?}", heap.flags)
+      format!("heap flags [{:?}]", heap.flags)
     };
-    let mem_type_flags: Vec<vk::MemoryPropertyFlags> = mem_properties.memory_types
-      [0..(mem_properties.memory_type_count as usize)]
-      .iter()
-      .filter_map(|mem_type| {
-        if mem_type.heap_index == i {
-          Some(mem_type.property_flags)
-        } else {
-          None
-        }
-      })
-      .collect();
+
     debug!(
-      "  {} -> {}mb with {} and {:?} memory type flags",
-      i,
+      "    {} -> {}mb with {} and attributed memory types:",
+      heap_i,
       heap.size / 1000000,
-      heap_flags,
-      mem_type_flags
+      heap_flags
     );
+    for type_i in 0..mem_properties.memory_type_count {
+      let mem_type = mem_properties.memory_types[type_i as usize];
+      if mem_type.heap_index != heap_i {
+        continue;
+      }
+
+      let flags = mem_type.property_flags;
+      debug!(
+        "        {} -> {}",
+        type_i,
+        if flags.is_empty() {
+          "<no flags>".to_owned()
+        } else {
+          format!("[{:?}]", flags)
+        }
+      );
+    }
   }
 }

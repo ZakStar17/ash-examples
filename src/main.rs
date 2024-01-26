@@ -1,4 +1,6 @@
+mod command_pool;
 mod entry;
+mod image;
 mod instance;
 mod logical_device;
 mod physical_device;
@@ -9,9 +11,10 @@ mod utility;
 mod validation_layers;
 
 use ash::vk;
-use std::ffi::CStr;
-
-use crate::physical_device::select_physical_device;
+use command_pool::ComputeCommandBufferPool;
+use image::Image;
+use physical_device::PhysicalDevice;
+use std::{ffi::CStr, ops::BitOr, ptr};
 
 // simple macro to transmute literals to static CStr
 macro_rules! cstr {
@@ -42,6 +45,9 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
+pub const IMG_WIDTH: u32 = 800;
+pub const IMG_HEIGHT: u32 = 800;
+
 fn main() {
   env_logger::init();
 
@@ -52,23 +58,69 @@ fn main() {
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry);
 
-  let (physical_device, queue_family_indices) = unsafe { select_physical_device(&instance) };
+  let physical_device = unsafe { PhysicalDevice::select(&instance) };
 
-  let (logical_device, _queues) =
-    logical_device::create_logical_device(&instance, &physical_device, &queue_family_indices);
+  let (device, queues) = logical_device::create_logical_device(&instance, &physical_device);
 
-  println!("Successfully created the logical device!");
+  let mut local_image = Image::new(
+    &device,
+    &physical_device,
+    vk::ImageTiling::OPTIMAL,
+    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+    vk::MemoryPropertyFlags::DEVICE_LOCAL,
+    vk::MemoryPropertyFlags::empty(),
+  );
+  let mut host_image = Image::new(
+    &device,
+    &physical_device,
+    vk::ImageTiling::LINEAR,
+    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+    vk::MemoryPropertyFlags::HOST_VISIBLE,
+    vk::MemoryPropertyFlags::HOST_CACHED,
+  );
+
+  let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
+
+  unsafe {
+    compute_pool.reset(&device);
+    compute_pool.record_clear_img(&device, &physical_device.queue_families, local_image.vk_img);
+  }
+
+  let command_buffers = [compute_pool.clear_img];
+  let submit_info = vk::SubmitInfo {
+    s_type: vk::StructureType::SUBMIT_INFO,
+    p_next: ptr::null(),
+    wait_semaphore_count: 0,
+    p_wait_semaphores: ptr::null(),
+    p_wait_dst_stage_mask: ptr::null(),
+    command_buffer_count: command_buffers.len() as u32,
+    p_command_buffers: command_buffers.as_ptr(),
+    signal_semaphore_count: 0,
+    p_signal_semaphores: ptr::null(),
+  };
+
+  unsafe {
+    device
+      .queue_submit(queues.compute, &[submit_info], vk::Fence::null())
+      .expect("Failed to submit compute");
+  }
 
   // Cleanup
   unsafe {
     // wait until all operations have finished and the device is safe to destroy
-    logical_device
+    device
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
+    log::debug!("Destroying command pool");
+    compute_pool.destroy_self(&device);
+
+    local_image.destroy_self(&device);
+    host_image.destroy_self(&device);
+
     // destroying a logical device also implicitly destroys all associated queues
     log::debug!("Destroying logical device");
-    logical_device.destroy_device(None);
+    device.destroy_device(None);
 
     #[cfg(feature = "vl")]
     {

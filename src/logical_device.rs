@@ -1,7 +1,10 @@
 use ash::vk::{self, DeviceQueueCreateInfo};
 use std::{cmp::min, os::raw::c_char, ptr};
 
-use crate::{physical_device::QueueFamilies, REQUIRED_DEVICE_EXTENSIONS};
+use crate::{
+  physical_device::{PhysicalDevice, QueueFamilies},
+  REQUIRED_DEVICE_EXTENSIONS,
+};
 
 const MAX_FAMILY_COUNT: usize = 3;
 
@@ -85,8 +88,7 @@ unsafe fn retrieve_queues(device: &ash::Device, families: &QueueFamilies) -> Que
 
 pub fn create_logical_device(
   instance: &ash::Instance,
-  physical_device: &vk::PhysicalDevice,
-  families: &QueueFamilies,
+  physical_device: &PhysicalDevice,
 ) -> (ash::Device, Queues) {
   // In this case priorities can matter if the compute or transfer queues get queried from the
   // graphics family
@@ -96,7 +98,8 @@ pub fn create_logical_device(
   let queue_priorities = [0.5_f32; MAX_FAMILY_COUNT];
   let queue_priorities_ptr = queue_priorities.as_ptr();
   // this contains the priorities pointer so it need to be valid until end of scope
-  let queue_create_infos = get_queue_create_infos(families, queue_priorities_ptr);
+  let queue_create_infos =
+    get_queue_create_infos(&physical_device.queue_families, queue_priorities_ptr);
 
   let device_extensions_pointers: Vec<*const c_char> = REQUIRED_DEVICE_EXTENSIONS
     .iter()
@@ -124,11 +127,11 @@ pub fn create_logical_device(
   log::info!("Creating logical device");
   let device: ash::Device = unsafe {
     instance
-      .create_device(*physical_device, &create_info, None)
+      .create_device(physical_device.vk_device, &create_info, None)
       .expect("Failed to create logical device")
   };
   log::debug!("Retrieving queues");
-  let queues = unsafe { retrieve_queues(&device, families) };
+  let queues = unsafe { retrieve_queues(&device, &physical_device.queue_families) };
 
   (device, queues)
 }
