@@ -193,22 +193,28 @@ unsafe fn select_physical_device(
         .enumerate()
       {
         if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-          graphics = Some(QueueFamily {
-            index: i as u32,
-            queue_count: family.queue_count,
-          });
+          if graphics.is_none() {
+            graphics = Some(QueueFamily {
+              index: i as u32,
+              queue_count: family.queue_count,
+            });
+          }
         } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
           // only set if family does not contain graphics flag
-          compute = Some(QueueFamily {
-            index: i as u32,
-            queue_count: family.queue_count,
-          });
+          if compute.is_none() {
+            compute = Some(QueueFamily {
+              index: i as u32,
+              queue_count: family.queue_count,
+            });
+          }
         } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
           // only set if family does not contain graphics nor compute flag
-          transfer = Some(QueueFamily {
-            index: i as u32,
-            queue_count: family.queue_count,
-          });
+          if transfer.is_none() {
+            transfer = Some(QueueFamily {
+              index: i as u32,
+              queue_count: family.queue_count,
+            });
+          }
         }
       }
 
@@ -275,12 +281,15 @@ impl PhysicalDevice {
 
     let properties = instance.get_physical_device_properties(physical_device);
     let mem_properties = instance.get_physical_device_memory_properties(physical_device);
+    let queue_family_properties =
+      instance.get_physical_device_queue_family_properties(physical_device);
 
     info!(
       "Using physical device \"{}\"",
       c_char_array_to_string(&properties.device_name)
     );
-    print_device_memory_debug_info(instance, physical_device);
+    print_queue_families_debug_info(&queue_family_properties);
+    print_device_memory_debug_info(&mem_properties);
 
     PhysicalDevice {
       vk_device: physical_device,
@@ -325,8 +334,11 @@ impl PhysicalDevice {
   }
 }
 
-fn print_device_memory_debug_info(instance: &ash::Instance, physical_device: vk::PhysicalDevice) {
-  let mem_properties = unsafe { instance.get_physical_device_memory_properties(physical_device) };
+fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
+  debug!("Queue family properties: {:#?}", properties);
+}
+
+fn print_device_memory_debug_info(mem_properties: &vk::PhysicalDeviceMemoryProperties) {
   debug!("Available memory heaps:");
   for heap_i in 0..mem_properties.memory_heap_count {
     let heap = mem_properties.memory_heaps[heap_i as usize];

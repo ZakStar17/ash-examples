@@ -1,4 +1,4 @@
-mod command_pool;
+mod command_pools;
 mod entry;
 mod image;
 mod instance;
@@ -11,10 +11,14 @@ mod utility;
 mod validation_layers;
 
 use ash::vk;
-use command_pool::ComputeCommandBufferPool;
+use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
 use image::Image;
 use physical_device::PhysicalDevice;
-use std::{ffi::CStr, ops::BitOr, ptr};
+use std::{
+  ffi::CStr,
+  ops::BitOr,
+  ptr::{self, addr_of},
+};
 
 // simple macro to transmute literals to static CStr
 macro_rules! cstr {
@@ -80,29 +84,83 @@ fn main() {
   );
 
   let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
+  let mut transfer_pool =
+    TransferCommandBufferPool::create(&device, &physical_device.queue_families);
 
   unsafe {
     compute_pool.reset(&device);
     compute_pool.record_clear_img(&device, &physical_device.queue_families, local_image.vk_img);
+
+    transfer_pool.reset(&device);
+    transfer_pool.record_copy_img_to_host(
+      &device,
+      &physical_device.queue_families,
+      local_image.vk_img,
+      host_image.vk_img,
+    );
   }
 
-  let command_buffers = [compute_pool.clear_img];
-  let submit_info = vk::SubmitInfo {
+  let create_info = vk::SemaphoreCreateInfo {
+    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SemaphoreCreateFlags::empty(),
+  };
+  let image_clear_finished = unsafe {
+    device
+      .create_semaphore(&create_info, None)
+      .expect("Failed to create a semaphore")
+  };
+  let stage_flags = vk::PipelineStageFlags::TRANSFER;
+
+  let clear_image_submit = vk::SubmitInfo {
     s_type: vk::StructureType::SUBMIT_INFO,
     p_next: ptr::null(),
     wait_semaphore_count: 0,
     p_wait_semaphores: ptr::null(),
     p_wait_dst_stage_mask: ptr::null(),
-    command_buffer_count: command_buffers.len() as u32,
-    p_command_buffers: command_buffers.as_ptr(),
+    command_buffer_count: 1,
+    p_command_buffers: addr_of!(compute_pool.clear_img),
+    signal_semaphore_count: 1,
+    p_signal_semaphores: addr_of!(image_clear_finished),
+  };
+  let transfer_image_submit = vk::SubmitInfo {
+    s_type: vk::StructureType::SUBMIT_INFO,
+    p_next: ptr::null(),
+    wait_semaphore_count: 1,
+    p_wait_semaphores: addr_of!(image_clear_finished),
+    p_wait_dst_stage_mask: addr_of!(stage_flags),
+    command_buffer_count: 1,
+    p_command_buffers: addr_of!(transfer_pool.copy_to_host),
     signal_semaphore_count: 0,
     p_signal_semaphores: ptr::null(),
   };
 
+  let create_info = vk::FenceCreateInfo {
+    s_type: vk::StructureType::FENCE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::FenceCreateFlags::empty(),
+  };
+  let operation_finished = unsafe {
+    device
+      .create_fence(&create_info, None)
+      .expect("Failed to create a fence")
+  };
+
   unsafe {
     device
-      .queue_submit(queues.compute, &[submit_info], vk::Fence::null())
+      .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
       .expect("Failed to submit compute");
+    //std::thread::sleep(std::time::Duration::from_secs(10));
+    device
+      .queue_submit(
+        queues.transfer,
+        &[transfer_image_submit],
+        operation_finished,
+      )
+      .expect("Failed to submit transfer");
+    device
+      .wait_for_fences(&[operation_finished], true, u64::MAX)
+      .expect("Failed to wait for fences");
   }
 
   // Cleanup
@@ -112,8 +170,15 @@ fn main() {
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
-    log::debug!("Destroying command pool");
+    log::debug!("Destroying fence");
+    device.destroy_fence(operation_finished, None);
+
+    log::debug!("Destroying semaphore");
+    device.destroy_semaphore(image_clear_finished, None);
+
+    log::debug!("Destroying command pools");
     compute_pool.destroy_self(&device);
+    transfer_pool.destroy_self(&device);
 
     local_image.destroy_self(&device);
     host_image.destroy_self(&device);
