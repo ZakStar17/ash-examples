@@ -1,25 +1,33 @@
+mod physical_device;
+mod queue_families;
+mod vendor;
+
 use std::{
   ffi::c_void,
   mem::MaybeUninit,
-  ops::BitOr,
   ptr::{self, addr_of_mut},
 };
 
 use ash::vk;
+pub use physical_device::PhysicalDevice;
+pub use queue_families::QueueFamilies;
 
 use crate::{
+  physical_device::vendor::Vendor,
   utility::{self, c_char_array_to_string},
   IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
 };
 
+use self::queue_families::QueueFamily;
+
 macro_rules! const_flag_bitor {
-  ($t:ty, $x:expr, $($y:expr),+) => {
-    // ash flags don't implement const bitor
-    <$t>::from_raw(
-      $x.as_raw() $(| $y.as_raw())+,
-    )
-  };
-}
+    ($t:ty, $x:expr, $($y:expr),+) => {
+      // ash flags don't implement const bitor
+      <$t>::from_raw(
+        $x.as_raw() $(| $y.as_raw())+,
+      )
+    };
+  }
 
 // kinda overkill
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
@@ -37,111 +45,17 @@ const REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL: vk::ImageUsageFlags = const_flag_bitor
 );
 const REQUIRED_IMAGE_USAGE_FLAGS_LINEAR: vk::ImageUsageFlags = vk::ImageUsageFlags::TRANSFER_DST;
 
-#[derive(Debug)]
-pub struct QueueFamily {
-  pub index: u32,
-  pub queue_count: u32,
-}
-
-// Specialized compute and transfer queue families may not be available
-// If so, they will be substituted by the graphics queue family, as a queue family that supports
-//    graphics implicitly also supports compute and transfer operations
-#[derive(Debug)]
-pub struct QueueFamilies {
-  pub graphics: QueueFamily,
-  pub compute: Option<QueueFamily>,
-  pub transfer: Option<QueueFamily>,
-  pub unique_indices: Box<[u32]>,
-}
-
-impl QueueFamilies {
-  pub fn get_compute_index(&self) -> u32 {
-    match self.compute.as_ref() {
-      Some(family) => family.index,
-      None => self.graphics.index,
-    }
-  }
-
-  pub fn get_transfer_index(&self) -> u32 {
-    match self.transfer.as_ref() {
-      Some(family) => family.index,
-      None => self.graphics.index,
-    }
-  }
-}
-
-enum Vendor {
-  NVIDIA,
-  AMD,
-  ARM,
-  INTEL,
-  ImgTec,
-  Qualcomm,
-  Unknown(u32),
-}
-
-// support struct for displaying vendor information
-impl Vendor {
-  fn from_id(id: u32) -> Self {
-    // some known ids
-    match id {
-      0x1002 => Self::AMD,
-      0x1010 => Self::ImgTec,
-      0x10DE => Self::NVIDIA,
-      0x13B5 => Self::ARM,
-      0x5143 => Self::Qualcomm,
-      0x8086 => Self::INTEL,
-      _ => Self::Unknown(id),
-    }
-  }
-
-  fn parse_driver_version(&self, v: u32) -> String {
-    // Different vendors can use their own version formats
-    // The Vulkan format is (3 bits), major (7 bits), minor (10 bits), patch (12 bits), so vendors
-    // with other formats need their own parsing code
-    match self {
-      Self::NVIDIA => {
-        // major (10 bits), minor (8 bits), secondary branch (8 bits), tertiary branch (6 bits)
-        let eight_bits = 0b11111111;
-        let six_bits = 0b111111;
-        format!(
-          "{}.{}.{}.{}",
-          v >> (32 - 10),
-          v >> (32 - 10 - 8) & eight_bits,
-          v >> (32 - 10 - 8 - 8) & eight_bits,
-          v & six_bits
-        )
-      }
-      _ => utility::parse_vulkan_api_version(v),
-    }
-  }
-}
-
-impl ToString for Vendor {
-  fn to_string(&self) -> String {
-    match self {
-      Self::NVIDIA => "NVIDIA".to_owned(),
-      Self::AMD => "AMD".to_owned(),
-      Self::ARM => "ARM".to_owned(),
-      Self::INTEL => "INTEL".to_owned(),
-      Self::ImgTec => "ImgTec".to_owned(),
-      Self::Qualcomm => "Qualcomm".to_owned(),
-      Self::Unknown(id) => format!("Unknown ({})", id),
-    }
-  }
-}
-
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
   let driver_version = vendor.parse_driver_version(properties.driver_version);
 
   log::info!(
     "\nFound physical device \"{}\":
-    API Version: {},
-    Vendor: {},
-    Driver Version: {},
-    ID: {},
-    Type: {},",
+      API Version: {},
+      Vendor: {},
+      Driver Version: {},
+      ID: {},
+      Type: {},",
     c_char_array_to_string(&properties.device_name),
     utility::parse_vulkan_api_version(properties.api_version),
     vendor.to_string(),
@@ -408,123 +322,5 @@ fn get_extended_properties(
     instance.get_physical_device_properties2(physical_device, main_props_ptr.as_mut().unwrap());
 
     (main_props.assume_init().properties, props11.assume_init())
-  }
-}
-
-// in order to not query physical device info multiple times, this struct saves the additional information
-pub struct PhysicalDevice {
-  pub vk_device: vk::PhysicalDevice,
-  pub queue_families: QueueFamilies,
-  mem_properties: vk::PhysicalDeviceMemoryProperties,
-  max_memory_allocation_size: vk::DeviceSize,
-}
-
-impl PhysicalDevice {
-  pub unsafe fn select(instance: &ash::Instance) -> PhysicalDevice {
-    let (physical_device, queue_families) =
-      select_physical_device(instance).expect("No supported physical device available");
-
-    let (properties, properties11) = get_extended_properties(instance, physical_device);
-    let mem_properties = instance.get_physical_device_memory_properties(physical_device);
-    let queue_family_properties =
-      instance.get_physical_device_queue_family_properties(physical_device);
-
-    log::info!(
-      "Using physical device \"{}\"",
-      c_char_array_to_string(&properties.device_name)
-    );
-    print_queue_families_debug_info(&queue_family_properties);
-    print_device_memory_debug_info(&mem_properties);
-
-    PhysicalDevice {
-      vk_device: physical_device,
-      mem_properties,
-      queue_families,
-      max_memory_allocation_size: properties11.max_memory_allocation_size,
-    }
-  }
-
-  pub fn find_memory_type(
-    &self,
-    required_memory_type_bits: u32,
-    required_properties: vk::MemoryPropertyFlags,
-  ) -> Result<u32, ()> {
-    for (i, memory_type) in self.mem_properties.memory_types.iter().enumerate() {
-      let valid_type = required_memory_type_bits & (1 << i) > 0;
-      if valid_type && memory_type.property_flags.contains(required_properties) {
-        return Ok(i as u32);
-      }
-    }
-
-    Err(())
-  }
-
-  // Tries to find optimal memory type. If it fails, tries to find a memory type with only
-  // required flags
-  pub fn find_optimal_memory_type(
-    &self,
-    required_memory_type_bits: u32,
-    required_properties: vk::MemoryPropertyFlags,
-    optional_properties: vk::MemoryPropertyFlags,
-  ) -> Result<u32, ()> {
-    self
-      .find_memory_type(
-        required_memory_type_bits,
-        required_properties.bitor(optional_properties),
-      )
-      .or_else(|()| self.find_memory_type(required_memory_type_bits, required_properties))
-  }
-
-  pub fn get_memory_type(&self, type_i: u32) -> vk::MemoryType {
-    self.mem_properties.memory_types[type_i as usize]
-  }
-
-  pub fn get_memory_type_heap(&self, type_i: u32) -> vk::MemoryHeap {
-    let mem_type = self.get_memory_type(type_i);
-    self.mem_properties.memory_heaps[mem_type.heap_index as usize]
-  }
-
-  pub fn get_max_memory_allocation_size(&self) -> vk::DeviceSize {
-    self.max_memory_allocation_size
-  }
-}
-
-fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
-  log::debug!("Queue family properties: {:#?}", properties);
-}
-
-fn print_device_memory_debug_info(mem_properties: &vk::PhysicalDeviceMemoryProperties) {
-  log::debug!("Available memory heaps:");
-  for heap_i in 0..mem_properties.memory_heap_count {
-    let heap = mem_properties.memory_heaps[heap_i as usize];
-    let heap_flags = if heap.flags.is_empty() {
-      String::from("no heap flags")
-    } else {
-      format!("heap flags [{:?}]", heap.flags)
-    };
-
-    log::debug!(
-      "    {} -> {}mb with {} and attributed memory types:",
-      heap_i,
-      heap.size / 1000000,
-      heap_flags
-    );
-    for type_i in 0..mem_properties.memory_type_count {
-      let mem_type = mem_properties.memory_types[type_i as usize];
-      if mem_type.heap_index != heap_i {
-        continue;
-      }
-
-      let flags = mem_type.property_flags;
-      log::debug!(
-        "        {} -> {}",
-        type_i,
-        if flags.is_empty() {
-          "<no flags>".to_owned()
-        } else {
-          format!("[{:?}]", flags)
-        }
-      );
-    }
   }
 }
