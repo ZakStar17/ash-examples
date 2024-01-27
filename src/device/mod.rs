@@ -1,6 +1,7 @@
 mod physical_device;
-mod queue_families;
+mod queues;
 mod vendor;
+mod logical_device;
 
 use std::{
   ffi::c_void,
@@ -10,15 +11,14 @@ use std::{
 
 use ash::vk;
 pub use physical_device::PhysicalDevice;
-pub use queue_families::QueueFamilies;
+pub use logical_device::create_logical_device;
+pub use queues::{QueueFamilies, Queues};
 
 use crate::{
-  physical_device::vendor::Vendor,
+  device::vendor::Vendor,
   utility::{self, c_char_array_to_string},
   IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
 };
-
-use self::queue_families::QueueFamily;
 
 macro_rules! const_flag_bitor {
     ($t:ty, $x:expr, $($y:expr),+) => {
@@ -208,66 +208,13 @@ unsafe fn select_physical_device(
       true
     })
     .filter_map(|physical_device| {
-      // Filter devices that not support specific queue families
-      // Your application may not need any graphics capabilities or otherwise need features only
-      //    supported by specific queues, so alter to your case accordingly
-      // Generally you only need one queue from each family unless you are doing highly concurrent
-      //    operations
-
-      let mut graphics = None;
-      let mut compute = None;
-      let mut transfer = None;
-      for (i, family) in instance
-        .get_physical_device_queue_family_properties(physical_device)
-        .iter()
-        .enumerate()
-      {
-        if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-          if graphics.is_none() {
-            graphics = Some(QueueFamily {
-              index: i as u32,
-              queue_count: family.queue_count,
-            });
-          }
-        } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
-          // only set if family does not contain graphics flag
-          if compute.is_none() {
-            compute = Some(QueueFamily {
-              index: i as u32,
-              queue_count: family.queue_count,
-            });
-          }
-        } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
-          // only set if family does not contain graphics nor compute flag
-          if transfer.is_none() {
-            transfer = Some(QueueFamily {
-              index: i as u32,
-              queue_count: family.queue_count,
-            });
-          }
-        }
-      }
-
-      if graphics.is_none() {
-        log::info!("Skipped physical device: Device does not support graphics");
-        return None;
-      }
-
-      // commonly used
-      let unique_indices = [graphics.as_ref(), compute.as_ref(), transfer.as_ref()]
-        .into_iter()
-        .filter_map(|opt| opt.map(|f| f.index))
-        .collect();
-
-      Some((
-        physical_device,
-        QueueFamilies {
-          graphics: graphics.unwrap(),
-          compute,
-          transfer,
-          unique_indices,
+      match QueueFamilies::get_from_physical_device(instance, physical_device) {
+        Err(()) => {
+          log::info!("Skipped physical device: Device does not contain required queue families");
+          None
         },
-      ))
+        Ok(families) => Some((physical_device, families))
+      }
     })
     .min_by_key(|(physical_device, families)| {
       // Assign a score to each device and select the best one available
@@ -278,7 +225,7 @@ unsafe fn select_physical_device(
       let device_score_importance = 0;
 
       // rank devices by number of specialized queue families
-      let queue_score = 3 - families.unique_indices.len();
+      let queue_score = QueueFamilies::FAMILY_COUNT - families.unique_indices.len();
 
       // rank devices by commonly most powerful device type
       let device_score = match instance

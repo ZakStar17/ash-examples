@@ -1,9 +1,8 @@
 use std::ptr;
 
 use ash::vk;
-use log::debug;
 
-use crate::{physical_device::PhysicalDevice, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH};
+use crate::{device::PhysicalDevice, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 pub struct Image {
   vk_img: vk::Image,
@@ -29,11 +28,11 @@ impl Image {
     required_memory_properties: vk::MemoryPropertyFlags,
     optional_memory_properties: vk::MemoryPropertyFlags,
   ) -> Self {
-    debug!("Creating image");
+    log::debug!("Creating image");
     let vk_img = create_image(device, tiling, usage);
 
-    debug!("Allocating memory for image");
-    let (memory, memory_type_i, memory_size) = allocate_img_memory(
+    log::debug!("Allocating memory for image");
+    let (memory, memory_type_i, memory_size) = allocate_image_memory(
       device,
       physical_device,
       vk_img,
@@ -41,7 +40,7 @@ impl Image {
       optional_memory_properties,
     );
 
-    debug!("Binding memory to image");
+    log::debug!("Binding memory to image");
     unsafe {
       device
         .bind_image_memory(vk_img, memory, 0)
@@ -79,6 +78,7 @@ impl Image {
         offset: 0,
         size: self.memory_size,
       };
+      log::debug!("Invalidating image memory");
       unsafe {
         device
           .invalidate_mapped_memory_ranges(&[host_img_memory_range])
@@ -88,6 +88,7 @@ impl Image {
 
     // map entire memory
     let image_bytes = unsafe {
+      log::debug!("Mapping image memory");
       let ptr = device
         .map_memory(
           self.memory,
@@ -100,6 +101,7 @@ impl Image {
     };
 
     // read bytes and save to file
+    log::debug!("Saving image");
     image::save_buffer(
       path,
       image_bytes,
@@ -151,7 +153,7 @@ fn create_image(
 }
 
 // usually all images of similar type will use only one memory allocation
-fn allocate_img_memory(
+fn allocate_image_memory(
   device: &ash::Device,
   physical_device: &PhysicalDevice,
   image: vk::Image,

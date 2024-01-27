@@ -2,8 +2,7 @@ mod command_pools;
 mod entry;
 mod image;
 mod instance;
-mod logical_device;
-mod physical_device;
+mod device;
 mod utility;
 
 // validation layers module will only exist if validation layers are enabled
@@ -13,7 +12,7 @@ mod validation_layers;
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
 use image::Image;
-use physical_device::PhysicalDevice;
+use device::PhysicalDevice;
 use std::{
   ffi::CStr,
   ops::BitOr,
@@ -74,7 +73,7 @@ fn main() {
 
   let physical_device = unsafe { PhysicalDevice::select(&instance) };
 
-  let (device, queues) = logical_device::create_logical_device(&instance, &physical_device);
+  let (device, queues) = device::create_logical_device(&instance, &physical_device);
 
   // GPU image with DEVICE_LOCAL flags
   let mut local_image = Image::new(
@@ -181,6 +180,7 @@ fn main() {
   println!("Done!");
 
   // Cleanup
+  log::info!("Destroying and releasing resources");
   unsafe {
     // wait until all operations have finished and the device is safe to destroy
     device

@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{physical_device::QueueFamilies, IMAGE_HEIGHT, IMAGE_WIDTH};
+use crate::{device::QueueFamilies, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 pub struct TransferCommandBufferPool {
   pool: vk::CommandPool,

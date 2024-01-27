@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{physical_device::QueueFamilies, IMAGE_COLOR};
+use crate::{device::QueueFamilies, IMAGE_COLOR};
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
