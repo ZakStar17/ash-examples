@@ -49,8 +49,9 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-pub const IMAGE_WIDTH: u32 = 30000;
-pub const IMAGE_HEIGHT: u32 = 30000;
+// try putting some very big numbers
+pub const IMAGE_WIDTH: u32 = 2400;
+pub const IMAGE_HEIGHT: u32 = 2400;
 
 // some formats may not be available
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
@@ -157,11 +158,11 @@ fn main() {
       .expect("Failed to create a fence")
   };
 
+  println!("Submitting work...");
   unsafe {
     device
       .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
       .expect("Failed to submit compute");
-    //std::thread::sleep(std::time::Duration::from_secs(10));
     device
       .queue_submit(
         queues.transfer,
@@ -173,8 +174,11 @@ fn main() {
       .wait_for_fences(&[operation_finished], true, u64::MAX)
       .expect("Failed to wait for fences");
   }
+  println!("GPU finished!");
 
+  println!("Saving file...");
   host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
+  println!("Done!");
 
   // Cleanup
   unsafe {

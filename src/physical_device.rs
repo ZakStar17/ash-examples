@@ -1,4 +1,9 @@
-use std::ops::BitOr;
+use std::{
+  ffi::c_void,
+  mem::MaybeUninit,
+  ops::BitOr,
+  ptr::{self, addr_of_mut},
+};
 
 use ash::vk;
 
@@ -378,12 +383,40 @@ unsafe fn select_physical_device(
     })
 }
 
+fn get_extended_properties(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+) -> (
+  vk::PhysicalDeviceProperties,
+  vk::PhysicalDeviceVulkan11Properties,
+) {
+  // going c style (see https://doc.rust-lang.org/std/mem/union.MaybeUninit.html)
+  let mut main_props: MaybeUninit<vk::PhysicalDeviceProperties2> = MaybeUninit::uninit();
+  let mut props11: MaybeUninit<vk::PhysicalDeviceVulkan11Properties> = MaybeUninit::uninit();
+  let main_props_ptr = main_props.as_mut_ptr();
+  let props11_ptr = props11.as_mut_ptr();
+
+  unsafe {
+    addr_of_mut!((*props11_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
+    addr_of_mut!((*props11_ptr).p_next).write(ptr::null_mut::<c_void>());
+
+    addr_of_mut!((*main_props_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_PROPERTIES_2);
+    // requesting for Vulkan11Properties
+    addr_of_mut!((*main_props_ptr).p_next).write(props11_ptr as *mut c_void);
+
+    instance.get_physical_device_properties2(physical_device, main_props_ptr.as_mut().unwrap());
+
+    (main_props.assume_init().properties, props11.assume_init())
+  }
+}
+
 // in order to not query physical device info multiple times, this struct saves the additional information
 pub struct PhysicalDevice {
   pub vk_device: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
-  properties: vk::PhysicalDeviceProperties,
+  max_memory_allocation_size: vk::DeviceSize,
 }
 
 impl PhysicalDevice {
@@ -391,7 +424,7 @@ impl PhysicalDevice {
     let (physical_device, queue_families) =
       select_physical_device(instance).expect("No supported physical device available");
 
-    let properties = instance.get_physical_device_properties(physical_device);
+    let (properties, properties11) = get_extended_properties(instance, physical_device);
     let mem_properties = instance.get_physical_device_memory_properties(physical_device);
     let queue_family_properties =
       instance.get_physical_device_queue_family_properties(physical_device);
@@ -407,7 +440,7 @@ impl PhysicalDevice {
       vk_device: physical_device,
       mem_properties,
       queue_families,
-      properties,
+      max_memory_allocation_size: properties11.max_memory_allocation_size,
     }
   }
 
@@ -451,9 +484,8 @@ impl PhysicalDevice {
     self.mem_properties.memory_heaps[mem_type.heap_index as usize]
   }
 
-  pub fn max_memory_allocation_size(&self) -> u32 {
-    // todo: wrong one
-    self.properties.limits.max_memory_allocation_count
+  pub fn get_max_memory_allocation_size(&self) -> vk::DeviceSize {
+    self.max_memory_allocation_size
   }
 }
 

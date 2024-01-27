@@ -162,10 +162,12 @@ fn allocate_img_memory(
 
   // in this case you can sub allocate multiple times for the image and individually manage each allocation,
   // but do you really need an image this big
-  if memory_requirements.size >= physical_device.max_memory_allocation_size() as u64 {
-    panic!("Memory required to allocate an image ({}mb) is higher than the maximum allowed on the device ({}mb)", memory_requirements.size / 1_000_000, physical_device.max_memory_allocation_size() / 1_000_000);
+  if memory_requirements.size >= physical_device.get_max_memory_allocation_size() {
+    panic!("Memory required to allocate an image ({}mb) is higher than the maximum allowed on the device ({}mb)", 
+      memory_requirements.size / 1_000_000,
+      physical_device.get_max_memory_allocation_size() / 1_000_000
+    );
   }
-  // todo: same for heap
 
   // Try to find optimal memory type
   // If it doesn't exist, try to find required memory type
@@ -176,6 +178,14 @@ fn allocate_img_memory(
       optional_memory_properties,
     )
     .expect("Failed to find appropriate memory type for allocating an image");
+
+  let heap_size = physical_device.get_memory_type_heap(memory_type).size;
+  if memory_requirements.size >= heap_size {
+    panic!("Memory required to allocate an image ({}mb) is higher than the size of the requested heap ({}mb)", 
+      memory_requirements.size / 1_000_000,
+      heap_size / 1_000_000
+    );
+  }
 
   let allocate_info = vk::MemoryAllocateInfo {
     s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
