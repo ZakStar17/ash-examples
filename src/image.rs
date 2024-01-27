@@ -7,8 +7,9 @@ use crate::{physical_device::PhysicalDevice, IMG_HEIGHT, IMG_WIDTH};
 
 pub struct Image {
   pub vk_img: vk::Image,
-  memory: vk::DeviceMemory,
-  memory_type_i: u32,
+  pub memory: vk::DeviceMemory,
+  pub memory_type_i: u32,
+  pub memory_size: u64,
 }
 
 impl Image {
@@ -24,7 +25,7 @@ impl Image {
     let vk_img = create_img(device, tiling, usage);
 
     debug!("Allocating memory for image");
-    let (memory, memory_type_i) = allocate_img_memory(
+    let (memory, memory_type_i, memory_size) = allocate_img_memory(
       device,
       physical_device,
       vk_img,
@@ -43,6 +44,7 @@ impl Image {
       vk_img,
       memory,
       memory_type_i,
+      memory_size,
     }
   }
 
@@ -62,7 +64,7 @@ fn create_img(
     p_next: ptr::null(),
     flags: vk::ImageCreateFlags::empty(),
     image_type: vk::ImageType::TYPE_2D,
-    format: vk::Format::R8G8B8A8_SRGB,
+    format: vk::Format::R8G8B8A8_UINT,
     extent: vk::Extent3D {
       width: IMG_WIDTH,
       height: IMG_HEIGHT,
@@ -93,7 +95,7 @@ fn allocate_img_memory(
   image: vk::Image,
   required_memory_properties: vk::MemoryPropertyFlags,
   optional_memory_properties: vk::MemoryPropertyFlags,
-) -> (vk::DeviceMemory, u32) {
+) -> (vk::DeviceMemory, u32, u64) {
   let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
 
   // Try to find optimal memory type. If it doesn't exist, try to find required memory type
@@ -118,5 +120,5 @@ fn allocate_img_memory(
       .expect("Failed to allocate memory for an image")
   };
 
-  (memory, memory_type)
+  (memory, memory_type, memory_requirements.size)
 }

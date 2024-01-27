@@ -10,6 +10,7 @@ mod utility;
 #[cfg(feature = "vl")]
 mod validation_layers;
 
+use ::image::save_buffer;
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
 use image::Image;
@@ -49,8 +50,11 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-pub const IMG_WIDTH: u32 = 800;
+pub const IMG_WIDTH: u32 = 400;
 pub const IMG_HEIGHT: u32 = 800;
+pub const IMG_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  uint32: [134, 206, 203, 255],
+};
 
 fn main() {
   env_logger::init();
@@ -162,6 +166,49 @@ fn main() {
       .wait_for_fences(&[operation_finished], true, u64::MAX)
       .expect("Failed to wait for fences");
   }
+
+  if !physical_device
+    .get_memory_type(host_image.memory_type_i)
+    .property_flags
+    .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
+  {
+    let host_img_memory_range = vk::MappedMemoryRange {
+      s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
+      p_next: ptr::null(),
+      memory: host_image.memory,
+      offset: 0,
+      size: host_image.memory_size,
+    };
+
+    unsafe {
+      device
+        .invalidate_mapped_memory_ranges(&[host_img_memory_range])
+        .expect("Failed to invalidate host image memory_ranges");
+    }
+  }
+
+  let image_bytes = unsafe {
+    let ptr = device
+      .map_memory(
+        host_image.memory,
+        0,
+        host_image.memory_size,
+        vk::MemoryMapFlags::empty(),
+      )
+      .expect("Failed to map image memory") as *const u8;
+    std::slice::from_raw_parts(ptr, host_image.memory_size as usize)
+  };
+
+  //println!("Result: {:?}", image_bytes);
+  save_buffer(
+    "image.png",
+    image_bytes,
+    IMG_WIDTH,
+    IMG_HEIGHT,
+    ::image::ColorType::Rgba8,
+  )
+  .expect("Failed to save image");
+
 
   // Cleanup
   unsafe {

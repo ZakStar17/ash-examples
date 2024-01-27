@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::physical_device::QueueFamilies;
+use crate::{physical_device::QueueFamilies, IMG_COLOR};
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
@@ -76,14 +76,11 @@ impl ComputeCommandBufferPool {
       &[transfer_dst_layout],
     );
 
-    let clear_color = vk::ClearColorValue {
-      float32: [0.0, 0.0, 0.0, 0.0],
-    };
     device.cmd_clear_color_image(
       self.clear_img,
       image,
       vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      &clear_color,
+      &IMG_COLOR,
       &[subresource_range],
     );
 
