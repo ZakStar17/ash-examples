@@ -42,7 +42,6 @@ fn create_primary_command_buffers(
   };
 
   log::debug!("Allocating command buffers");
-  // may fail if out of memory
   unsafe {
     device
       .allocate_command_buffers(&allocate_info)

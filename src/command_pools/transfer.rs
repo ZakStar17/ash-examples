@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{physical_device::QueueFamilies, IMG_HEIGHT, IMG_WIDTH};
+use crate::{physical_device::QueueFamilies, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 pub struct TransferCommandBufferPool {
   pool: vk::CommandPool,
@@ -54,7 +54,8 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    // acquire image ownership from compute queue
+    // acquire image from compute family
+    // change layout and access flags to transfer read (same as in the compute command buffer)
     let src_acquire = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
@@ -67,6 +68,7 @@ impl TransferCommandBufferPool {
       image: src_image,
       subresource_range,
     };
+    // change layout and access flags to transfer write
     let dst_transfer_dst_layout = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
@@ -89,20 +91,22 @@ impl TransferCommandBufferPool {
       &[src_acquire, dst_transfer_dst_layout],
     );
 
+    // 1 color layer
     let subresource_layers = vk::ImageSubresourceLayers {
       aspect_mask: vk::ImageAspectFlags::COLOR,
       mip_level: 0,
       base_array_layer: 0,
       layer_count: 1,
     };
+    // full image
     let copy_region = vk::ImageCopy {
       src_subresource: subresource_layers,
       src_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
       dst_subresource: subresource_layers,
       dst_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
       extent: vk::Extent3D {
-        width: IMG_WIDTH,
-        height: IMG_HEIGHT,
+        width: IMAGE_WIDTH,
+        height: IMAGE_HEIGHT,
         depth: 1,
       },
     };
@@ -115,12 +119,15 @@ impl TransferCommandBufferPool {
       &[copy_region],
     );
 
+    // change access flags to host read
     let make_dst_host_accessible = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
       src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
       dst_access_mask: vk::AccessFlags::HOST_READ,
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      // general layout in order for the image to always have the same internal format
+      // optimal layouts can change depending on the driver implementation
       new_layout: vk::ImageLayout::GENERAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,

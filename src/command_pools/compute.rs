@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{physical_device::QueueFamilies, IMG_COLOR};
+use crate::{physical_device::QueueFamilies, IMAGE_COLOR};
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
@@ -45,6 +45,7 @@ impl ComputeCommandBufferPool {
       .begin_command_buffer(self.clear_img, &begin_info)
       .expect("Failed to begin recording command buffer");
 
+    // image has 1 mip_level / 1 array layer
     let subresource_range = vk::ImageSubresourceRange {
       aspect_mask: vk::ImageAspectFlags::COLOR,
       base_mip_level: 0,
@@ -68,7 +69,7 @@ impl ComputeCommandBufferPool {
     device.cmd_pipeline_barrier(
       self.clear_img,
       vk::PipelineStageFlags::TRANSFER,
-      // if something were to be executed previously, then it should complete before transfer
+      // wait for transfer give TRANSFER_WRITE access flag
       vk::PipelineStageFlags::TRANSFER,
       vk::DependencyFlags::empty(),
       &[],
@@ -76,15 +77,17 @@ impl ComputeCommandBufferPool {
       &[transfer_dst_layout],
     );
 
+    // the actual clear color command
     device.cmd_clear_color_image(
       self.clear_img,
       image,
       vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      &IMG_COLOR,
+      &IMAGE_COLOR,
       &[subresource_range],
     );
 
-    // give image ownership to transfer queue
+    // release image to transfer queue family
+    // change layout and access flags to transfer read
     let release = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),

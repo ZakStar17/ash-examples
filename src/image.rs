@@ -3,13 +3,21 @@ use std::ptr;
 use ash::vk;
 use log::debug;
 
-use crate::{physical_device::PhysicalDevice, IMG_HEIGHT, IMG_WIDTH};
+use crate::{physical_device::PhysicalDevice, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 pub struct Image {
-  pub vk_img: vk::Image,
+  vk_img: vk::Image,
   pub memory: vk::DeviceMemory,
   pub memory_type_i: u32,
   pub memory_size: u64,
+}
+
+impl std::ops::Deref for Image {
+  type Target = vk::Image;
+
+  fn deref(&self) -> &Self::Target {
+    &self.vk_img
+  }
 }
 
 impl Image {
@@ -22,7 +30,7 @@ impl Image {
     optional_memory_properties: vk::MemoryPropertyFlags,
   ) -> Self {
     debug!("Creating image");
-    let vk_img = create_img(device, tiling, usage);
+    let vk_img = create_image(device, tiling, usage);
 
     debug!("Allocating memory for image");
     let (memory, memory_type_i, memory_size) = allocate_img_memory(
@@ -48,13 +56,66 @@ impl Image {
     }
   }
 
+  pub fn save_to_file<P>(&self, device: &ash::Device, physical_device: &PhysicalDevice, path: P)
+  where
+    P: AsRef<std::path::Path> {
+    // image memory needs to not be busy (getting used by device)
+
+    let mem_type_flags = physical_device
+      .get_memory_type(self.memory_type_i)
+      .property_flags;
+
+    assert!(mem_type_flags.contains(vk::MemoryPropertyFlags::HOST_VISIBLE));
+
+    if !mem_type_flags.contains(vk::MemoryPropertyFlags::HOST_COHERENT) {
+      // If the memory is not coherent, reading from it may give old results even if the GPU has
+      // finished
+      // Invalidate memory in order to make all previous change available to the host
+      let host_img_memory_range = vk::MappedMemoryRange {
+        s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
+        p_next: ptr::null(),
+        memory: self.memory,
+        offset: 0,
+        size: self.memory_size,
+      };
+      unsafe {
+        device
+          .invalidate_mapped_memory_ranges(&[host_img_memory_range])
+          .expect("Failed to invalidate host image memory_ranges");
+      }
+    }
+
+    // map entire memory
+    let image_bytes = unsafe {
+      let ptr = device
+        .map_memory(
+          self.memory,
+          0,
+          self.memory_size,
+          vk::MemoryMapFlags::empty(),
+        )
+        .expect("Failed to map image memory") as *const u8;
+      std::slice::from_raw_parts(ptr, self.memory_size as usize)
+    };
+
+    // read bytes and save to file
+    image::save_buffer(
+      path,
+      image_bytes,
+      IMAGE_WIDTH,
+      IMAGE_HEIGHT,
+      ::image::ColorType::Rgba8,
+    )
+    .expect("Failed to save image");
+  }
+
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
     device.destroy_image(self.vk_img, None);
     device.free_memory(self.memory, None);
   }
 }
 
-fn create_img(
+fn create_image(
   device: &ash::Device,
   tiling: vk::ImageTiling,
   usage: vk::ImageUsageFlags,
@@ -64,10 +125,10 @@ fn create_img(
     p_next: ptr::null(),
     flags: vk::ImageCreateFlags::empty(),
     image_type: vk::ImageType::TYPE_2D,
-    format: vk::Format::R8G8B8A8_UINT,
+    format: IMAGE_FORMAT,
     extent: vk::Extent3D {
-      width: IMG_WIDTH,
-      height: IMG_HEIGHT,
+      width: IMAGE_WIDTH,
+      height: IMAGE_HEIGHT,
       depth: 1,
     },
     mip_levels: 1,
@@ -88,7 +149,7 @@ fn create_img(
   }
 }
 
-// usually you will have multiple images of similar type that are going to use only one memory allocation
+// usually all images of similar type will use only one memory allocation
 fn allocate_img_memory(
   device: &ash::Device,
   physical_device: &PhysicalDevice,
@@ -98,14 +159,15 @@ fn allocate_img_memory(
 ) -> (vk::DeviceMemory, u32, u64) {
   let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
 
-  // Try to find optimal memory type. If it doesn't exist, try to find required memory type
+  // Try to find optimal memory type
+  // If it doesn't exist, try to find required memory type
   let memory_type = physical_device
     .find_optimal_memory_type(
       memory_requirements.memory_type_bits,
       required_memory_properties,
       optional_memory_properties,
     )
-    .expect("Failed to find appropriate memory type to allocate an image");
+    .expect("Failed to find appropriate memory type for allocating an image");
 
   let allocate_info = vk::MemoryAllocateInfo {
     s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,

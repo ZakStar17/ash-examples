@@ -10,7 +10,6 @@ mod utility;
 #[cfg(feature = "vl")]
 mod validation_layers;
 
-use ::image::save_buffer;
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
 use image::Image;
@@ -50,11 +49,17 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-pub const IMG_WIDTH: u32 = 400;
-pub const IMG_HEIGHT: u32 = 800;
-pub const IMG_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  uint32: [134, 206, 203, 255],
+pub const IMAGE_WIDTH: u32 = 40000;
+pub const IMAGE_HEIGHT: u32 = 800;
+
+// some formats may not be available
+pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
+// color value depends on format to be applied correctly
+pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  uint32: [134, 206, 203, 255], // rgba(134, 206, 203, 255)
 };
+
+const IMAGE_SAVE_PATH: &str = "image.png";
 
 fn main() {
   env_logger::init();
@@ -70,6 +75,7 @@ fn main() {
 
   let (device, queues) = logical_device::create_logical_device(&instance, &physical_device);
 
+  // GPU image with DEVICE_LOCAL flags
   let mut local_image = Image::new(
     &device,
     &physical_device,
@@ -78,6 +84,7 @@ fn main() {
     vk::MemoryPropertyFlags::DEVICE_LOCAL,
     vk::MemoryPropertyFlags::empty(),
   );
+  // CPU accessible image with HOST_VISIBLE flags
   let mut host_image = Image::new(
     &device,
     &physical_device,
@@ -93,14 +100,14 @@ fn main() {
 
   unsafe {
     compute_pool.reset(&device);
-    compute_pool.record_clear_img(&device, &physical_device.queue_families, local_image.vk_img);
+    compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
 
     transfer_pool.reset(&device);
     transfer_pool.record_copy_img_to_host(
       &device,
       &physical_device.queue_families,
-      local_image.vk_img,
-      host_image.vk_img,
+      *local_image,
+      *host_image,
     );
   }
 
@@ -167,47 +174,7 @@ fn main() {
       .expect("Failed to wait for fences");
   }
 
-  if !physical_device
-    .get_memory_type(host_image.memory_type_i)
-    .property_flags
-    .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
-  {
-    let host_img_memory_range = vk::MappedMemoryRange {
-      s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
-      p_next: ptr::null(),
-      memory: host_image.memory,
-      offset: 0,
-      size: host_image.memory_size,
-    };
-
-    unsafe {
-      device
-        .invalidate_mapped_memory_ranges(&[host_img_memory_range])
-        .expect("Failed to invalidate host image memory_ranges");
-    }
-  }
-
-  let image_bytes = unsafe {
-    let ptr = device
-      .map_memory(
-        host_image.memory,
-        0,
-        host_image.memory_size,
-        vk::MemoryMapFlags::empty(),
-      )
-      .expect("Failed to map image memory") as *const u8;
-    std::slice::from_raw_parts(ptr, host_image.memory_size as usize)
-  };
-
-  //println!("Result: {:?}", image_bytes);
-  save_buffer(
-    "image.png",
-    image_bytes,
-    IMG_WIDTH,
-    IMG_HEIGHT,
-    ::image::ColorType::Rgba8,
-  )
-  .expect("Failed to save image");
+  local_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
 
 
   // Cleanup

@@ -128,10 +128,10 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   );
 }
 
-fn check_extension_support(instance: &ash::Instance, device: &vk::PhysicalDevice) -> bool {
+fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
   let properties = unsafe {
     instance
-      .enumerate_device_extension_properties(*device)
+      .enumerate_device_extension_properties(device)
       .expect("Failed to get device extension properties")
   };
 
@@ -155,11 +155,11 @@ unsafe fn select_physical_device(
     .enumerate_physical_devices()
     .expect("Failed to enumerate physical devices")
     .into_iter()
-    .filter(|physical_device| {
+    .filter(|&physical_device| {
       // Filter devices that are not supported
       // You should check for any feature or limit support that your application might need
 
-      let properties = instance.get_physical_device_properties(*physical_device);
+      let properties = instance.get_physical_device_properties(physical_device);
       log_device_properties(&properties);
 
       if properties.api_version < TARGET_API_VERSION {
