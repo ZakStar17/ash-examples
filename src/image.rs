@@ -123,6 +123,7 @@ fn create_image(
   tiling: vk::ImageTiling,
   usage: vk::ImageUsageFlags,
 ) -> vk::Image {
+  // 1 color layer 2d image
   let create_info = vk::ImageCreateInfo {
     s_type: vk::StructureType::IMAGE_CREATE_INFO,
     p_next: ptr::null(),
@@ -141,7 +142,7 @@ fn create_image(
     usage,
     sharing_mode: vk::SharingMode::EXCLUSIVE,
     queue_family_index_count: 0,
-    p_queue_family_indices: ptr::null(), // ignored if sharing mode is concurrent
+    p_queue_family_indices: ptr::null(), // ignored if sharing mode is exclusive
     initial_layout: vk::ImageLayout::UNDEFINED,
   };
 
@@ -162,8 +163,8 @@ fn allocate_image_memory(
 ) -> (vk::DeviceMemory, u32, u64) {
   let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
 
-  // in this case you can sub allocate multiple times for the image and individually manage each allocation,
-  // but do you really need an image this big
+  // in this case you can sub allocate multiple times for the image and individually manage each 
+  // allocation
   if memory_requirements.size >= physical_device.get_max_memory_allocation_size() {
     panic!("Memory required to allocate an image ({}mb) is higher than the maximum allowed on the device ({}mb)", 
       memory_requirements.size / 1_000_000,
@@ -196,6 +197,11 @@ fn allocate_image_memory(
     memory_type_index: memory_type,
   };
 
+  // Even if memory requirements are less than heap size and max memory allocation size, this
+  // operation may still fail because of no available memory
+  // There is no reliable a way to know beforehand if a allocate operation is going to succeed or
+  // not, so handle errors accordingly
+  // see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkAllocateMemory.html
   let memory = unsafe {
     device
       .allocate_memory(&allocate_info, None)

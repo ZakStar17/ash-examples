@@ -49,8 +49,8 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
 // try putting some very big numbers
-pub const IMAGE_WIDTH: u32 = 2400;
-pub const IMAGE_HEIGHT: u32 = 2400;
+pub const IMAGE_WIDTH: u32 = 1920;
+pub const IMAGE_HEIGHT: u32 = 1080;
 
 // some formats may not be available
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
@@ -60,6 +60,32 @@ pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
 };
 
 const IMAGE_SAVE_PATH: &str = "image.png";
+
+fn create_semaphore(device: &ash::Device) -> vk::Semaphore {
+  let create_info = vk::SemaphoreCreateInfo {
+    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SemaphoreCreateFlags::empty(),
+  };
+  unsafe {
+    device
+      .create_semaphore(&create_info, None)
+      .expect("Failed to create a semaphore")
+  }
+}
+
+fn create_fence(device: &ash::Device) -> vk::Fence {
+  let create_info = vk::FenceCreateInfo {
+    s_type: vk::StructureType::FENCE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::FenceCreateFlags::empty(),
+  };
+  unsafe {
+    device
+      .create_fence(&create_info, None)
+      .expect("Failed to create a fence")
+  }
+}
 
 fn main() {
   env_logger::init();
@@ -98,6 +124,7 @@ fn main() {
   let mut transfer_pool =
     TransferCommandBufferPool::create(&device, &physical_device.queue_families);
 
+  // record command buffers
   unsafe {
     compute_pool.reset(&device);
     compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
@@ -111,18 +138,7 @@ fn main() {
     );
   }
 
-  let create_info = vk::SemaphoreCreateInfo {
-    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::SemaphoreCreateFlags::empty(),
-  };
-  let image_clear_finished = unsafe {
-    device
-      .create_semaphore(&create_info, None)
-      .expect("Failed to create a semaphore")
-  };
-  let stage_flags = vk::PipelineStageFlags::TRANSFER;
-
+  let image_clear_finished = create_semaphore(&device);
   let clear_image_submit = vk::SubmitInfo {
     s_type: vk::StructureType::SUBMIT_INFO,
     p_next: ptr::null(),
@@ -134,31 +150,25 @@ fn main() {
     signal_semaphore_count: 1,
     p_signal_semaphores: addr_of!(image_clear_finished),
   };
+  let wait_for = vk::PipelineStageFlags::TRANSFER;
   let transfer_image_submit = vk::SubmitInfo {
     s_type: vk::StructureType::SUBMIT_INFO,
     p_next: ptr::null(),
     wait_semaphore_count: 1,
     p_wait_semaphores: addr_of!(image_clear_finished),
-    p_wait_dst_stage_mask: addr_of!(stage_flags),
+    p_wait_dst_stage_mask: addr_of!(wait_for),
     command_buffer_count: 1,
     p_command_buffers: addr_of!(transfer_pool.copy_to_host),
     signal_semaphore_count: 0,
     p_signal_semaphores: ptr::null(),
   };
 
-  let create_info = vk::FenceCreateInfo {
-    s_type: vk::StructureType::FENCE_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::FenceCreateFlags::empty(),
-  };
-  let operation_finished = unsafe {
-    device
-      .create_fence(&create_info, None)
-      .expect("Failed to create a fence")
-  };
+  // create a fence to signal when all operation have finished
+  let operation_finished = create_fence(&device);
 
   println!("Submitting work...");
   unsafe {
+    // note: you can make multiple submits with device.queue_submit2
     device
       .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
       .expect("Failed to submit compute");
