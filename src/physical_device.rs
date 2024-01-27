@@ -1,12 +1,36 @@
 use std::ops::BitOr;
 
 use ash::vk;
-use log::{debug, info};
 
 use crate::{
   utility::{self, c_char_array_to_string},
-  REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+  IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
 };
+
+macro_rules! const_flag_bitor {
+  ($t:ty, $x:expr, $($y:expr),+) => {
+    // ash flags don't implement const bitor
+    <$t>::from_raw(
+      $x.as_raw() $(| $y.as_raw())+,
+    )
+  };
+}
+
+// kinda overkill
+const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
+  vk::FormatFeatureFlags,
+  vk::FormatFeatureFlags::TRANSFER_SRC,
+  vk::FormatFeatureFlags::TRANSFER_DST
+);
+const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
+  vk::FormatFeatureFlags::TRANSFER_DST;
+
+const REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL: vk::ImageUsageFlags = const_flag_bitor!(
+  vk::ImageUsageFlags,
+  vk::ImageUsageFlags::TRANSFER_SRC,
+  vk::ImageUsageFlags::TRANSFER_DST
+);
+const REQUIRED_IMAGE_USAGE_FLAGS_LINEAR: vk::ImageUsageFlags = vk::ImageUsageFlags::TRANSFER_DST;
 
 #[derive(Debug)]
 pub struct QueueFamily {
@@ -106,7 +130,7 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
   let driver_version = vendor.parse_driver_version(properties.driver_version);
 
-  info!(
+  log::info!(
     "\nFound physical device \"{}\":
     API Version: {},
     Vendor: {},
@@ -148,6 +172,83 @@ fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice)
   .is_empty()
 }
 
+fn check_format_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+  let properties =
+    unsafe { instance.get_physical_device_format_properties(physical_device, IMAGE_FORMAT) };
+
+  if !properties
+    .optimal_tiling_features
+    .contains(REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL)
+  {
+    return false;
+  }
+
+  if !properties
+    .linear_tiling_features
+    .contains(REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR)
+  {
+    return false;
+  }
+
+  true
+}
+
+fn check_image_size_support(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+  tiling: vk::ImageTiling,
+  usage: vk::ImageUsageFlags,
+) -> bool {
+  let properties = unsafe {
+    instance
+      .get_physical_device_image_format_properties(
+        physical_device,
+        IMAGE_FORMAT,
+        vk::ImageType::TYPE_2D,
+        tiling,
+        usage,
+        vk::ImageCreateFlags::empty(),
+      )
+      .expect("Failed to query for image format properties")
+  };
+  log::debug!(
+    "{} image {:?} properties: {:#?}",
+    match tiling {
+      vk::ImageTiling::LINEAR => "Linear",
+      vk::ImageTiling::OPTIMAL => "Optimal",
+      _ => panic!(),
+    },
+    IMAGE_FORMAT,
+    properties
+  );
+
+  IMAGE_WIDTH <= properties.max_extent.width && IMAGE_HEIGHT <= properties.max_extent.height
+}
+
+fn check_linear_tiling_image_size_support(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+) -> bool {
+  check_image_size_support(
+    instance,
+    physical_device,
+    vk::ImageTiling::LINEAR,
+    REQUIRED_IMAGE_USAGE_FLAGS_LINEAR,
+  )
+}
+
+fn check_optimal_tiling_image_size_support(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+) -> bool {
+  check_image_size_support(
+    instance,
+    physical_device,
+    vk::ImageTiling::OPTIMAL,
+    REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL,
+  )
+}
+
 unsafe fn select_physical_device(
   instance: &ash::Instance,
 ) -> Option<(vk::PhysicalDevice, QueueFamilies)> {
@@ -163,7 +264,7 @@ unsafe fn select_physical_device(
       log_device_properties(&properties);
 
       if properties.api_version < TARGET_API_VERSION {
-        info!(
+        log::info!(
           "Skipped physical device: Device API version is less than targeted by the application"
         );
         return false;
@@ -171,7 +272,17 @@ unsafe fn select_physical_device(
 
       // check if device supports all required extensions
       if !check_extension_support(instance, physical_device) {
-        info!("Skipped physical device: Device does not support all required extensions");
+        log::info!("Skipped physical device: Device does not support all required extensions");
+        return false;
+      }
+
+      if !check_format_support(instance, physical_device) {
+        log::warn!("Skipped physical device: Device does not support required formats");
+        return false;
+      }
+
+      if !check_linear_tiling_image_size_support(instance, physical_device) || !check_optimal_tiling_image_size_support(instance, physical_device) {
+        log::warn!("Skipped physical device: Application image size requirements are bigger than supported by the device");
         return false;
       }
 
@@ -219,7 +330,7 @@ unsafe fn select_physical_device(
       }
 
       if graphics.is_none() {
-        info!("Skipped physical device: Device does not support graphics");
+        log::info!("Skipped physical device: Device does not support graphics");
         return None;
       }
 
@@ -272,6 +383,7 @@ pub struct PhysicalDevice {
   pub vk_device: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
+  properties: vk::PhysicalDeviceProperties,
 }
 
 impl PhysicalDevice {
@@ -284,7 +396,7 @@ impl PhysicalDevice {
     let queue_family_properties =
       instance.get_physical_device_queue_family_properties(physical_device);
 
-    info!(
+    log::info!(
       "Using physical device \"{}\"",
       c_char_array_to_string(&properties.device_name)
     );
@@ -295,6 +407,7 @@ impl PhysicalDevice {
       vk_device: physical_device,
       mem_properties,
       queue_families,
+      properties,
     }
   }
 
@@ -332,14 +445,24 @@ impl PhysicalDevice {
   pub fn get_memory_type(&self, type_i: u32) -> vk::MemoryType {
     self.mem_properties.memory_types[type_i as usize]
   }
+
+  pub fn get_memory_type_heap(&self, type_i: u32) -> vk::MemoryHeap {
+    let mem_type = self.get_memory_type(type_i);
+    self.mem_properties.memory_heaps[mem_type.heap_index as usize]
+  }
+
+  pub fn max_memory_allocation_size(&self) -> u32 {
+    // todo: wrong one
+    self.properties.limits.max_memory_allocation_count
+  }
 }
 
 fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
-  debug!("Queue family properties: {:#?}", properties);
+  log::debug!("Queue family properties: {:#?}", properties);
 }
 
 fn print_device_memory_debug_info(mem_properties: &vk::PhysicalDeviceMemoryProperties) {
-  debug!("Available memory heaps:");
+  log::debug!("Available memory heaps:");
   for heap_i in 0..mem_properties.memory_heap_count {
     let heap = mem_properties.memory_heaps[heap_i as usize];
     let heap_flags = if heap.flags.is_empty() {
@@ -348,7 +471,7 @@ fn print_device_memory_debug_info(mem_properties: &vk::PhysicalDeviceMemoryPrope
       format!("heap flags [{:?}]", heap.flags)
     };
 
-    debug!(
+    log::debug!(
       "    {} -> {}mb with {} and attributed memory types:",
       heap_i,
       heap.size / 1000000,
@@ -361,7 +484,7 @@ fn print_device_memory_debug_info(mem_properties: &vk::PhysicalDeviceMemoryPrope
       }
 
       let flags = mem_type.property_flags;
-      debug!(
+      log::debug!(
         "        {} -> {}",
         type_i,
         if flags.is_empty() {

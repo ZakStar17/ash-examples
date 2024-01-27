@@ -49,8 +49,8 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-pub const IMAGE_WIDTH: u32 = 40000;
-pub const IMAGE_HEIGHT: u32 = 800;
+pub const IMAGE_WIDTH: u32 = 30000;
+pub const IMAGE_HEIGHT: u32 = 30000;
 
 // some formats may not be available
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
@@ -174,8 +174,7 @@ fn main() {
       .expect("Failed to wait for fences");
   }
 
-  local_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
-
+  host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
 
   // Cleanup
   unsafe {

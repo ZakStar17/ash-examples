@@ -58,7 +58,8 @@ impl Image {
 
   pub fn save_to_file<P>(&self, device: &ash::Device, physical_device: &PhysicalDevice, path: P)
   where
-    P: AsRef<std::path::Path> {
+    P: AsRef<std::path::Path>,
+  {
     // image memory needs to not be busy (getting used by device)
 
     let mem_type_flags = physical_device
@@ -158,6 +159,13 @@ fn allocate_img_memory(
   optional_memory_properties: vk::MemoryPropertyFlags,
 ) -> (vk::DeviceMemory, u32, u64) {
   let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
+
+  // in this case you can sub allocate multiple times for the image and individually manage each allocation,
+  // but do you really need an image this big
+  if memory_requirements.size >= physical_device.max_memory_allocation_size() as u64 {
+    panic!("Memory required to allocate an image ({}mb) is higher than the maximum allowed on the device ({}mb)", memory_requirements.size / 1_000_000, physical_device.max_memory_allocation_size() / 1_000_000);
+  }
+  // todo: same for heap
 
   // Try to find optimal memory type
   // If it doesn't exist, try to find required memory type
