@@ -14,7 +14,7 @@ impl TransferCommandBufferPool {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index());
 
-    let copy_to_host = super::create_primary_command_buffers(device, pool, 1)[0];
+    let copy_to_host = super::allocate_primary_command_buffers(device, pool, 1)[0];
 
     Self { pool, copy_to_host }
   }

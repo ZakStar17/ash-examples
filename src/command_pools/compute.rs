@@ -14,7 +14,7 @@ impl ComputeCommandBufferPool {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_compute_index());
 
-    let clear_img = super::create_primary_command_buffers(device, pool, 1)[0];
+    let clear_img = super::allocate_primary_command_buffers(device, pool, 1)[0];
 
     Self { pool, clear_img }
   }

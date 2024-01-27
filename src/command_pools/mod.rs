@@ -28,7 +28,7 @@ pub fn create_command_pool(
   }
 }
 
-fn create_primary_command_buffers(
+fn allocate_primary_command_buffers(
   device: &ash::Device,
   command_pool: vk::CommandPool,
   command_buffer_count: u32,
