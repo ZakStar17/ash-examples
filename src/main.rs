@@ -215,10 +215,13 @@ fn main() {
     p_wait_semaphores: ptr::null(),
     p_wait_dst_stage_mask: ptr::null(),
     command_buffer_count: 1,
-    p_command_buffers: addr_of!(compute_pool.clear_img),
+    p_command_buffers: addr_of!(compute_pool.storage_image),
     signal_semaphore_count: 1,
     p_signal_semaphores: addr_of!(image_clear_finished),
   };
+  // compute_pool.storage_image last pipeline barriers makes sure that all operations finish before
+  // TRANSFER, so that's the dst_mask for the semaphore
+  // It cannot be COMPUTE_SHADER as the transfer queue cannot use it as its src_mask
   let wait_for = vk::PipelineStageFlags::TRANSFER;
   let transfer_image_submit = vk::SubmitInfo {
     s_type: vk::StructureType::SUBMIT_INFO,

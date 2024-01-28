@@ -55,7 +55,7 @@ impl TransferCommandBufferPool {
     };
 
     // acquire image from compute family
-    // change layout and access flags to transfer read (same as in the compute command buffer)
+    // change layout to TRANSFER_SRC_OPTIMAL
     let src_acquire = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),

@@ -64,7 +64,7 @@ impl ComputePipeline {
 
     Self {
       layout,
-      pipeline: pipeline,
+      pipeline,
     }
   }
 

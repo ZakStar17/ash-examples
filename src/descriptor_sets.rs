@@ -21,7 +21,7 @@ impl DescriptorSets {
   }
 }
 
-pub fn create_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
+fn create_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
   let bindings = [vk::DescriptorSetLayoutBinding {
     binding: 0,
     descriptor_type: vk::DescriptorType::STORAGE_IMAGE,
@@ -93,6 +93,7 @@ impl DescriptorSetPool {
     let image_info = vk::DescriptorImageInfo {
       sampler,
       image_view: view,
+      // GENERAL in order for to be used as a storage image
       image_layout: vk::ImageLayout::GENERAL,
     };
 

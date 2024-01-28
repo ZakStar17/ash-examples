@@ -12,7 +12,8 @@ use crate::{
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
-  pub clear_img: vk::CommandBuffer,
+  // executes a compute shader that writes to a storage image
+  pub storage_image: vk::CommandBuffer,
 }
 
 impl ComputeCommandBufferPool {
@@ -20,9 +21,9 @@ impl ComputeCommandBufferPool {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_compute_index());
 
-    let clear_img = super::allocate_primary_command_buffers(device, pool, 1)[0];
+    let storage_image = super::allocate_primary_command_buffers(device, pool, 1)[0];
 
-    Self { pool, clear_img }
+    Self { pool, storage_image }
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) {
@@ -43,6 +44,7 @@ impl ComputeCommandBufferPool {
     descriptor_sets: &DescriptorSets,
     image: vk::Image,
   ) {
+    let cb = self.storage_image;
     let begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
       p_next: ptr::null(),
@@ -50,7 +52,7 @@ impl ComputeCommandBufferPool {
       p_inheritance_info: ptr::null(),
     };
     device
-      .begin_command_buffer(self.clear_img, &begin_info)
+      .begin_command_buffer(cb, &begin_info)
       .expect("Failed to begin recording command buffer");
 
     // image has 1 mip_level / 1 array layer
@@ -68,6 +70,7 @@ impl ComputeCommandBufferPool {
       src_access_mask: vk::AccessFlags::empty(),
       dst_access_mask: vk::AccessFlags::SHADER_WRITE,
       old_layout: vk::ImageLayout::UNDEFINED,
+      // image layout is required to be GENERAL in order to be used as storage in a shader
       new_layout: vk::ImageLayout::GENERAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -75,8 +78,9 @@ impl ComputeCommandBufferPool {
       subresource_range,
     };
     device.cmd_pipeline_barrier(
-      self.clear_img,
+      cb,
       vk::PipelineStageFlags::COMPUTE_SHADER,
+      // image should be ready for when the shader executes
       vk::PipelineStageFlags::COMPUTE_SHADER,
       vk::DependencyFlags::empty(),
       &[],
@@ -84,8 +88,9 @@ impl ComputeCommandBufferPool {
       &[shader_write_layout],
     );
 
+    // descriptor set should already have the image info written to it
     device.cmd_bind_descriptor_sets(
-      self.clear_img,
+      cb,
       vk::PipelineBindPoint::COMPUTE,
       pipeline.layout,
       0,
@@ -93,12 +98,12 @@ impl ComputeCommandBufferPool {
       &[],
     );
     device.cmd_bind_pipeline(
-      self.clear_img,
+      cb,
       vk::PipelineBindPoint::COMPUTE,
       pipeline.pipeline,
     );
     device.cmd_dispatch(
-      self.clear_img,
+      cb,
       IMAGE_WIDTH / SHADER_GROUP_SIZE_X + 1,
       IMAGE_HEIGHT / SHADER_GROUP_SIZE_Y + 1,
       1,
@@ -119,8 +124,8 @@ impl ComputeCommandBufferPool {
       subresource_range,
     };
     device.cmd_pipeline_barrier(
-      self.clear_img,
-      // waiting for clear color operation
+      cb,
+      // wait for the shader to complete before transferring
       vk::PipelineStageFlags::COMPUTE_SHADER,
       vk::PipelineStageFlags::TRANSFER,
       vk::DependencyFlags::empty(),
@@ -130,7 +135,7 @@ impl ComputeCommandBufferPool {
     );
 
     device
-      .end_command_buffer(self.clear_img)
+      .end_command_buffer(cb)
       .expect("Failed to finish recording command buffer");
   }
 }
