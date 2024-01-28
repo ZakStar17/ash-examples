@@ -2,7 +2,7 @@ use std::{fs::File, io::Read, path::Path, ptr};
 
 use ash::vk;
 
-mod shader;
+pub mod shader;
 
 pub use shader::Shader;
 

@@ -59,9 +59,9 @@ impl TransferCommandBufferPool {
     let src_acquire = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+      src_access_mask: vk::AccessFlags::TRANSFER_READ,
       dst_access_mask: vk::AccessFlags::TRANSFER_READ,
-      old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      old_layout: vk::ImageLayout::GENERAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
       src_queue_family_index: queue_families.get_compute_index(),
       dst_queue_family_index: queue_families.get_transfer_index(),

@@ -1,8 +1,14 @@
 use std::ptr;
 
-use ash::vk::{self, Pipeline};
+use ash::vk;
 
-use crate::{device::QueueFamilies, IMAGE_COLOR};
+use crate::{
+  descriptor_sets::DescriptorSets,
+  device::QueueFamilies,
+  pipeline::ComputePipeline,
+  shaders::shader::{SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y},
+  IMAGE_HEIGHT, IMAGE_WIDTH,
+};
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
@@ -33,7 +39,8 @@ impl ComputeCommandBufferPool {
     &mut self,
     device: &ash::Device,
     queue_families: &QueueFamilies,
-    pipeline: &Pipeline,
+    pipeline: &ComputePipeline,
+    descriptor_sets: &DescriptorSets,
     image: vk::Image,
   ) {
     let begin_info = vk::CommandBufferBeginInfo {
@@ -55,13 +62,13 @@ impl ComputeCommandBufferPool {
       layer_count: 1,
     };
 
-    let transfer_dst_layout = vk::ImageMemoryBarrier {
+    let shader_write_layout = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
       src_access_mask: vk::AccessFlags::empty(),
-      dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+      dst_access_mask: vk::AccessFlags::SHADER_WRITE,
       old_layout: vk::ImageLayout::UNDEFINED,
-      new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      new_layout: vk::ImageLayout::GENERAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       image,
@@ -69,22 +76,32 @@ impl ComputeCommandBufferPool {
     };
     device.cmd_pipeline_barrier(
       self.clear_img,
-      vk::PipelineStageFlags::TRANSFER,
-      // wait for transfer give TRANSFER_WRITE access flag
-      vk::PipelineStageFlags::TRANSFER,
+      vk::PipelineStageFlags::COMPUTE_SHADER,
+      vk::PipelineStageFlags::COMPUTE_SHADER,
       vk::DependencyFlags::empty(),
       &[],
       &[],
-      &[transfer_dst_layout],
+      &[shader_write_layout],
     );
 
-    // the actual clear color command
-    device.cmd_clear_color_image(
+    device.cmd_bind_descriptor_sets(
       self.clear_img,
-      image,
-      vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      &IMAGE_COLOR,
-      &[subresource_range],
+      vk::PipelineBindPoint::COMPUTE,
+      pipeline.layout,
+      0,
+      &[descriptor_sets.pool.mandelbrot],
+      &[],
+    );
+    device.cmd_bind_pipeline(
+      self.clear_img,
+      vk::PipelineBindPoint::COMPUTE,
+      pipeline.pipeline,
+    );
+    device.cmd_dispatch(
+      self.clear_img,
+      IMAGE_WIDTH / SHADER_GROUP_SIZE_X + 1,
+      IMAGE_HEIGHT / SHADER_GROUP_SIZE_Y + 1,
+      1,
     );
 
     // release image to transfer queue family
@@ -92,9 +109,9 @@ impl ComputeCommandBufferPool {
     let release = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+      src_access_mask: vk::AccessFlags::SHADER_WRITE,
       dst_access_mask: vk::AccessFlags::TRANSFER_READ,
-      old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      old_layout: vk::ImageLayout::GENERAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
       src_queue_family_index: queue_families.get_compute_index(),
       dst_queue_family_index: queue_families.get_transfer_index(),
@@ -104,7 +121,7 @@ impl ComputeCommandBufferPool {
     device.cmd_pipeline_barrier(
       self.clear_img,
       // waiting for clear color operation
-      vk::PipelineStageFlags::TRANSFER,
+      vk::PipelineStageFlags::COMPUTE_SHADER,
       vk::PipelineStageFlags::TRANSFER,
       vk::DependencyFlags::empty(),
       &[],

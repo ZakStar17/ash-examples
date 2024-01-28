@@ -58,11 +58,7 @@ pub const IMAGE_WIDTH: u32 = 1920;
 pub const IMAGE_HEIGHT: u32 = 1080;
 
 // some formats may not be available
-pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
-// color value depends on format to be applied correctly
-pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  uint32: [134, 206, 203, 255], // rgba(134, 206, 203, 255)
-};
+pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
 const IMAGE_SAVE_PATH: &str = "image.png";
 
@@ -111,7 +107,9 @@ fn main() {
     &device,
     &physical_device,
     vk::ImageTiling::OPTIMAL,
-    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST).bitor(vk::ImageUsageFlags::STORAGE),
+    vk::ImageUsageFlags::TRANSFER_SRC
+      .bitor(vk::ImageUsageFlags::TRANSFER_DST)
+      .bitor(vk::ImageUsageFlags::STORAGE),
     vk::MemoryPropertyFlags::DEVICE_LOCAL,
     vk::MemoryPropertyFlags::empty(),
   );
@@ -195,7 +193,8 @@ fn main() {
     compute_pool.record_mandelbrot(
       &device,
       &physical_device.queue_families,
-      &pipeline.pipeline,
+      &pipeline,
+      &descriptor_sets,
       *local_image,
     );
 
