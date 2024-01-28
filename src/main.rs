@@ -54,8 +54,8 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
 // try putting some very big numbers
-pub const IMAGE_WIDTH: u32 = 1920;
-pub const IMAGE_HEIGHT: u32 = 1080;
+pub const IMAGE_WIDTH: u32 = 8000;
+pub const IMAGE_HEIGHT: u32 = 8000;
 
 // some formats may not be available
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
