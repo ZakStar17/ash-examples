@@ -127,7 +127,7 @@ impl TransferCommandBufferPool {
       dst_access_mask: vk::AccessFlags::HOST_READ,
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       // general layout in order for the image to always have the same internal format
-      // optimal layouts can have different internal representations depending on the driver 
+      // optimal layouts can have different internal representations depending on the driver
       //    implementation
       new_layout: vk::ImageLayout::GENERAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,

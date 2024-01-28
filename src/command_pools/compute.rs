@@ -1,6 +1,6 @@
 use std::ptr;
 
-use ash::vk;
+use ash::vk::{self, Pipeline};
 
 use crate::{device::QueueFamilies, IMAGE_COLOR};
 
@@ -29,10 +29,11 @@ impl ComputeCommandBufferPool {
     device.destroy_command_pool(self.pool, None);
   }
 
-  pub unsafe fn record_clear_img(
+  pub unsafe fn record_mandelbrot(
     &mut self,
     device: &ash::Device,
     queue_families: &QueueFamilies,
+    pipeline: &Pipeline,
     image: vk::Image,
   ) {
     let begin_info = vk::CommandBufferBeginInfo {

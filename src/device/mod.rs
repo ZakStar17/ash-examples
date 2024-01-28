@@ -1,7 +1,7 @@
+mod logical_device;
 mod physical_device;
 mod queues;
 mod vendor;
-mod logical_device;
 
 use std::{
   ffi::c_void,
@@ -10,8 +10,8 @@ use std::{
 };
 
 use ash::vk;
-pub use physical_device::PhysicalDevice;
 pub use logical_device::create_logical_device;
+pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
 use crate::{

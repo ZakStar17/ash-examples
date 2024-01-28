@@ -1,8 +1,11 @@
 mod command_pools;
+mod descriptor_sets;
+mod device;
 mod entry;
 mod image;
 mod instance;
-mod device;
+mod pipeline;
+mod shaders;
 mod utility;
 
 // validation layers module will only exist if validation layers are enabled
@@ -11,13 +14,15 @@ mod validation_layers;
 
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
-use image::Image;
 use device::PhysicalDevice;
+use image::Image;
 use std::{
   ffi::CStr,
   ops::BitOr,
   ptr::{self, addr_of},
 };
+
+use crate::{descriptor_sets::DescriptorSets, pipeline::ComputePipeline};
 
 // simple macro to transmute literals to static CStr
 macro_rules! cstr {
@@ -106,7 +111,7 @@ fn main() {
     &device,
     &physical_device,
     vk::ImageTiling::OPTIMAL,
-    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST).bitor(vk::ImageUsageFlags::STORAGE),
     vk::MemoryPropertyFlags::DEVICE_LOCAL,
     vk::MemoryPropertyFlags::empty(),
   );
@@ -120,6 +125,66 @@ fn main() {
     vk::MemoryPropertyFlags::HOST_CACHED,
   );
 
+  let sampler_create_info = vk::SamplerCreateInfo {
+    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SamplerCreateFlags::empty(),
+    mag_filter: vk::Filter::NEAREST,
+    min_filter: vk::Filter::NEAREST,
+    address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    anisotropy_enable: vk::FALSE,
+    max_anisotropy: 0.0,
+    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+    unnormalized_coordinates: vk::TRUE,
+    compare_enable: vk::FALSE,
+    compare_op: vk::CompareOp::NEVER,
+    mipmap_mode: vk::SamplerMipmapMode::NEAREST,
+    mip_lod_bias: 0.0,
+    max_lod: 0.0,
+    min_lod: 0.0,
+  };
+  let sampler = unsafe {
+    device
+      .create_sampler(&sampler_create_info, None)
+      .expect("Failed to create a sampler")
+  };
+
+  let image_view_create_info = vk::ImageViewCreateInfo {
+    s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::ImageViewCreateFlags::empty(),
+    image: *local_image,
+    view_type: vk::ImageViewType::TYPE_2D,
+    format: IMAGE_FORMAT,
+    components: vk::ComponentMapping {
+      r: vk::ComponentSwizzle::IDENTITY,
+      g: vk::ComponentSwizzle::IDENTITY,
+      b: vk::ComponentSwizzle::IDENTITY,
+      a: vk::ComponentSwizzle::IDENTITY,
+    },
+    subresource_range: vk::ImageSubresourceRange {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      base_mip_level: 0,
+      level_count: 1,
+      base_array_layer: 0,
+      layer_count: 1,
+    },
+  };
+  let image_view = unsafe {
+    device
+      .create_image_view(&image_view_create_info, None)
+      .expect("Failed to create an image view")
+  };
+
+  let mut descriptor_sets = DescriptorSets::new(&device);
+  descriptor_sets
+    .pool
+    .write_image(&device, image_view, sampler);
+
+  let mut pipeline = ComputePipeline::create(&device, &descriptor_sets);
+
   let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
   let mut transfer_pool =
     TransferCommandBufferPool::create(&device, &physical_device.queue_families);
@@ -127,7 +192,12 @@ fn main() {
   // record command buffers
   unsafe {
     compute_pool.reset(&device);
-    compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
+    compute_pool.record_mandelbrot(
+      &device,
+      &physical_device.queue_families,
+      &pipeline.pipeline,
+      *local_image,
+    );
 
     transfer_pool.reset(&device);
     transfer_pool.record_copy_img_to_host(
@@ -197,18 +267,23 @@ fn main() {
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
-    log::debug!("Destroying fence");
     device.destroy_fence(operation_finished, None);
 
-    log::debug!("Destroying semaphore");
     device.destroy_semaphore(image_clear_finished, None);
 
     log::debug!("Destroying command pools");
     compute_pool.destroy_self(&device);
     transfer_pool.destroy_self(&device);
 
+    pipeline.destroy_self(&device);
+    descriptor_sets.destroy_self(&device);
+
+    device.destroy_image_view(image_view, None);
+
     local_image.destroy_self(&device);
     host_image.destroy_self(&device);
+
+    device.destroy_sampler(sampler, None);
 
     // destroying a logical device also implicitly destroys all associated queues
     log::debug!("Destroying logical device");
