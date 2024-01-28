@@ -6,7 +6,7 @@ The module for the validation layers is only compiled when the `vl` feature is e
 
 You can run this example with:
 
-`RUST_LOG=debug cargo run --bin instance`
+`RUST_LOG=debug cargo run`
 
 ## Cargo features
 
