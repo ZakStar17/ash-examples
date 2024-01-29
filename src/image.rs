@@ -86,7 +86,6 @@ impl Image {
     }
   }
 
-
   pub fn save_to_file<P>(&self, device: &ash::Device, physical_device: &PhysicalDevice, path: P)
   where
     P: AsRef<std::path::Path>,

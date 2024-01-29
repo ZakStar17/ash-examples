@@ -17,7 +17,8 @@ pub use queues::{QueueFamilies, Queues};
 use crate::{
   device::vendor::Vendor,
   utility::{self, c_char_array_to_string},
-  IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+  IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, SHADER_GROUP_SIZE_X,
+  SHADER_GROUP_SIZE_Y, TARGET_API_VERSION,
 };
 
 macro_rules! const_flag_bitor {
@@ -210,6 +211,19 @@ unsafe fn select_physical_device(
       // this was a extension before Vulkan 1.3
       if features13.maintenance4 == vk::FALSE {
         log::warn!("Skipped physical device: Maintenance4 feature is not supported");
+        return false;
+      }
+
+      if SHADER_GROUP_SIZE_X > properties.limits.max_compute_work_group_size[0] {
+        log::warn!("Skipped physical device: Device does not support required compute shader local group size in the X dimension");
+        return false;
+      }
+      if SHADER_GROUP_SIZE_Y > properties.limits.max_compute_work_group_size[1] {
+        log::warn!("Skipped physical device: Device does not support required compute shader local group size in the X dimension");
+        return false;
+      }
+      if SHADER_GROUP_SIZE_X * SHADER_GROUP_SIZE_Y > properties.limits.max_compute_work_group_invocations {
+        log::warn!("Skipped physical device: Device does not support required compute shader total local group size requirements");
         return false;
       }
 

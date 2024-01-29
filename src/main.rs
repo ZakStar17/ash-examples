@@ -61,11 +61,15 @@ pub const IMAGE_HEIGHT: u32 = 4000;
 // what is used in the shader
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
-// these could be calculated from image dimensions
+// Size of each local group in the shader invocation
+// Normally these would be calculated from image dimensions and clapped to respect device limits
+// but for this example a small local group size should suffice (limits are still checked in
+// physical device selection)
 pub const SHADER_GROUP_SIZE_X: u32 = 16;
 pub const SHADER_GROUP_SIZE_Y: u32 = 16;
 
 // mandelbrot constants
+// these are passed as specialization constants in the shader
 pub const MAX_ITERATIONS: u32 = 10000;
 pub const FOCAL_POINT: [f32; 2] = [-0.765, 0.0]; // complex plane coordinates of the image center
 pub const ZOOM: f32 = 0.40486;
@@ -257,7 +261,7 @@ fn main() {
     device
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
-    
+
     device.destroy_fence(operation_finished, None);
     device.destroy_semaphore(image_clear_finished, None);
 

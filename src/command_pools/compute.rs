@@ -3,7 +3,8 @@ use std::ptr;
 use ash::vk;
 
 use crate::{
-  descriptor_sets::DescriptorSets, device::QueueFamilies, pipeline::ComputePipeline, IMAGE_HEIGHT, IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y
+  descriptor_sets::DescriptorSets, device::QueueFamilies, pipeline::ComputePipeline, IMAGE_HEIGHT,
+  IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y,
 };
 
 pub struct ComputeCommandBufferPool {
