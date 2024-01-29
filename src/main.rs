@@ -50,19 +50,55 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
-pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Instance creation");
+pub const APPLICATION_NAME: &'static CStr = cstr!("Mandelbrot");
 pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-// try putting some very big numbers
 pub const IMAGE_WIDTH: u32 = 4000;
 pub const IMAGE_HEIGHT: u32 = 4000;
 
-// some formats may not be available
+// what is used in the shader
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
-const IMAGE_SAVE_PATH: &str = "image.png";
+// these could be calculated from image dimensions
+pub const SHADER_GROUP_SIZE_X: u32 = 16;
+pub const SHADER_GROUP_SIZE_Y: u32 = 16;
+
+// mandelbrot constants
+pub const MAX_ITERATIONS: u32 = 10000;
+pub const FOCAL_POINT: [f32; 2] = [-0.765, 0.0]; // complex plane coordinates of the image center
+pub const ZOOM: f32 = 0.40486;
+
+const IMAGE_SAVE_PATH: &str = "./image.png";
+
+fn create_sampler(device: &ash::Device) -> vk::Sampler {
+  let sampler_create_info = vk::SamplerCreateInfo {
+    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SamplerCreateFlags::empty(),
+    mag_filter: vk::Filter::NEAREST,
+    min_filter: vk::Filter::NEAREST,
+    address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    anisotropy_enable: vk::FALSE,
+    max_anisotropy: 0.0,
+    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+    unnormalized_coordinates: vk::TRUE,
+    compare_enable: vk::FALSE,
+    compare_op: vk::CompareOp::NEVER,
+    mipmap_mode: vk::SamplerMipmapMode::NEAREST,
+    mip_lod_bias: 0.0,
+    max_lod: 0.0,
+    min_lod: 0.0,
+  };
+  unsafe {
+    device
+      .create_sampler(&sampler_create_info, None)
+      .expect("Failed to create a sampler")
+  }
+}
 
 fn create_semaphore(device: &ash::Device) -> vk::Semaphore {
   let create_info = vk::SemaphoreCreateInfo {
@@ -105,13 +141,12 @@ fn main() {
   let (device, queues) = device::create_logical_device(&instance, &physical_device);
 
   // GPU image with DEVICE_LOCAL flags
+  println!("Allocating images...");
   let mut local_image = Image::new(
     &device,
     &physical_device,
     vk::ImageTiling::OPTIMAL,
-    vk::ImageUsageFlags::TRANSFER_SRC
-      .bitor(vk::ImageUsageFlags::TRANSFER_DST)
-      .bitor(vk::ImageUsageFlags::STORAGE),
+    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::STORAGE),
     vk::MemoryPropertyFlags::DEVICE_LOCAL,
     vk::MemoryPropertyFlags::empty(),
   );
@@ -125,64 +160,16 @@ fn main() {
     vk::MemoryPropertyFlags::HOST_CACHED,
   );
 
-  let sampler_create_info = vk::SamplerCreateInfo {
-    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::SamplerCreateFlags::empty(),
-    mag_filter: vk::Filter::NEAREST,
-    min_filter: vk::Filter::NEAREST,
-    address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-    address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-    address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-    anisotropy_enable: vk::FALSE,
-    max_anisotropy: 0.0,
-    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
-    unnormalized_coordinates: vk::TRUE,
-    compare_enable: vk::FALSE,
-    compare_op: vk::CompareOp::NEVER,
-    mipmap_mode: vk::SamplerMipmapMode::NEAREST,
-    mip_lod_bias: 0.0,
-    max_lod: 0.0,
-    min_lod: 0.0,
-  };
-  let sampler = unsafe {
-    device
-      .create_sampler(&sampler_create_info, None)
-      .expect("Failed to create a sampler")
-  };
-
-  let image_view_create_info = vk::ImageViewCreateInfo {
-    s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::ImageViewCreateFlags::empty(),
-    image: *local_image,
-    view_type: vk::ImageViewType::TYPE_2D,
-    format: IMAGE_FORMAT,
-    components: vk::ComponentMapping {
-      r: vk::ComponentSwizzle::IDENTITY,
-      g: vk::ComponentSwizzle::IDENTITY,
-      b: vk::ComponentSwizzle::IDENTITY,
-      a: vk::ComponentSwizzle::IDENTITY,
-    },
-    subresource_range: vk::ImageSubresourceRange {
-      aspect_mask: vk::ImageAspectFlags::COLOR,
-      base_mip_level: 0,
-      level_count: 1,
-      base_array_layer: 0,
-      layer_count: 1,
-    },
-  };
-  let image_view = unsafe {
-    device
-      .create_image_view(&image_view_create_info, None)
-      .expect("Failed to create an image view")
-  };
-
+  // the sampler technically is useless as the image is never used as a sampled image, however
+  // it still needs to be passed to the write descriptor set
+  let sampler = create_sampler(&device);
+  let image_view = local_image.create_view(&device);
   let mut descriptor_sets = DescriptorSets::new(&device);
   descriptor_sets
     .pool
     .write_image(&device, image_view, sampler);
 
+  println!("Creating the pipeline...");
   let mut pipeline = ComputePipeline::create(&device, &descriptor_sets);
 
   let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
@@ -270,12 +257,10 @@ fn main() {
     device
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
-
+    
     device.destroy_fence(operation_finished, None);
-
     device.destroy_semaphore(image_clear_finished, None);
 
-    log::debug!("Destroying command pools");
     compute_pool.destroy_self(&device);
     transfer_pool.destroy_self(&device);
 
@@ -289,17 +274,13 @@ fn main() {
 
     device.destroy_sampler(sampler, None);
 
-    // destroying a logical device also implicitly destroys all associated queues
-    log::debug!("Destroying logical device");
     device.destroy_device(None);
 
     #[cfg(feature = "vl")]
     {
-      log::debug!("Destroying debug utils messenger");
       debug_utils.destroy_self();
     }
 
-    log::debug!("Destroying Instance");
     instance.destroy_instance(None);
   }
 }

@@ -1,5 +1,9 @@
 use ash::vk::{self};
-use std::{os::raw::c_char, ptr};
+use std::{
+  ffi::c_void,
+  os::raw::c_char,
+  ptr::{self, addr_of},
+};
 
 use crate::{
   device::{PhysicalDevice, Queues},
@@ -17,8 +21,9 @@ pub fn create_logical_device(
     .map(|s| s.as_ptr())
     .collect();
 
-  // in this case there are no features
   let features = vk::PhysicalDeviceFeatures::default();
+  let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+  features13.maintenance4 = vk::TRUE; // maintenance4 enables the use of dynamic local group sizes in shaders
 
   // pp_enabled_layer_names are deprecated however they are still required in struct initialization
   #[allow(deprecated)]
@@ -27,7 +32,7 @@ pub fn create_logical_device(
     p_queue_create_infos: queue_create_infos.as_ptr(),
     queue_create_info_count: queue_create_infos.len() as u32,
     p_enabled_features: &features,
-    p_next: ptr::null(),
+    p_next: addr_of!(features13) as *const c_void,
     pp_enabled_layer_names: ptr::null(),
     enabled_layer_count: 0,
     pp_enabled_extension_names: device_extensions_pointers.as_ptr(),

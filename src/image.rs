@@ -55,6 +55,38 @@ impl Image {
     }
   }
 
+  // creates a image view with all the default channels
+  pub fn create_view(&self, device: &ash::Device) -> vk::ImageView {
+    let create_info = vk::ImageViewCreateInfo {
+      s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+      p_next: ptr::null(),
+      flags: vk::ImageViewCreateFlags::empty(),
+      image: self.vk_img,
+      view_type: vk::ImageViewType::TYPE_2D,
+      format: IMAGE_FORMAT,
+      components: vk::ComponentMapping {
+        r: vk::ComponentSwizzle::IDENTITY,
+        g: vk::ComponentSwizzle::IDENTITY,
+        b: vk::ComponentSwizzle::IDENTITY,
+        a: vk::ComponentSwizzle::IDENTITY,
+      },
+      subresource_range: vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: 1,
+      },
+    };
+
+    unsafe {
+      device
+        .create_image_view(&create_info, None)
+        .expect("Failed to create an image view")
+    }
+  }
+
+
   pub fn save_to_file<P>(&self, device: &ash::Device, physical_device: &PhysicalDevice, path: P)
   where
     P: AsRef<std::path::Path>,

@@ -3,11 +3,7 @@ use std::ptr;
 use ash::vk;
 
 use crate::{
-  descriptor_sets::DescriptorSets,
-  device::QueueFamilies,
-  pipeline::ComputePipeline,
-  shaders::shader::{SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y},
-  IMAGE_HEIGHT, IMAGE_WIDTH,
+  descriptor_sets::DescriptorSets, device::QueueFamilies, pipeline::ComputePipeline, IMAGE_HEIGHT, IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y
 };
 
 pub struct ComputeCommandBufferPool {
@@ -23,7 +19,10 @@ impl ComputeCommandBufferPool {
 
     let storage_image = super::allocate_primary_command_buffers(device, pool, 1)[0];
 
-    Self { pool, storage_image }
+    Self {
+      pool,
+      storage_image,
+    }
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) {
@@ -97,11 +96,7 @@ impl ComputeCommandBufferPool {
       &[descriptor_sets.pool.mandelbrot],
       &[],
     );
-    device.cmd_bind_pipeline(
-      cb,
-      vk::PipelineBindPoint::COMPUTE,
-      pipeline.pipeline,
-    );
+    device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, pipeline.pipeline);
     device.cmd_dispatch(
       cb,
       IMAGE_WIDTH / SHADER_GROUP_SIZE_X + 1,

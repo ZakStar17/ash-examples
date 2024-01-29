@@ -33,7 +33,7 @@ macro_rules! const_flag_bitor {
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags,
   vk::FormatFeatureFlags::TRANSFER_SRC,
-  vk::FormatFeatureFlags::TRANSFER_DST
+  vk::FormatFeatureFlags::STORAGE_IMAGE
 );
 const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
   vk::FormatFeatureFlags::TRANSFER_DST;
@@ -41,7 +41,7 @@ const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
 const REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags,
   vk::ImageUsageFlags::TRANSFER_SRC,
-  vk::ImageUsageFlags::TRANSFER_DST
+  vk::ImageUsageFlags::STORAGE
 );
 const REQUIRED_IMAGE_USAGE_FLAGS_LINEAR: vk::ImageUsageFlags = vk::ImageUsageFlags::TRANSFER_DST;
 
@@ -181,6 +181,7 @@ unsafe fn select_physical_device(
 
       let properties = instance.get_physical_device_properties(physical_device);
       log_device_properties(&properties);
+      let (_features, features13) = get_extended_features(instance, physical_device);
 
       if properties.api_version < TARGET_API_VERSION {
         log::info!(
@@ -202,6 +203,13 @@ unsafe fn select_physical_device(
 
       if !check_linear_tiling_image_size_support(instance, physical_device) || !check_optimal_tiling_image_size_support(instance, physical_device) {
         log::warn!("Skipped physical device: Application image size requirements are bigger than supported by the device");
+        return false;
+      }
+
+      // maintenance4 enables the use of dynamic local group sizes in shaders
+      // this was a extension before Vulkan 1.3
+      if features13.maintenance4 == vk::FALSE {
+        log::warn!("Skipped physical device: Maintenance4 feature is not supported");
         return false;
       }
 
@@ -254,20 +262,51 @@ fn get_extended_properties(
   // going c style (see https://doc.rust-lang.org/std/mem/union.MaybeUninit.html)
   let mut main_props: MaybeUninit<vk::PhysicalDeviceProperties2> = MaybeUninit::uninit();
   let mut props11: MaybeUninit<vk::PhysicalDeviceVulkan11Properties> = MaybeUninit::uninit();
+
   let main_props_ptr = main_props.as_mut_ptr();
   let props11_ptr = props11.as_mut_ptr();
 
   unsafe {
+    addr_of_mut!((*main_props_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_PROPERTIES_2);
     addr_of_mut!((*props11_ptr).s_type)
       .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
-    addr_of_mut!((*props11_ptr).p_next).write(ptr::null_mut::<c_void>());
 
-    addr_of_mut!((*main_props_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_PROPERTIES_2);
-    // requesting for Vulkan11Properties
+    // write pointer chain
     addr_of_mut!((*main_props_ptr).p_next).write(props11_ptr as *mut c_void);
+    addr_of_mut!((*props11_ptr).p_next).write(ptr::null_mut::<c_void>());
 
     instance.get_physical_device_properties2(physical_device, main_props_ptr.as_mut().unwrap());
 
     (main_props.assume_init().properties, props11.assume_init())
+  }
+}
+
+fn get_extended_features(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+) -> (
+  vk::PhysicalDeviceFeatures,
+  vk::PhysicalDeviceVulkan13Features,
+) {
+  let mut main_features: MaybeUninit<vk::PhysicalDeviceFeatures2> = MaybeUninit::uninit();
+  let mut features13: MaybeUninit<vk::PhysicalDeviceVulkan13Features> = MaybeUninit::uninit();
+
+  let main_features_ptr = main_features.as_mut_ptr();
+  let features13_ptr = features13.as_mut_ptr();
+
+  unsafe {
+    addr_of_mut!((*main_features_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_FEATURES_2);
+    addr_of_mut!((*features13_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
+
+    addr_of_mut!((*main_features_ptr).p_next).write(features13_ptr as *mut c_void);
+    addr_of_mut!((*features13_ptr).p_next).write(ptr::null_mut::<c_void>());
+
+    instance.get_physical_device_features2(physical_device, main_features_ptr.as_mut().unwrap());
+
+    (
+      main_features.assume_init().features,
+      features13.assume_init(),
+    )
   }
 }

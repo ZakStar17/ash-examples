@@ -1,15 +1,14 @@
 #version 450
 
-layout (constant_id = 1) const int MAX_ITERATIONS = 10000;
+layout (constant_id = 2) const int MAX_ITERATIONS = 10000;
 
 // coordinates of the image center
-layout (constant_id = 2) const float FOCAL_POINT_X = -0.765;
-layout (constant_id = 3) const float FOCAL_POINT_Y = 0.0;
-layout (constant_id = 4) const float ZOOM = 1.0;
+layout (constant_id = 3) const float FOCAL_POINT_X = -0.765;
+layout (constant_id = 4) const float FOCAL_POINT_Y = 0.0;
+layout (constant_id = 5) const float ZOOM = 1.0;
 
 // uses index 0 specialization constant as the local group size for x and y
-// layout(local_size_x_id = 0, local_size_y_id = 0, local_size_z = 1) in;
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D output_image;
 
@@ -21,8 +20,9 @@ void main() {
         return;
     }
 
-    float norm_x = (float(gl_GlobalInvocationID.x) - (img_size.x / 2)) / img_size.x;
-    float norm_y = (float(gl_GlobalInvocationID.y) - (img_size.y / 2)) / img_size.x;
+    // normalize and correct for aspect ratio
+    float norm_x = (float(gl_GlobalInvocationID.x) - (img_size.x / 2.0)) / img_size.x;
+    float norm_y = (float(gl_GlobalInvocationID.y) - (img_size.y / 2.0)) / img_size.x;
 
     float x0 = (norm_x / ZOOM) + FOCAL_POINT_X;
     float y0 = (norm_y / ZOOM) + FOCAL_POINT_Y;
