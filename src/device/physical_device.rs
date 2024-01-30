@@ -12,6 +12,7 @@ use super::QueueFamilies;
 pub struct PhysicalDevice {
   pub vk_device: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
+  properties: vk::PhysicalDeviceProperties,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
   max_memory_allocation_size: vk::DeviceSize,
 }
@@ -35,10 +36,15 @@ impl PhysicalDevice {
 
     PhysicalDevice {
       vk_device: physical_device,
+      properties,
       mem_properties,
       queue_families,
       max_memory_allocation_size: properties11.max_memory_allocation_size,
     }
+  }
+
+  pub fn get_properties(&self) -> &vk::PhysicalDeviceProperties {
+    &self.properties
   }
 
   pub fn find_memory_type(

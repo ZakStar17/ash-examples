@@ -2,7 +2,7 @@ use std::path::Path;
 
 use ash::vk;
 
-const SHADER_PATH: &'static str = "./compiled_shaders/shader.spv";
+const SHADER_PATH: &'static str = "./shaders/shader.spv";
 
 pub struct Shader {
   pub module: vk::ShaderModule,

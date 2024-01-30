@@ -7,6 +7,7 @@ mod entry;
 mod image;
 mod instance;
 mod pipeline;
+mod pipeline_cache;
 mod shaders;
 mod utility;
 
@@ -173,8 +174,26 @@ fn main() {
     .pool
     .write_image(&device, image_view, sampler);
 
-  println!("Creating the pipeline...");
-  let mut pipeline = ComputePipeline::create(&device, &descriptor_sets);
+  log::info!("Creating pipeline cache");
+  let (pipeline_cache, created_from_file) =
+    pipeline_cache::create_pipeline_cache(&device, &physical_device);
+  if created_from_file {
+    log::info!("Cache successfully created from an existing cache file");
+  } else {
+    log::info!("Cache initialized as empty");
+  }
+
+  log::debug!("Creating pipeline");
+  let mut pipeline = ComputePipeline::create(&device, pipeline_cache, &descriptor_sets);
+
+  // no more pipelines will be created, so might as well save and delete the cache
+  log::info!("Saving pipeline cache");
+  if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache) {
+    log::error!("Failed to save pipeline cache: {:?}", err);
+  }
+  unsafe {
+    device.destroy_pipeline_cache(pipeline_cache, None);
+  }
 
   let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
   let mut transfer_pool =

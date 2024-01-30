@@ -64,7 +64,11 @@ impl SpecializationData {
 }
 
 impl ComputePipeline {
-  pub fn create(device: &ash::Device, descriptor_sets: &DescriptorSets) -> Self {
+  pub fn create(
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    descriptor_sets: &DescriptorSets,
+  ) -> Self {
     let mut shader = Shader::load(device);
     let main_function_name = CString::new("main").unwrap(); // the beginning function name in shader code
 
@@ -121,7 +125,7 @@ impl ComputePipeline {
 
     let pipeline = unsafe {
       device
-        .create_compute_pipelines(vk::PipelineCache::null(), &[create_info], None)
+        .create_compute_pipelines(cache, &[create_info], None)
         .expect("Failed to create compute pipelines")[0]
     };
 
