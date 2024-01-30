@@ -44,10 +44,6 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
   vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
 ];
 
-// Vulkan API version required to run the program
-// In your case you may request a optimal version of the API in order to use specific features
-// but fallback to an older version if the target is not supported by the driver or any physical
-// device
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
@@ -247,12 +243,10 @@ fn main() {
     p_signal_semaphores: ptr::null(),
   };
 
-  // create a fence to signal when all operation have finished
   let operation_finished = create_fence(&device);
 
   println!("Submitting work...");
   unsafe {
-    // note: you can make multiple submits with device.queue_submit2
     device
       .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
       .expect("Failed to submit compute");
