@@ -61,3 +61,12 @@ where
     .filter(|b| slice.binary_search_by(|a| f(a, b)).is_ok())
     .collect()
 }
+
+// transmutes literals to 'static CStr
+macro_rules! cstr {
+  ( $s:literal ) => {{
+    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
+  }};
+}
+
+pub(crate) use cstr;

@@ -105,8 +105,10 @@ impl ComputeCommandBufferPool {
       1,
     );
 
-    // release image to transfer queue family
-    // change layout and access flags to transfer read
+    // Release image to transfer queue family and change image layout at the same time
+    // Even though the layout transition operation is submitted twice, it only executes once in
+    // between queue ownership transfer
+    // https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers
     let release = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),

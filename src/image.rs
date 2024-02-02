@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{device::PhysicalDevice, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH};
+use crate::{device::PhysicalDevice, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_SAVE_TYPE, IMAGE_WIDTH};
 
 pub struct Image {
   vk_img: vk::Image,
@@ -138,9 +138,13 @@ impl Image {
       image_bytes,
       IMAGE_WIDTH,
       IMAGE_HEIGHT,
-      ::image::ColorType::Rgba8,
+      IMAGE_SAVE_TYPE,
     )
     .expect("Failed to save image");
+
+    unsafe {
+      device.unmap_memory(self.memory);
+    }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

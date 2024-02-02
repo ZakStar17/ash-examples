@@ -24,15 +24,9 @@ use std::{
   ops::BitOr,
   ptr::{self, addr_of},
 };
+use utility::cstr;
 
 use crate::{descriptor_sets::DescriptorSets, pipeline::ComputePipeline};
-
-// simple macro to transmute literals to static CStr
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
 
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -57,6 +51,7 @@ pub const IMAGE_HEIGHT: u32 = 4000;
 
 // what is used in the shader
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
 
 // Size of each local group in the shader invocation
 // Normally these would be calculated from image dimensions and clapped to respect device limits
@@ -243,7 +238,7 @@ fn main() {
     p_signal_semaphores: ptr::null(),
   };
 
-  let operation_finished = create_fence(&device);
+  let finished = create_fence(&device);
 
   println!("Submitting work...");
   unsafe {
@@ -251,14 +246,11 @@ fn main() {
       .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
       .expect("Failed to submit compute");
     device
-      .queue_submit(
-        queues.transfer,
-        &[transfer_image_submit],
-        operation_finished,
-      )
+      .queue_submit(queues.transfer, &[transfer_image_submit], finished)
       .expect("Failed to submit transfer");
+
     device
-      .wait_for_fences(&[operation_finished], true, u64::MAX)
+      .wait_for_fences(&[finished], true, u64::MAX)
       .expect("Failed to wait for fences");
   }
   println!("GPU finished!");
@@ -275,7 +267,7 @@ fn main() {
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
-    device.destroy_fence(operation_finished, None);
+    device.destroy_fence(finished, None);
     device.destroy_semaphore(image_clear_finished, None);
 
     compute_pool.destroy_self(&device);

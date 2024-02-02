@@ -1,4 +1,4 @@
-use std::ops::BitOr;
+use std::ops::{BitOr, Deref};
 
 use ash::vk;
 
@@ -8,13 +8,21 @@ use super::{get_extended_properties, select_physical_device};
 
 use super::QueueFamilies;
 
-// in order to not query physical device info multiple times, this struct saves the additional information
+// Saves physical device additional information in order to not query it multiple times
 pub struct PhysicalDevice {
-  pub vk_device: vk::PhysicalDevice,
+  vk_device: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
   properties: vk::PhysicalDeviceProperties,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
   max_memory_allocation_size: vk::DeviceSize,
+}
+
+impl Deref for PhysicalDevice {
+  type Target = vk::PhysicalDevice;
+
+  fn deref(&self) -> &Self::Target {
+    &self.vk_device
+  }
 }
 
 impl PhysicalDevice {
