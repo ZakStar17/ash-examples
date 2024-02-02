@@ -42,7 +42,8 @@ pub const IMAGE_HEIGHT: u32 = 1080;
 
 // device selection checks if format is available
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
-// valid color values depend on IMAGE_FORMAT
+pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
+                                                                           // valid color values depend on IMAGE_FORMAT
 pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   uint32: [134, 206, 203, 255], // rgba(134, 206, 203, 255)
 };
