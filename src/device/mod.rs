@@ -216,6 +216,11 @@ unsafe fn select_physical_device(
         return false;
       }
 
+      // synchronization2 enables pipeline barriers to wait for nothing or signal nothing
+      if features13.synchronization2 == vk::FALSE {
+        log::warn!("Skipped physical device: Synchronization2 feature is not supported");
+      }
+
       if SHADER_GROUP_SIZE_X > properties.limits.max_compute_work_group_size[0] {
         log::warn!("Skipped physical device: Device does not support required compute shader local group size in the X dimension");
         return false;

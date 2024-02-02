@@ -67,7 +67,7 @@ impl ComputeCommandBufferPool {
     let shader_write_layout = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::empty(),
+      src_access_mask: vk::AccessFlags::NONE,
       dst_access_mask: vk::AccessFlags::SHADER_WRITE,
       old_layout: vk::ImageLayout::UNDEFINED,
       // image layout is required to be GENERAL in order to be used as storage in a shader
@@ -79,8 +79,9 @@ impl ComputeCommandBufferPool {
     };
     device.cmd_pipeline_barrier(
       cb,
-      vk::PipelineStageFlags::COMPUTE_SHADER,
-      // image should be ready for when the shader executes
+      // this operation doesn't have to wait for anything
+      vk::PipelineStageFlags::NONE,
+      // however it should finish before the compute shader
       vk::PipelineStageFlags::COMPUTE_SHADER,
       vk::DependencyFlags::empty(),
       &[],
@@ -113,7 +114,7 @@ impl ComputeCommandBufferPool {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
       src_access_mask: vk::AccessFlags::SHADER_WRITE,
-      dst_access_mask: vk::AccessFlags::TRANSFER_READ,
+      dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
       old_layout: vk::ImageLayout::GENERAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
       src_queue_family_index: queue_families.get_compute_index(),

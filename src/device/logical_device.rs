@@ -23,7 +23,8 @@ pub fn create_logical_device(
 
   let features = vk::PhysicalDeviceFeatures::default();
   let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
-  features13.maintenance4 = vk::TRUE; // maintenance4 enables the use of dynamic local group sizes in shaders
+  features13.maintenance4 = vk::TRUE; // enables the use of dynamic local group sizes in shaders
+  features13.synchronization2 = vk::TRUE; // enables pipeline barriers to wait for nothing or signal nothing
 
   // pp_enabled_layer_names are deprecated however they are still required in struct initialization
   #[allow(deprecated)]
