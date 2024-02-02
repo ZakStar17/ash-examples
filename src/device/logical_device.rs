@@ -28,8 +28,8 @@ pub fn create_logical_device(
     queue_create_info_count: queue_create_infos.len() as u32,
     p_enabled_features: &features,
     p_next: ptr::null(),
-    pp_enabled_layer_names: ptr::null(),
-    enabled_layer_count: 0,
+    pp_enabled_layer_names: ptr::null(), // deprecated
+    enabled_layer_count: 0,              // deprecated
     pp_enabled_extension_names: device_extensions_pointers.as_ptr(),
     enabled_extension_count: device_extensions_pointers.len() as u32,
     flags: vk::DeviceCreateFlags::empty(),
@@ -37,7 +37,7 @@ pub fn create_logical_device(
   log::info!("Creating logical device");
   let device: ash::Device = unsafe {
     instance
-      .create_device(physical_device.vk_device, &create_info, None)
+      .create_device(**physical_device, &create_info, None)
       .expect("Failed to create logical device")
   };
 

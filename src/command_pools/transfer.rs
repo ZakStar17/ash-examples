@@ -54,21 +54,27 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    // acquire image from compute family
-    // change layout and access flags to transfer read (same as in the compute command buffer)
+    // This is the matching queue family ownership acquire operation to the one in the compute
+    // command buffer which executed on the source image
     let src_acquire = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+
+      // should be NONE for ownership acquire
+      src_access_mask: vk::AccessFlags::NONE,
+      // change image AccessFlags after the ownership transfer completes
       dst_access_mask: vk::AccessFlags::TRANSFER_READ,
+
+      // should match the layouts specified in the compute buffer
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+
       src_queue_family_index: queue_families.get_compute_index(),
       dst_queue_family_index: queue_families.get_transfer_index(),
       image: src_image,
       subresource_range,
     };
-    // change layout and access flags to transfer write
+    // change destination image layout and access flags to transfer write
     let dst_transfer_dst_layout = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
@@ -119,16 +125,15 @@ impl TransferCommandBufferPool {
       &[copy_region],
     );
 
-    // change access flags to host read
+    // change destination image access flags to host read
     let make_dst_host_accessible = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
       src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
       dst_access_mask: vk::AccessFlags::HOST_READ,
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      // general layout in order for the image to always have the same internal format
-      // optimal layouts can have different internal representations depending on the driver 
-      //    implementation
+      // Optimal layouts can have different internal representations depending on what the driver
+      // implemented, GENERAL must be used in order to interpret the image by the CPU
       new_layout: vk::ImageLayout::GENERAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,

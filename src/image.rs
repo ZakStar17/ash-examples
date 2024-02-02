@@ -163,7 +163,7 @@ fn allocate_image_memory(
 ) -> (vk::DeviceMemory, u32, u64) {
   let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
 
-  // in this case you can sub allocate multiple times for the image and individually manage each 
+  // in this case you can sub allocate multiple times for the image and individually manage each
   // allocation
   if memory_requirements.size >= physical_device.get_max_memory_allocation_size() {
     panic!("Memory required to allocate an image ({}mb) is higher than the maximum allowed on the device ({}mb)", 

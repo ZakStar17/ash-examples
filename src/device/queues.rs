@@ -124,7 +124,6 @@ pub struct Queues {
 
 pub struct QueueCreateInfos {
   _priorities: Pin<Box<[f32; QueueFamilies::FAMILY_COUNT]>>,
-  _priorities_ptr: *const f32,
   create_infos: Vec<vk::DeviceQueueCreateInfo>,
 }
 
@@ -140,12 +139,10 @@ impl Queues {
   pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> QueueCreateInfos {
     // use mid priorities for all queues
     let priorities = Box::pin([0.5_f32; QueueFamilies::FAMILY_COUNT]);
-    let priorities_ptr = priorities.as_ptr();
-    let create_infos = get_queue_create_infos(&queue_families, priorities_ptr);
+    let create_infos = get_queue_create_infos(&queue_families, priorities.as_ptr());
 
     QueueCreateInfos {
       _priorities: priorities,
-      _priorities_ptr: priorities_ptr,
       create_infos,
     }
   }

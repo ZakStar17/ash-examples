@@ -1,7 +1,7 @@
+mod logical_device;
 mod physical_device;
 mod queues;
 mod vendor;
-mod logical_device;
 
 use std::{
   ffi::c_void,
@@ -10,8 +10,8 @@ use std::{
 };
 
 use ash::vk;
-pub use physical_device::PhysicalDevice;
 pub use logical_device::create_logical_device;
+pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
 use crate::{
@@ -91,7 +91,7 @@ fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice)
   .is_empty()
 }
 
-fn check_format_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+fn check_formats_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
   let properties =
     unsafe { instance.get_physical_device_format_properties(physical_device, IMAGE_FORMAT) };
 
@@ -176,8 +176,8 @@ unsafe fn select_physical_device(
     .expect("Failed to enumerate physical devices")
     .into_iter()
     .filter(|&physical_device| {
-      // Filter devices that are not supported
-      // You should check for any feature or limit support that your application might need
+      // Filter devices that are strictly not supported
+      // Check for any feature or limit that your application might require
 
       let properties = instance.get_physical_device_properties(physical_device);
       log_device_properties(&properties);
@@ -195,11 +195,13 @@ unsafe fn select_physical_device(
         return false;
       }
 
-      if !check_format_support(instance, physical_device) {
+      // check if all required formats are supported
+      if !check_formats_support(instance, physical_device) {
         log::warn!("Skipped physical device: Device does not support required formats");
         return false;
       }
 
+      // check if image sizes are supported
       if !check_linear_tiling_image_size_support(instance, physical_device) || !check_optimal_tiling_image_size_support(instance, physical_device) {
         log::warn!("Skipped physical device: Application image size requirements are bigger than supported by the device");
         return false;
@@ -208,6 +210,7 @@ unsafe fn select_physical_device(
       true
     })
     .filter_map(|physical_device| {
+      // filter devices that do not have required queue families
       match QueueFamilies::get_from_physical_device(instance, physical_device) {
         Err(()) => {
           log::info!("Skipped physical device: Device does not contain required queue families");
@@ -219,7 +222,7 @@ unsafe fn select_physical_device(
     .min_by_key(|(physical_device, families)| {
       // Assign a score to each device and select the best one available
       // A full application may use multiple metrics like limits, queue families and even the
-      //    device id to rank each device that a user can have
+      // device id to rank each device that a user can have
 
       let queue_family_importance = 3;
       let device_score_importance = 0;

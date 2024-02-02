@@ -1,8 +1,8 @@
 mod command_pools;
+mod device;
 mod entry;
 mod image;
 mod instance;
-mod device;
 mod utility;
 
 // validation layers module will only exist if validation layers are enabled
@@ -11,20 +11,14 @@ mod validation_layers;
 
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
-use image::Image;
 use device::PhysicalDevice;
+use image::Image;
 use std::{
   ffi::CStr,
   ops::BitOr,
   ptr::{self, addr_of},
 };
-
-// simple macro to transmute literals to static CStr
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
+use utility::cstr;
 
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -36,25 +30,19 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
   vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
 ];
 
-// Vulkan API version required to run the program
-// In your case you may request a optimal version of the API in order to use specific features
-// but fallback to an older version if the target is not supported by the driver or any physical
-// device
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
-// somewhat arbitrary
-pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Instance creation");
+pub const APPLICATION_NAME: &'static CStr = cstr!("Image clear");
 pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-// try putting some very big numbers
 pub const IMAGE_WIDTH: u32 = 1920;
 pub const IMAGE_HEIGHT: u32 = 1080;
 
-// some formats may not be available
+// device selection checks if format is available
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
-// color value depends on format to be applied correctly
+// valid color values depend on IMAGE_FORMAT
 pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   uint32: [134, 206, 203, 255], // rgba(134, 206, 203, 255)
 };
@@ -163,8 +151,7 @@ fn main() {
     p_signal_semaphores: ptr::null(),
   };
 
-  // create a fence to signal when all operation have finished
-  let operation_finished = create_fence(&device);
+  let finished = create_fence(&device);
 
   println!("Submitting work...");
   unsafe {
@@ -173,14 +160,11 @@ fn main() {
       .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
       .expect("Failed to submit compute");
     device
-      .queue_submit(
-        queues.transfer,
-        &[transfer_image_submit],
-        operation_finished,
-      )
+      .queue_submit(queues.transfer, &[transfer_image_submit], finished)
       .expect("Failed to submit transfer");
+
     device
-      .wait_for_fences(&[operation_finished], true, u64::MAX)
+      .wait_for_fences(&[finished], true, u64::MAX)
       .expect("Failed to wait for fences");
   }
   println!("GPU finished!");
@@ -197,21 +181,16 @@ fn main() {
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
-    log::debug!("Destroying fence");
-    device.destroy_fence(operation_finished, None);
-
-    log::debug!("Destroying semaphore");
+    device.destroy_fence(finished, None);
     device.destroy_semaphore(image_clear_finished, None);
 
-    log::debug!("Destroying command pools");
     compute_pool.destroy_self(&device);
     transfer_pool.destroy_self(&device);
 
     local_image.destroy_self(&device);
     host_image.destroy_self(&device);
 
-    // destroying a logical device also implicitly destroys all associated queues
-    log::debug!("Destroying logical device");
+    log::debug!("Destroying device");
     device.destroy_device(None);
 
     #[cfg(feature = "vl")]

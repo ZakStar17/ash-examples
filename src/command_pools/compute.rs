@@ -54,6 +54,7 @@ impl ComputeCommandBufferPool {
       layer_count: 1,
     };
 
+    // change image layout and access to transfer write destination
     let transfer_dst_layout = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
@@ -69,7 +70,6 @@ impl ComputeCommandBufferPool {
     device.cmd_pipeline_barrier(
       self.clear_img,
       vk::PipelineStageFlags::TRANSFER,
-      // wait for transfer give TRANSFER_WRITE access flag
       vk::PipelineStageFlags::TRANSFER,
       vk::DependencyFlags::empty(),
       &[],
@@ -77,7 +77,6 @@ impl ComputeCommandBufferPool {
       &[transfer_dst_layout],
     );
 
-    // the actual clear color command
     device.cmd_clear_color_image(
       self.clear_img,
       image,
@@ -86,13 +85,16 @@ impl ComputeCommandBufferPool {
       &[subresource_range],
     );
 
-    // release image to transfer queue family
-    // change layout and access flags to transfer read
+    // Release image to transfer queue family and change image layout at the same time
+    // Even though the layout transition operation is submitted twice, it only executes once in
+    // between queue ownership transfer
+    // https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers
     let release = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
+      // this operation needs to know access flags before the transition
       src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-      dst_access_mask: vk::AccessFlags::TRANSFER_READ,
+      dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
       src_queue_family_index: queue_families.get_compute_index(),
@@ -102,8 +104,11 @@ impl ComputeCommandBufferPool {
     };
     device.cmd_pipeline_barrier(
       self.clear_img,
-      // waiting for clear color operation
+      // If you are using cmd_pipeline_barrier2, you can wait specifically for
+      // vk::PipelineStageFlags2::CLEAR
+      // wait for all TRANSFER operations
       vk::PipelineStageFlags::TRANSFER,
+      // before continuing any subsequent transfer operations
       vk::PipelineStageFlags::TRANSFER,
       vk::DependencyFlags::empty(),
       &[],
