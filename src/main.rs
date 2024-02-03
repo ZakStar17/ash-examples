@@ -3,6 +3,7 @@ mod device;
 mod entry;
 mod image;
 mod instance;
+mod render_pass;
 mod utility;
 
 // validation layers module will only exist if validation layers are enabled
@@ -19,6 +20,8 @@ use std::{
   ptr::{self, addr_of},
 };
 use utility::cstr;
+
+use crate::render_pass::{create_framebuffer, create_render_pass};
 
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -95,7 +98,7 @@ fn main() {
     &device,
     &physical_device,
     vk::ImageTiling::OPTIMAL,
-    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::COLOR_ATTACHMENT),
     vk::MemoryPropertyFlags::DEVICE_LOCAL,
     vk::MemoryPropertyFlags::empty(),
   );
@@ -104,75 +107,84 @@ fn main() {
     &device,
     &physical_device,
     vk::ImageTiling::LINEAR,
-    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+    vk::ImageUsageFlags::TRANSFER_DST,
     vk::MemoryPropertyFlags::HOST_VISIBLE,
     vk::MemoryPropertyFlags::HOST_CACHED,
   );
 
-  let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
-  let mut transfer_pool =
-    TransferCommandBufferPool::create(&device, &physical_device.queue_families);
+  let render_pass = create_render_pass(&device);
 
-  // record command buffers
-  unsafe {
-    compute_pool.reset(&device);
-    compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
-
-    transfer_pool.reset(&device);
-    transfer_pool.record_copy_img_to_host(
-      &device,
-      &physical_device.queue_families,
-      *local_image,
-      *host_image,
-    );
-  }
-
-  let image_clear_finished = create_semaphore(&device);
-  let clear_image_submit = vk::SubmitInfo {
-    s_type: vk::StructureType::SUBMIT_INFO,
-    p_next: ptr::null(),
-    wait_semaphore_count: 0,
-    p_wait_semaphores: ptr::null(),
-    p_wait_dst_stage_mask: ptr::null(),
-    command_buffer_count: 1,
-    p_command_buffers: addr_of!(compute_pool.clear_img),
-    signal_semaphore_count: 1,
-    p_signal_semaphores: addr_of!(image_clear_finished),
+  let image_view = local_image.create_view(&device);
+  let extent = vk::Extent2D {
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT
   };
-  let wait_for = vk::PipelineStageFlags::TRANSFER;
-  let transfer_image_submit = vk::SubmitInfo {
-    s_type: vk::StructureType::SUBMIT_INFO,
-    p_next: ptr::null(),
-    wait_semaphore_count: 1,
-    p_wait_semaphores: addr_of!(image_clear_finished),
-    p_wait_dst_stage_mask: addr_of!(wait_for),
-    command_buffer_count: 1,
-    p_command_buffers: addr_of!(transfer_pool.copy_to_host),
-    signal_semaphore_count: 0,
-    p_signal_semaphores: ptr::null(),
-  };
+  let framebuffer = create_framebuffer(&device, render_pass, image_view, extent);
 
-  let finished = create_fence(&device);
+  // let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
+  // let mut transfer_pool =
+  //   TransferCommandBufferPool::create(&device, &physical_device.queue_families);
 
-  println!("Submitting work...");
-  unsafe {
-    // note: you can make multiple submits with device.queue_submit2
-    device
-      .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
-      .expect("Failed to submit compute");
-    device
-      .queue_submit(queues.transfer, &[transfer_image_submit], finished)
-      .expect("Failed to submit transfer");
+  // // record command buffers
+  // unsafe {
+  //   compute_pool.reset(&device);
+  //   compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
 
-    device
-      .wait_for_fences(&[finished], true, u64::MAX)
-      .expect("Failed to wait for fences");
-  }
-  println!("GPU finished!");
+  //   transfer_pool.reset(&device);
+  //   transfer_pool.record_copy_img_to_host(
+  //     &device,
+  //     &physical_device.queue_families,
+  //     *local_image,
+  //     *host_image,
+  //   );
+  // }
 
-  println!("Saving file...");
-  host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
-  println!("Done!");
+  // let image_clear_finished = create_semaphore(&device);
+  // let clear_image_submit = vk::SubmitInfo {
+  //   s_type: vk::StructureType::SUBMIT_INFO,
+  //   p_next: ptr::null(),
+  //   wait_semaphore_count: 0,
+  //   p_wait_semaphores: ptr::null(),
+  //   p_wait_dst_stage_mask: ptr::null(),
+  //   command_buffer_count: 1,
+  //   p_command_buffers: addr_of!(compute_pool.clear_img),
+  //   signal_semaphore_count: 1,
+  //   p_signal_semaphores: addr_of!(image_clear_finished),
+  // };
+  // let wait_for = vk::PipelineStageFlags::TRANSFER;
+  // let transfer_image_submit = vk::SubmitInfo {
+  //   s_type: vk::StructureType::SUBMIT_INFO,
+  //   p_next: ptr::null(),
+  //   wait_semaphore_count: 1,
+  //   p_wait_semaphores: addr_of!(image_clear_finished),
+  //   p_wait_dst_stage_mask: addr_of!(wait_for),
+  //   command_buffer_count: 1,
+  //   p_command_buffers: addr_of!(transfer_pool.copy_to_host),
+  //   signal_semaphore_count: 0,
+  //   p_signal_semaphores: ptr::null(),
+  // };
+
+  // let finished = create_fence(&device);
+
+  // println!("Submitting work...");
+  // unsafe {
+  //   // note: you can make multiple submits with device.queue_submit2
+  //   device
+  //     .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
+  //     .expect("Failed to submit compute");
+  //   device
+  //     .queue_submit(queues.transfer, &[transfer_image_submit], finished)
+  //     .expect("Failed to submit transfer");
+
+  //   device
+  //     .wait_for_fences(&[finished], true, u64::MAX)
+  //     .expect("Failed to wait for fences");
+  // }
+  // println!("GPU finished!");
+
+  // println!("Saving file...");
+  // host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
+  // println!("Done!");
 
   // Cleanup
   log::info!("Destroying and releasing resources");
@@ -182,11 +194,15 @@ fn main() {
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
-    device.destroy_fence(finished, None);
-    device.destroy_semaphore(image_clear_finished, None);
+    // device.destroy_fence(finished, None);
+    // device.destroy_semaphore(image_clear_finished, None);
 
-    compute_pool.destroy_self(&device);
-    transfer_pool.destroy_self(&device);
+    device.destroy_framebuffer(framebuffer, None);
+    device.destroy_image_view(image_view, None);
+    device.destroy_render_pass(render_pass, None);
+
+    // compute_pool.destroy_self(&device);
+    // transfer_pool.destroy_self(&device);
 
     local_image.destroy_self(&device);
     host_image.destroy_self(&device);
