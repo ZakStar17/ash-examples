@@ -2,10 +2,10 @@ use std::ptr;
 
 use ash::vk;
 
-mod compute;
+mod graphics;
 mod transfer;
 
-pub use compute::ComputeCommandBufferPool;
+pub use graphics::GraphicsCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
 pub fn create_command_pool(

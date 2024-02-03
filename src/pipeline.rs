@@ -6,7 +6,7 @@ use crate::{shaders, vertex::Vertex, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
-  pub main: vk::Pipeline,
+  pub pipeline: vk::Pipeline,
 }
 
 impl GraphicsPipeline {
@@ -114,24 +114,21 @@ impl GraphicsPipeline {
       base_pipeline_handle: vk::Pipeline::null(),
       base_pipeline_index: -1, // -1 for null
     };
-    let pipelines = unsafe {
+    let pipeline = unsafe {
       device
         .create_graphics_pipelines(cache, &[create_info], None)
-        .expect("Failed to create graphics pipelines")
+        .expect("Failed to create graphics pipelines")[0]
     };
 
     unsafe {
       shader.destroy_self(device);
     }
 
-    Self {
-      layout,
-      main: pipelines[0],
-    }
+    Self { layout, pipeline }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_pipeline(self.main, None);
+    device.destroy_pipeline(self.pipeline, None);
     device.destroy_pipeline_layout(self.layout, None);
   }
 }

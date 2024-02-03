@@ -11,7 +11,7 @@ use memoffset::offset_of;
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Vertex {
-  pub pos: [f32; 3],
+  pub pos: [f32; 2],
   pub color: [f32; 3],
 }
 
@@ -34,7 +34,7 @@ impl Vertex {
       vk::VertexInputAttributeDescription {
         location: offset,
         binding,
-        format: vk::Format::R32G32B32_SFLOAT,
+        format: vk::Format::R32G32_SFLOAT,
         offset: offset_of!(Self, pos) as u32,
       },
       vk::VertexInputAttributeDescription {

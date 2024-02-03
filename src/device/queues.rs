@@ -127,14 +127,14 @@ impl Queues {
     let priorities = Box::pin([0.5_f32; QueueFamilies::FAMILY_COUNT]);
 
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
-  
+
     // add optional queues
     for optional_family in [&queue_families.transfer] {
       if let Some(family) = optional_family {
         create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
       }
     }
-  
+
     // add graphics queues, these will substitute not available queues
     create_infos.push(get_queue_create_info(
       queue_families.graphics.index,

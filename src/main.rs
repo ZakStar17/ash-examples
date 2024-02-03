@@ -1,4 +1,5 @@
 mod command_pools;
+mod constant_buffers;
 mod device;
 mod entry;
 mod image;
@@ -15,7 +16,7 @@ mod vertex;
 mod validation_layers;
 
 use ash::vk;
-use command_pools::{TransferCommandBufferPool};
+use command_pools::TransferCommandBufferPool;
 use device::PhysicalDevice;
 use image::Image;
 use std::{
@@ -24,8 +25,11 @@ use std::{
   ptr::{self, addr_of},
 };
 use utility::cstr;
+use vertex::Vertex;
 
 use crate::{
+  command_pools::GraphicsCommandBufferPool,
+  constant_buffers::ConstantBuffers,
   pipeline::GraphicsPipeline,
   render_pass::{create_framebuffer, create_render_pass},
 };
@@ -54,11 +58,25 @@ pub const IMAGE_HEIGHT: u32 = 1080;
 pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
                                                                            // valid color values depend on IMAGE_FORMAT
-pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  uint32: [134, 206, 203, 255], // rgba(134, 206, 203, 255)
-};
-
 const IMAGE_SAVE_PATH: &str = "image.png";
+
+pub const VERTEX_COUNT: usize = 3;
+pub const VERTICES: [Vertex; VERTEX_COUNT] = [
+  Vertex {
+    pos: [0.2, 0.2],
+    color: [1.0, 0.0, 0.0],
+  },
+  Vertex {
+    pos: [-0.4, 0.2],
+    color: [1.0, 0.0, 0.0],
+  },
+  Vertex {
+    pos: [-0.9, -0.8],
+    color: [1.0, 0.0, 0.0],
+  },
+];
+pub const INDEX_COUNT: usize = 3;
+pub const INDICES: [u16; 3] = [0, 1, 2];
 
 fn create_semaphore(device: &ash::Device) -> vk::Semaphore {
   let create_info = vk::SemaphoreCreateInfo {
@@ -150,23 +168,26 @@ fn main() {
     device.destroy_pipeline_cache(pipeline_cache, None);
   }
 
-  // let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
-  // let mut transfer_pool =
-  //   TransferCommandBufferPool::create(&device, &physical_device.queue_families);
+  let mut graphics_pool =
+    GraphicsCommandBufferPool::create(&device, &physical_device.queue_families);
+  let mut transfer_pool =
+    TransferCommandBufferPool::create(&device, &physical_device.queue_families);
 
-  // // record command buffers
-  // unsafe {
-  //   compute_pool.reset(&device);
-  //   compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
+  let mut buffers = ConstantBuffers::new(&device, &physical_device, &queues, &mut transfer_pool);
 
-  //   transfer_pool.reset(&device);
-  //   transfer_pool.record_copy_img_to_host(
-  //     &device,
-  //     &physical_device.queue_families,
-  //     *local_image,
-  //     *host_image,
-  //   );
-  // }
+  // record command buffers
+  unsafe {
+    graphics_pool.reset(&device);
+    graphics_pool.record(&device, render_pass, framebuffer, &pipeline, &buffers);
+
+    transfer_pool.reset(&device);
+    transfer_pool.record_copy_img_to_host(
+      &device,
+      &physical_device.queue_families,
+      *local_image,
+      *host_image,
+    );
+  }
 
   // let image_clear_finished = create_semaphore(&device);
   // let clear_image_submit = vk::SubmitInfo {
@@ -232,8 +253,10 @@ fn main() {
 
     pipeline.destroy_self(&device);
 
-    // compute_pool.destroy_self(&device);
-    // transfer_pool.destroy_self(&device);
+    graphics_pool.destroy_self(&device);
+    transfer_pool.destroy_self(&device);
+
+    buffers.destroy_self(&device);
 
     local_image.destroy_self(&device);
     host_image.destroy_self(&device);

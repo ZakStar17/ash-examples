@@ -98,6 +98,20 @@ impl Image {
 
     assert!(mem_type_flags.contains(vk::MemoryPropertyFlags::HOST_VISIBLE));
 
+    // map entire memory
+    let image_bytes = unsafe {
+      log::debug!("Mapping image memory");
+      let ptr = device
+        .map_memory(
+          self.memory,
+          0,
+          self.memory_size,
+          vk::MemoryMapFlags::empty(),
+        )
+        .expect("Failed to map image memory") as *const u8;
+      std::slice::from_raw_parts(ptr, self.memory_size as usize)
+    };
+
     if !mem_type_flags.contains(vk::MemoryPropertyFlags::HOST_COHERENT) {
       // If the memory is not coherent, reading from it may give old results even if the GPU has
       // finished
@@ -116,20 +130,6 @@ impl Image {
           .expect("Failed to invalidate host image memory_ranges");
       }
     }
-
-    // map entire memory
-    let image_bytes = unsafe {
-      log::debug!("Mapping image memory");
-      let ptr = device
-        .map_memory(
-          self.memory,
-          0,
-          self.memory_size,
-          vk::MemoryMapFlags::empty(),
-        )
-        .expect("Failed to map image memory") as *const u8;
-      std::slice::from_raw_parts(ptr, self.memory_size as usize)
-    };
 
     // read bytes and save to file
     log::debug!("Saving image");
