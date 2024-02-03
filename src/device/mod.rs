@@ -32,7 +32,7 @@ macro_rules! const_flag_bitor {
 // kinda overkill
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags,
-  vk::FormatFeatureFlags::TRANSFER_SRC,
+  vk::FormatFeatureFlags::COLOR_ATTACHMENT,
   vk::FormatFeatureFlags::TRANSFER_DST
 );
 const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
@@ -41,7 +41,7 @@ const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
 const REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags,
   vk::ImageUsageFlags::TRANSFER_SRC,
-  vk::ImageUsageFlags::TRANSFER_DST
+  vk::ImageUsageFlags::COLOR_ATTACHMENT
 );
 const REQUIRED_IMAGE_USAGE_FLAGS_LINEAR: vk::ImageUsageFlags = vk::ImageUsageFlags::TRANSFER_DST;
 

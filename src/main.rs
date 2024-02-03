@@ -3,15 +3,19 @@ mod device;
 mod entry;
 mod image;
 mod instance;
+mod pipeline;
+mod pipeline_cache;
 mod render_pass;
+mod shaders;
 mod utility;
+mod vertex;
 
 // validation layers module will only exist if validation layers are enabled
 #[cfg(feature = "vl")]
 mod validation_layers;
 
 use ash::vk;
-use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
+use command_pools::{TransferCommandBufferPool};
 use device::PhysicalDevice;
 use image::Image;
 use std::{
@@ -21,7 +25,10 @@ use std::{
 };
 use utility::cstr;
 
-use crate::render_pass::{create_framebuffer, create_render_pass};
+use crate::{
+  pipeline::GraphicsPipeline,
+  render_pass::{create_framebuffer, create_render_pass},
+};
 
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -43,8 +50,8 @@ pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 pub const IMAGE_WIDTH: u32 = 1920;
 pub const IMAGE_HEIGHT: u32 = 1080;
 
-// device selection checks if format is available
-pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
+// should be compatible with fragment shader output
+pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
                                                                            // valid color values depend on IMAGE_FORMAT
 pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
@@ -93,6 +100,7 @@ fn main() {
 
   let (device, queues) = device::create_logical_device(&instance, &physical_device);
 
+  println!("Allocating images...");
   // GPU image with DEVICE_LOCAL flags
   let mut local_image = Image::new(
     &device,
@@ -117,9 +125,30 @@ fn main() {
   let image_view = local_image.create_view(&device);
   let extent = vk::Extent2D {
     width: IMAGE_WIDTH,
-    height: IMAGE_HEIGHT
+    height: IMAGE_HEIGHT,
   };
   let framebuffer = create_framebuffer(&device, render_pass, image_view, extent);
+
+  log::info!("Creating pipeline cache");
+  let (pipeline_cache, created_from_file) =
+    pipeline_cache::create_pipeline_cache(&device, &physical_device);
+  if created_from_file {
+    log::info!("Cache successfully created from an existing cache file");
+  } else {
+    log::info!("Cache initialized as empty");
+  }
+
+  log::debug!("Creating pipeline");
+  let mut pipeline = GraphicsPipeline::create(&device, pipeline_cache, render_pass);
+
+  // no more pipelines will be created, so might as well save and delete the cache
+  log::info!("Saving pipeline cache");
+  if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache) {
+    log::error!("Failed to save pipeline cache: {:?}", err);
+  }
+  unsafe {
+    device.destroy_pipeline_cache(pipeline_cache, None);
+  }
 
   // let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
   // let mut transfer_pool =
@@ -200,6 +229,8 @@ fn main() {
     device.destroy_framebuffer(framebuffer, None);
     device.destroy_image_view(image_view, None);
     device.destroy_render_pass(render_pass, None);
+
+    pipeline.destroy_self(&device);
 
     // compute_pool.destroy_self(&device);
     // transfer_pool.destroy_self(&device);

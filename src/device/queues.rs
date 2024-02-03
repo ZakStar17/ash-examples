@@ -10,7 +10,7 @@ pub struct QueueFamily {
 
 #[derive(Debug)]
 pub struct QueueFamilies {
-  pub compute: QueueFamily,
+  pub graphics: QueueFamily,
   pub transfer: Option<QueueFamily>,
   pub unique_indices: Box<[u32]>,
 }
@@ -25,9 +25,18 @@ impl QueueFamilies {
     let properties =
       unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
+    let mut graphics = None;
     let mut compute = None;
     let mut transfer = None;
     for (i, family) in properties.iter().enumerate() {
+      if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+        if graphics.is_none() {
+          graphics = Some(QueueFamily {
+            index: i as u32,
+            queue_count: family.queue_count,
+          });
+        }
+      }
       if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
         if compute.is_none() {
           compute = Some(QueueFamily {
@@ -45,31 +54,35 @@ impl QueueFamilies {
       }
     }
 
-    if compute.is_none() {
+    if graphics.is_none() {
       return Err(());
     }
 
+    if transfer.is_none() && compute.is_some() {
+      transfer = compute;
+    }
+
     // commonly used
-    let unique_indices = [compute.as_ref(), transfer.as_ref()]
+    let unique_indices = [graphics.as_ref(), transfer.as_ref()]
       .into_iter()
       .filter_map(|opt| opt.map(|f| f.index))
       .collect();
 
     Ok(QueueFamilies {
-      compute: compute.unwrap(),
+      graphics: graphics.unwrap(),
       transfer,
       unique_indices,
     })
   }
 
-  pub fn get_compute_index(&self) -> u32 {
-    self.compute.index
+  pub fn get_graphics_index(&self) -> u32 {
+    self.graphics.index
   }
 
   pub fn get_transfer_index(&self) -> u32 {
     match self.transfer.as_ref() {
       Some(family) => family.index,
-      None => self.compute.index,
+      None => self.graphics.index,
     }
   }
 }
@@ -89,40 +102,13 @@ fn get_queue_create_info(
   }
 }
 
-fn get_queue_create_infos(
-  families: &QueueFamilies,
-  priorities_ptr: *const f32,
-) -> Vec<vk::DeviceQueueCreateInfo> {
-  let mut queues_create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
-
-  // add optional queues
-  for optional_family in [&families.transfer] {
-    if let Some(family) = optional_family {
-      queues_create_infos.push(get_queue_create_info(family.index, 1, priorities_ptr));
-    }
-  }
-
-  // add graphics queues, these will substitute not available queues
-  queues_create_infos.push(get_queue_create_info(
-    families.compute.index,
-    min(
-      // always watch out for limits
-      families.compute.queue_count,
-      // request remaining needed queues
-      (QueueFamilies::FAMILY_COUNT - queues_create_infos.len()) as u32,
-    ),
-    priorities_ptr,
-  ));
-
-  queues_create_infos
-}
-
 pub struct Queues {
-  pub compute: vk::Queue,
+  pub graphics: vk::Queue,
   pub transfer: vk::Queue,
 }
 
 pub struct QueueCreateInfos {
+  // create infos contains a ptr to priorities, so it has to own it as well
   _priorities: Pin<Box<[f32; QueueFamilies::FAMILY_COUNT]>>,
   create_infos: Vec<vk::DeviceQueueCreateInfo>,
 }
@@ -139,7 +125,27 @@ impl Queues {
   pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> QueueCreateInfos {
     // use mid priorities for all queues
     let priorities = Box::pin([0.5_f32; QueueFamilies::FAMILY_COUNT]);
-    let create_infos = get_queue_create_infos(&queue_families, priorities.as_ptr());
+
+    let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
+  
+    // add optional queues
+    for optional_family in [&queue_families.transfer] {
+      if let Some(family) = optional_family {
+        create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
+      }
+    }
+  
+    // add graphics queues, these will substitute not available queues
+    create_infos.push(get_queue_create_info(
+      queue_families.graphics.index,
+      min(
+        // always watch out for limits
+        queue_families.graphics.queue_count,
+        // request remaining needed queues
+        (QueueFamilies::FAMILY_COUNT - create_infos.len()) as u32,
+      ),
+      priorities.as_ptr(),
+    ));
 
     QueueCreateInfos {
       _priorities: priorities,
@@ -148,21 +154,23 @@ impl Queues {
   }
 
   pub unsafe fn retrieve(device: &ash::Device, families: &QueueFamilies) -> Queues {
-    let mut compute_i = 0;
-    let mut get_next_compute_queue = || {
-      let queue = device.get_device_queue(families.compute.index, compute_i);
-      if compute_i < families.compute.queue_count {
-        compute_i += 1;
+    //! Should match order in get_queue_create_infos exactly
+
+    let mut graphics_i = 0;
+    let mut get_next_graphics_queue = || {
+      let queue = device.get_device_queue(families.graphics.index, graphics_i);
+      if graphics_i < families.graphics.queue_count {
+        graphics_i += 1;
       }
       queue
     };
 
-    let compute = get_next_compute_queue();
+    let graphics = get_next_graphics_queue();
     let transfer = match &families.transfer {
       Some(family) => device.get_device_queue(family.index, 0),
-      None => get_next_compute_queue(),
+      None => get_next_graphics_queue(),
     };
 
-    Queues { compute, transfer }
+    Queues { graphics, transfer }
   }
 }
