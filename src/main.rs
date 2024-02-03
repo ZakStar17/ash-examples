@@ -63,16 +63,16 @@ const IMAGE_SAVE_PATH: &str = "image.png";
 pub const VERTEX_COUNT: usize = 3;
 pub const VERTICES: [Vertex; VERTEX_COUNT] = [
   Vertex {
-    pos: [0.2, 0.2],
+    pos: [0.7, 0.3],
     color: [1.0, 0.0, 0.0],
   },
   Vertex {
-    pos: [-0.4, 0.2],
-    color: [1.0, 0.0, 0.0],
+    pos: [-0.4, 0.9],
+    color: [0.0, 1.0, 0.0],
   },
   Vertex {
     pos: [-0.9, -0.8],
-    color: [1.0, 0.0, 0.0],
+    color: [0.0, 0.0, 1.0],
   },
 ];
 pub const INDEX_COUNT: usize = 3;
@@ -178,7 +178,15 @@ fn main() {
   // record command buffers
   unsafe {
     graphics_pool.reset(&device);
-    graphics_pool.record(&device, render_pass, framebuffer, &pipeline, &buffers);
+    graphics_pool.record(
+      &device,
+      &physical_device.queue_families,
+      render_pass,
+      framebuffer,
+      &pipeline,
+      &buffers,
+      *local_image,
+    );
 
     transfer_pool.reset(&device);
     transfer_pool.record_copy_img_to_host(
@@ -189,52 +197,51 @@ fn main() {
     );
   }
 
-  // let image_clear_finished = create_semaphore(&device);
-  // let clear_image_submit = vk::SubmitInfo {
-  //   s_type: vk::StructureType::SUBMIT_INFO,
-  //   p_next: ptr::null(),
-  //   wait_semaphore_count: 0,
-  //   p_wait_semaphores: ptr::null(),
-  //   p_wait_dst_stage_mask: ptr::null(),
-  //   command_buffer_count: 1,
-  //   p_command_buffers: addr_of!(compute_pool.clear_img),
-  //   signal_semaphore_count: 1,
-  //   p_signal_semaphores: addr_of!(image_clear_finished),
-  // };
-  // let wait_for = vk::PipelineStageFlags::TRANSFER;
-  // let transfer_image_submit = vk::SubmitInfo {
-  //   s_type: vk::StructureType::SUBMIT_INFO,
-  //   p_next: ptr::null(),
-  //   wait_semaphore_count: 1,
-  //   p_wait_semaphores: addr_of!(image_clear_finished),
-  //   p_wait_dst_stage_mask: addr_of!(wait_for),
-  //   command_buffer_count: 1,
-  //   p_command_buffers: addr_of!(transfer_pool.copy_to_host),
-  //   signal_semaphore_count: 0,
-  //   p_signal_semaphores: ptr::null(),
-  // };
+  let triangle_finished = create_semaphore(&device);
+  let triangle_submit = vk::SubmitInfo {
+    s_type: vk::StructureType::SUBMIT_INFO,
+    p_next: ptr::null(),
+    wait_semaphore_count: 0,
+    p_wait_semaphores: ptr::null(),
+    p_wait_dst_stage_mask: ptr::null(),
+    command_buffer_count: 1,
+    p_command_buffers: addr_of!(graphics_pool.triangle),
+    signal_semaphore_count: 1,
+    p_signal_semaphores: addr_of!(triangle_finished),
+  };
+  let wait_for = vk::PipelineStageFlags::TRANSFER;
+  let transfer_image_submit = vk::SubmitInfo {
+    s_type: vk::StructureType::SUBMIT_INFO,
+    p_next: ptr::null(),
+    wait_semaphore_count: 1,
+    p_wait_semaphores: addr_of!(triangle_finished),
+    p_wait_dst_stage_mask: addr_of!(wait_for),
+    command_buffer_count: 1,
+    p_command_buffers: addr_of!(transfer_pool.copy_to_host),
+    signal_semaphore_count: 0,
+    p_signal_semaphores: ptr::null(),
+  };
 
-  // let finished = create_fence(&device);
+  let finished = create_fence(&device);
 
-  // println!("Submitting work...");
-  // unsafe {
-  //   // note: you can make multiple submits with device.queue_submit2
-  //   device
-  //     .queue_submit(queues.compute, &[clear_image_submit], vk::Fence::null())
-  //     .expect("Failed to submit compute");
-  //   device
-  //     .queue_submit(queues.transfer, &[transfer_image_submit], finished)
-  //     .expect("Failed to submit transfer");
+  println!("Submitting work...");
+  unsafe {
+    device
+      .queue_submit(queues.graphics, &[triangle_submit], vk::Fence::null())
+      .expect("Failed to submit compute");
+    device
+      .queue_submit(queues.transfer, &[transfer_image_submit], finished)
+      .expect("Failed to submit transfer");
 
-  //   device
-  //     .wait_for_fences(&[finished], true, u64::MAX)
-  //     .expect("Failed to wait for fences");
-  // }
-  // println!("GPU finished!");
+    device
+      .wait_for_fences(&[finished], true, u64::MAX)
+      .expect("Failed to wait for fences");
+  }
+  println!("GPU finished!");
 
-  // println!("Saving file...");
-  // host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
-  // println!("Done!");
+  println!("Saving file...");
+  host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
+  println!("Done!");
 
   // Cleanup
   log::info!("Destroying and releasing resources");
@@ -244,8 +251,8 @@ fn main() {
       .device_wait_idle()
       .expect("Failed to wait for the device to become idle");
 
-    // device.destroy_fence(finished, None);
-    // device.destroy_semaphore(image_clear_finished, None);
+    device.destroy_fence(finished, None);
+    device.destroy_semaphore(triangle_finished, None);
 
     device.destroy_framebuffer(framebuffer, None);
     device.destroy_image_view(image_view, None);

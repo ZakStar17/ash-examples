@@ -9,7 +9,7 @@ use crate::{
 
 pub struct GraphicsCommandBufferPool {
   pool: vk::CommandPool,
-  triangle: vk::CommandBuffer,
+  pub triangle: vk::CommandBuffer,
 }
 
 impl GraphicsCommandBufferPool {
@@ -31,10 +31,12 @@ impl GraphicsCommandBufferPool {
   pub unsafe fn record(
     &mut self,
     device: &ash::Device,
+    queue_families: &QueueFamilies,
     render_pass: vk::RenderPass,
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
     buffers: &ConstantBuffers,
+    image: vk::Image,
   ) {
     let cb = self.triangle;
 
@@ -80,6 +82,35 @@ impl GraphicsCommandBufferPool {
       device.cmd_draw_indexed(cb, INDEX_COUNT as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);
+
+    let subresource_range = vk::ImageSubresourceRange {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      base_mip_level: 0,
+      level_count: 1,
+      base_array_layer: 0,
+      layer_count: 1,
+    };
+    let release = vk::ImageMemoryBarrier {
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      p_next: ptr::null(),
+      src_access_mask: vk::AccessFlags::TRANSFER_READ,
+      dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
+      old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+      new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+      src_queue_family_index: queue_families.get_graphics_index(),
+      dst_queue_family_index: queue_families.get_transfer_index(),
+      image,
+      subresource_range,
+    };
+    device.cmd_pipeline_barrier(
+      cb,
+      vk::PipelineStageFlags::TRANSFER,
+      vk::PipelineStageFlags::TRANSFER,
+      vk::DependencyFlags::empty(),
+      &[],
+      &[],
+      &[release],
+    );
 
     device
       .end_command_buffer(cb)

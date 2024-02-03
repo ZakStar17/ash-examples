@@ -36,15 +36,26 @@ pub fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
     p_preserve_attachments: ptr::null(),
   };
 
-  let image_subpass_dependency = vk::SubpassDependency {
-    src_subpass: vk::SUBPASS_EXTERNAL,
-    dst_subpass: 0, // image_subpass
-    src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-    dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-    src_access_mask: vk::AccessFlags::empty(),
-    dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-    dependency_flags: vk::DependencyFlags::empty(),
-  };
+  let dependencies = [
+    vk::SubpassDependency {
+      src_subpass: vk::SUBPASS_EXTERNAL,
+      dst_subpass: 0, // image_subpass
+      src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+      dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+      src_access_mask: vk::AccessFlags::empty(),
+      dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+      dependency_flags: vk::DependencyFlags::empty(),
+    },
+    vk::SubpassDependency {
+      src_subpass: 0,
+      dst_subpass: vk::SUBPASS_EXTERNAL,
+      src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+      dst_stage_mask: vk::PipelineStageFlags::TRANSFER,
+      src_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+      dst_access_mask: vk::AccessFlags::TRANSFER_READ,
+      dependency_flags: vk::DependencyFlags::empty(),
+    },
+  ];
 
   let create_info = vk::RenderPassCreateInfo {
     s_type: vk::StructureType::RENDER_PASS_CREATE_INFO,
@@ -54,8 +65,8 @@ pub fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
     p_attachments: &image_attachment,
     subpass_count: 1,
     p_subpasses: &image_subpass,
-    dependency_count: 1,
-    p_dependencies: &image_subpass_dependency,
+    dependency_count: dependencies.len() as u32,
+    p_dependencies: dependencies.as_ptr(),
   };
   unsafe {
     device
