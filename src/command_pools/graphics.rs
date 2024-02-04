@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   constant_buffers::ConstantBuffers, device::QueueFamilies, pipeline::GraphicsPipeline,
-  IMAGE_HEIGHT, IMAGE_WIDTH, INDEX_COUNT,
+  BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDEX_COUNT,
 };
 
 pub struct GraphicsCommandBufferPool {
@@ -51,16 +51,14 @@ impl GraphicsCommandBufferPool {
       .expect("Failed to start recording command buffer");
 
     let clear_value = vk::ClearValue {
-      color: vk::ClearColorValue {
-        float32: [0.0, 0.0, 0.0, 1.0],
-      },
+      color: BACKGROUND_COLOR,
     };
     let render_pass_begin_info = vk::RenderPassBeginInfo {
       s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
       p_next: ptr::null(),
       render_pass,
       framebuffer,
-      // whole render pass
+      // whole image
       render_area: vk::Rect2D {
         offset: vk::Offset2D { x: 0, y: 0 },
         extent: vk::Extent2D {
@@ -77,40 +75,42 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
       device.cmd_bind_vertex_buffers(cb, 0, &[buffers.vertex], &[0]);
       device.cmd_bind_index_buffer(cb, buffers.index, 0, vk::IndexType::UINT16);
-
-      // draw static objects
       device.cmd_draw_indexed(cb, INDEX_COUNT as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);
 
-    let subresource_range = vk::ImageSubresourceRange {
-      aspect_mask: vk::ImageAspectFlags::COLOR,
-      base_mip_level: 0,
-      level_count: 1,
-      base_array_layer: 0,
-      layer_count: 1,
-    };
-    let release = vk::ImageMemoryBarrier {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-      p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::TRANSFER_READ,
-      dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
-      old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-      new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-      src_queue_family_index: queue_families.get_graphics_index(),
-      dst_queue_family_index: queue_families.get_transfer_index(),
-      image,
-      subresource_range,
-    };
-    device.cmd_pipeline_barrier(
-      cb,
-      vk::PipelineStageFlags::TRANSFER,
-      vk::PipelineStageFlags::TRANSFER,
-      vk::DependencyFlags::empty(),
-      &[],
-      &[],
-      &[release],
-    );
+    // After render pass executes the resulting image will already have transfer layout and no
+    // access flags, so this is just a queue ownership transfer
+    {
+      let subresource_range = vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: 1,
+      };
+      let release = vk::ImageMemoryBarrier {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags::NONE, // indicated in the render pass
+        dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
+        old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: queue_families.get_graphics_index(),
+        dst_queue_family_index: queue_families.get_transfer_index(),
+        image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier(
+        cb,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[],
+        &[release],
+      );
+    }
 
     device
       .end_command_buffer(cb)

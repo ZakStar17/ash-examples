@@ -32,8 +32,8 @@ macro_rules! const_flag_bitor {
 // kinda overkill
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags,
-  vk::FormatFeatureFlags::COLOR_ATTACHMENT,
-  vk::FormatFeatureFlags::TRANSFER_DST
+  vk::FormatFeatureFlags::TRANSFER_SRC,
+  vk::FormatFeatureFlags::COLOR_ATTACHMENT
 );
 const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
   vk::FormatFeatureFlags::TRANSFER_DST;

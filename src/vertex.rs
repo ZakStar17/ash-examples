@@ -1,7 +1,7 @@
 use std::{
   marker::PhantomData,
   mem::size_of,
-  ops::Deref,
+  pin::Pin,
   ptr::{self, addr_of},
 };
 
@@ -65,7 +65,7 @@ pub struct PipelineVertexInputStateCreateInfoGen {
 // this struct should not outlive the generator, so it has a phantom field marking its lifetime
 pub struct PipelineVertexInputStateCreateInfo<'a> {
   vk_obj: vk::PipelineVertexInputStateCreateInfo,
-  phantom: PhantomData<&'a PipelineVertexInputStateCreateInfoGen>,
+  phantom: PhantomData<Pin<&'a PipelineVertexInputStateCreateInfoGen>>,
 }
 
 impl<'a> PipelineVertexInputStateCreateInfo<'a> {
@@ -75,25 +75,22 @@ impl<'a> PipelineVertexInputStateCreateInfo<'a> {
       phantom: PhantomData,
     }
   }
+
+  pub fn as_ptr(&self) -> *const vk::PipelineVertexInputStateCreateInfo {
+    &self.vk_obj
+  }
 }
 
 impl PipelineVertexInputStateCreateInfoGen {
-  pub fn gen<'a>(&'a self) -> PipelineVertexInputStateCreateInfo<'a> {
+  pub fn gen<'a>(pinned_self: Pin<&'a Self>) -> PipelineVertexInputStateCreateInfo<'a> {
     PipelineVertexInputStateCreateInfo::new(vk::PipelineVertexInputStateCreateInfo {
       s_type: vk::StructureType::PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
       p_next: ptr::null(),
       flags: vk::PipelineVertexInputStateCreateFlags::empty(),
-      vertex_attribute_description_count: self.attribute_descriptions.len() as u32,
-      p_vertex_attribute_descriptions: self.attribute_descriptions.as_ptr(),
+      vertex_attribute_description_count: pinned_self.attribute_descriptions.len() as u32,
+      p_vertex_attribute_descriptions: pinned_self.attribute_descriptions.as_ptr(),
       vertex_binding_description_count: 1,
-      p_vertex_binding_descriptions: addr_of!(self.binding_description),
+      p_vertex_binding_descriptions: addr_of!(pinned_self.binding_description),
     })
-  }
-}
-
-impl<'a> Deref for PipelineVertexInputStateCreateInfo<'a> {
-  type Target = vk::PipelineVertexInputStateCreateInfo;
-  fn deref(&self) -> &Self::Target {
-    &self.vk_obj
   }
 }

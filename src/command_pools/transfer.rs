@@ -55,20 +55,13 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    // This is the matching queue family ownership acquire operation to the one in the compute
-    // command buffer which executed on the source image
     let src_acquire = vk::ImageMemoryBarrier {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
       p_next: ptr::null(),
-
-      // should be NONE for ownership acquire
-      src_access_mask: vk::AccessFlags::NONE,
-      // change image AccessFlags after the ownership transfer completes
+      src_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership acquire
       dst_access_mask: vk::AccessFlags::TRANSFER_READ,
-
       old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-
       src_queue_family_index: queue_families.get_graphics_index(),
       dst_queue_family_index: queue_families.get_transfer_index(),
       image: src_image,

@@ -1,8 +1,12 @@
-use std::ptr::{self, addr_of};
+use std::{pin::pin, ptr::{self, addr_of}};
 
 use ash::vk;
 
-use crate::{shaders, vertex::Vertex, IMAGE_HEIGHT, IMAGE_WIDTH};
+use crate::{
+  shaders,
+  vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
+  IMAGE_HEIGHT, IMAGE_WIDTH,
+};
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
@@ -18,9 +22,9 @@ impl GraphicsPipeline {
     let mut shader = shaders::Shader::load(device);
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
-    let vertex_input_state_gen = Vertex::get_input_state_create_info_gen(0, 0);
-    let vertex_input_state = *vertex_input_state_gen.gen();
-    drop(vertex_input_state_gen);
+    let vertex_input_state_gen = pin!(Vertex::get_input_state_create_info_gen(0, 0));
+    let vertex_input_state =
+      PipelineVertexInputStateCreateInfoGen::gen(vertex_input_state_gen.as_ref());
 
     let input_assembly_state_ci = triangle_input_assembly_state();
 
@@ -56,15 +60,10 @@ impl GraphicsPipeline {
     let attachment_state = vk::PipelineColorBlendAttachmentState {
       // no blend state
       blend_enable: vk::FALSE,
-
-      // everything else doesn't matter
       color_write_mask: vk::ColorComponentFlags::RGBA,
-      src_color_blend_factor: vk::BlendFactor::ONE,
-      dst_color_blend_factor: vk::BlendFactor::ZERO,
-      color_blend_op: vk::BlendOp::ADD,
-      src_alpha_blend_factor: vk::BlendFactor::ONE,
-      dst_alpha_blend_factor: vk::BlendFactor::ZERO,
-      alpha_blend_op: vk::BlendOp::ADD,
+    
+      // everything else doesn't matter
+      ..Default::default()
     };
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo {
       s_type: vk::StructureType::PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -99,7 +98,7 @@ impl GraphicsPipeline {
       flags: vk::PipelineCreateFlags::empty(),
       stage_count: shader_stages.len() as u32,
       p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: &vertex_input_state,
+      p_vertex_input_state: vertex_input_state.as_ptr(),
       p_input_assembly_state: &input_assembly_state_ci,
       p_tessellation_state: ptr::null(),
       p_viewport_state: &viewport_state,

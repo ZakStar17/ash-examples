@@ -1,7 +1,7 @@
 use std::{
   mem::size_of,
   ops::BitOr,
-  ptr::{self, addr_of},
+  ptr::{self, addr_of, copy_nonoverlapping},
 };
 
 use ash::vk;
@@ -40,6 +40,7 @@ struct BuffersAllocation {
   pub offsets: Box<[u64]>,
 }
 
+// allocates multiple buffers in one vk::DeviceMemory
 fn allocate_buffers(
   device: &ash::Device,
   physical_device: &PhysicalDevice,
@@ -49,7 +50,7 @@ fn allocate_buffers(
 ) -> BuffersAllocation {
   let mut req_mem_type_bits = 0;
   let mut alignment = 0;
-  let mut full_sizes = Vec::with_capacity(buffers.len());
+  let mut req_sizes = Vec::with_capacity(buffers.len());
   for buffer in buffers.iter() {
     let mem_requirements = unsafe { device.get_buffer_memory_requirements(*buffer) };
     req_mem_type_bits |= mem_requirements.memory_type_bits;
@@ -64,11 +65,11 @@ fn allocate_buffers(
       alignment = mem_requirements.alignment;
     }
 
-    full_sizes.push(mem_requirements.size);
+    req_sizes.push(mem_requirements.size);
   }
 
   let mut total_size = 0;
-  let offsets: Box<[u64]> = full_sizes
+  let offsets: Box<[u64]> = req_sizes
     .into_iter()
     .map(|size| size + alignment - (size % alignment))
     .map(|aligned_size| {
@@ -175,7 +176,7 @@ impl ConstantBuffers {
     );
 
     // copy data into the source buffers (host memory)
-    log::info!("Populating constant buffer data to host memory");
+    log::info!("Copying constant buffer data into host memory");
     unsafe {
       let mem_ptr = device
         .map_memory(
@@ -186,12 +187,12 @@ impl ConstantBuffers {
         )
         .expect("Failed to map constant source memory") as *mut u8;
 
-      ptr::copy_nonoverlapping(
+      copy_nonoverlapping(
         addr_of!(vertices) as *const u8,
         mem_ptr.byte_add(vertex_offset as usize) as *mut u8,
         vertex_size,
       );
-      ptr::copy_nonoverlapping(
+      copy_nonoverlapping(
         addr_of!(indices) as *const u8,
         mem_ptr.byte_add(index_offset as usize) as *mut u8,
         index_size,
@@ -211,13 +212,13 @@ impl ConstantBuffers {
         };
         device
           .flush_mapped_memory_ranges(&[range])
-          .expect("Failed to flush host mapped image memory_ranges");
+          .expect("Failed to flush host mapped constant buffer memory");
       }
 
       device.unmap_memory(host_allocation.memory);
     }
 
-    // record a copy operation between source and copy buffers
+    // record a copy operation between src and dst buffers
     {
       let vertex_copy_region = vk::BufferCopy2 {
         s_type: vk::StructureType::BUFFER_COPY_2,

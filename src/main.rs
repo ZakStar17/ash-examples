@@ -60,6 +60,10 @@ pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // sh
                                                                            // valid color values depend on IMAGE_FORMAT
 const IMAGE_SAVE_PATH: &str = "image.png";
 
+pub const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  float32: [0.01, 0.01, 0.01, 1.0],
+};
+
 pub const VERTEX_COUNT: usize = 3;
 pub const VERTICES: [Vertex; VERTEX_COUNT] = [
   Vertex {
