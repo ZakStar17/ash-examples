@@ -1,21 +1,38 @@
-# Compute image clear
+# Triangle image
 
-This example instructs the GPU to clear a local image to a specific color in device memory, copy it to CPU accessible memory, read it and save it to a file.
+This example draws a triangle on an image, copies it to host accessible memory and saves it to a file.
+
+It uses [Image clear example](https://github.com/ZakStar17/ash-by-example/tree/main/compute_image_clear) as base and other concepts from [Storage image compute shader](https://github.com/ZakStar17/ash-by-example/tree/main/storage_image_compute_shader). The compute pipeline is substituted with a graphics pipeline and it introduces render passes, vertex and index buffers.
 
 You can run this example with:
 
-`RUST_LOG=debug cargo run --bin compute_image_clear`
+`RUST_LOG=debug cargo run --bin triangle-image`
+
+## Shaders
+
+This example uses one vertex and one fragment shader. These just take one 2D position and one color per vertex and assign them as is in 3D coordinates.
+
+The vertex type is:
+
+```rust
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct Vertex {
+  pub pos: [f32; 2],
+  pub color: [f32; 3],
+}
+```
+
+One in the final buffer, the vertices are read from continuous memory by the GPU.
 
 ## Code overview
 
-- The physical device selection contains additional checks for if the requested image format (here `IMAGE_FORMAT = vk::Format::R8G8B8A8_UINT`) is supported and the device allows image creation of the requested size (`IMAGE_WIDTH` and `IMAGE_HEIGHT`).
-- Two images are created, one which resides in `DEVICE_LOCAL` memory (local to the GPU) and the other which resides in `HOST_VISIBLE` memory (accessible by the CPU). The contents of the first image will be cleared and then copied to the second one. The host image uses linear tiling in order for its memory to not be implementation dependent.
-- Two command buffer pools are created, one for the compute queue family and the other for the transfer. Both command pools allocate one command buffer, the compute is recorded to clear the local image and the transfer to copy it to the host image.
-- Both command buffers use image memory barriers to perform layout transitions (these are set to be optimal for their respective use cases). Because each image is created with `vk::SharingMode::EXCLUSIVE`, the pipeline barriers also perform queue family ownership release and acquire.
-- The command buffers are submitted and synchronized with an semaphore. The second submit also signals a fence for when work is completed.
-- When work finishes, the host image memory is then invalidated, read and saved to an file using `image::save_buffer` from the [image](https://docs.rs/image/latest/image/) crate.
-
-This example does not create any pipelines and only necessitates compute and transfer queues.
+- A render pass describes how image attachments are used through rendering. This is similar to creating pipeline barriers to transition image layouts and creating memory dependencies between stages, however it all needs to be specified before pipeline creation. It has multiple execution steps called subpasses. In this example, the render pass contains only one subpass and one attachment (the local image), as well as two memory dependencies for external synchronization to and from the subpass.
+- A framebuffer which is compatible with the render pass is created. This framebuffer takes a image view from the local image as an attachment to be used in rendering.
+- The two shaders are loaded and passed to the graphics pipeline creation, which creates configurations about used vertex and index parameters, as well as other configurations for fixed functions in the pipeline. These are mostly kept to a minimum to allow drawing triangles on a 2D plane.
+- The graphics command pool is created. Because this example doesn't use dynamic state for the pipeline, mostly everything is already configured, so the buffer just needs to bind the pipeline, vertex and index buffers and issue the draw command. After the render pass ends the image is already in its final layout for transfer, so it just needs to be released and can be used in the transfer command buffer as usual.
+- The buffers are created and allocated in one device local memory. In order to populate them with data, an identical pair of buffers is created in host visible memory. These are mapped, the data is copied, and a set of [vkCmdCopyBuffer](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkCmdCopyBuffer2.html) operations is submitted to finally the data from the host visible to the local final buffers. This involves more work but makes the final buffers available in a more accessible local memory for the GPU.
+- The work is then submitted and saved in the same fashion as in [Image clear](https://github.com/ZakStar17/ash-by-example/tree/main/compute_image_clear).
 
 ## Cargo features
 
