@@ -90,6 +90,7 @@ fn check_swapchain_support(
 unsafe fn select_physical_device(
   instance: &ash::Instance,
   surface_loader: &ash::extensions::khr::Surface,
+  surface: vk::SurfaceKHR,
 ) -> Option<(vk::PhysicalDevice, QueueFamilies)> {
   instance
     .enumerate_physical_devices()

@@ -8,8 +8,15 @@ pub struct QueueFamily {
   pub queue_count: u32,
 }
 
+impl PartialEq for QueueFamily {
+  fn eq(&self, other: &Self) -> bool {
+    self.index == other.index
+  }
+}
+
 #[derive(Debug)]
 pub struct QueueFamilies {
+  pub presentation: QueueFamily,
   pub graphics: QueueFamily,
   pub transfer: Option<QueueFamily>,
   pub unique_indices: Box<[u32]>,
@@ -18,66 +25,67 @@ pub struct QueueFamilies {
 fn family_supports_surface(
   physical_device: vk::PhysicalDevice,
   surface_loader: &ash::extensions::khr::Surface,
+  surface: vk::SurfaceKHR,
   family_index: usize,
-) {
+) -> bool {
   unsafe {
-    surface_loader.get_physical_device_surface_support(
-      physical_device,
-      family_index as u32,
-      surface_loader,
-    )
-  };
+    surface_loader
+      .get_physical_device_surface_support(physical_device, family_index as u32, surface)
+      .expect("Failed to query for queue family surface support")
+  }
 }
 
 impl QueueFamilies {
-  pub const FAMILY_COUNT: usize = 2;
+  pub const FAMILY_COUNT: usize = 3;
 
   pub fn get_from_physical_device(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
     surface_loader: &ash::extensions::khr::Surface,
+    surface: vk::SurfaceKHR,
   ) -> Result<Self, ()> {
     let properties =
       unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
-    let family = |i: usize, props: vk::QueueFamilyProperties| {
-      Some(QueueFamily {
+    let mut presentation = None; // will try to be equal to graphics
+    let mut graphics = None;
+    let mut compute = None; // non graphics
+    let mut transfer = None; // non graphics and non compute
+    for (i, props) in properties.into_iter().enumerate() {
+      let family = Some(QueueFamily {
         index: i as u32,
         queue_count: props.queue_count,
-      })
-    };
+      });
 
-    let mut presentation = None;
-    let mut graphics = None;
-    let mut compute = None;
-    let mut transfer = None;
-    for (i, props) in properties.into_iter().enumerate() {
-      if presentation.is_none() {
-        presentation = family(i, props);
+      let mut presentation_set = false;
+      if presentation.is_none()
+        && family_supports_surface(physical_device, surface_loader, surface, i)
+      {
+        presentation = family;
+        presentation_set = true;
       }
 
       if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
         if graphics.is_none() {
-          graphics = family(i, props);
+          graphics = family;
+
+          // set presentation queue to be preferably equal to graphics
+          if presentation.is_some() && !presentation_set {
+            presentation = family;
+          }
         }
-      } else if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
+      } else if props.queue_flags.contains(vk::QueueFlags::COMPUTE) {
         if compute.is_none() {
-          compute = Some(QueueFamily {
-            index: i as u32,
-            queue_count: family.queue_count,
-          });
+          compute = family;
         }
-      } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
+      } else if props.queue_flags.contains(vk::QueueFlags::TRANSFER) {
         if transfer.is_none() {
-          transfer = Some(QueueFamily {
-            index: i as u32,
-            queue_count: family.queue_count,
-          });
+          transfer = family;
         }
       }
     }
 
-    if graphics.is_none() {
+    if presentation.is_none() || graphics.is_none() {
       return Err(());
     }
 
@@ -92,10 +100,15 @@ impl QueueFamilies {
       .collect();
 
     Ok(QueueFamilies {
+      presentation: presentation.unwrap(),
       graphics: graphics.unwrap(),
       transfer,
       unique_indices,
     })
+  }
+
+  pub fn get_presentation_index(&self) -> u32 {
+    self.presentation.index
   }
 
   pub fn get_graphics_index(&self) -> u32 {
@@ -126,6 +139,7 @@ fn get_queue_create_info(
 }
 
 pub struct Queues {
+  pub presentation: vk::Queue,
   pub graphics: vk::Queue,
   pub transfer: vk::Queue,
 }
@@ -151,21 +165,28 @@ impl Queues {
 
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
 
-    // add optional queues
-    for optional_family in [&queue_families.transfer] {
-      if let Some(family) = optional_family {
-        create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
-      }
+    if let Some(family) = queue_families.transfer {
+      create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
     }
 
-    // add graphics queues, these will substitute not available queues
+    if queue_families.presentation != queue_families.graphics {
+      create_infos.push(get_queue_create_info(
+        queue_families.get_presentation_index(),
+        1,
+        priorities.as_ptr(),
+      ));
+    }
+
+    // add graphics queues, these substitute for missing transfer
     create_infos.push(get_queue_create_info(
-      queue_families.graphics.index,
+      queue_families.get_graphics_index(),
       min(
-        // always watch out for limits
         queue_families.graphics.queue_count,
-        // request remaining needed queues
-        (QueueFamilies::FAMILY_COUNT - create_infos.len()) as u32,
+        1 + (if queue_families.transfer.is_none() {
+          1
+        } else {
+          0
+        }),
       ),
       priorities.as_ptr(),
     ));
@@ -176,24 +197,34 @@ impl Queues {
     }
   }
 
-  pub unsafe fn retrieve(device: &ash::Device, families: &QueueFamilies) -> Queues {
-    //! Should match order in get_queue_create_infos exactly
+  pub unsafe fn retrieve(device: &ash::Device, queue_families: &QueueFamilies) -> Queues {
+    //! Should match get_queue_create_infos
 
     let mut graphics_i = 0;
     let mut get_next_graphics_queue = || {
-      let queue = device.get_device_queue(families.graphics.index, graphics_i);
-      if graphics_i < families.graphics.queue_count {
+      let queue = device.get_device_queue(queue_families.graphics.index, graphics_i);
+      if graphics_i < queue_families.graphics.queue_count {
         graphics_i += 1;
       }
       queue
     };
 
     let graphics = get_next_graphics_queue();
-    let transfer = match &families.transfer {
+    let presentation = if queue_families.presentation == queue_families.graphics {
+      graphics
+    } else {
+      device.get_device_queue(queue_families.presentation.index, 0)
+    };
+
+    let transfer = match &queue_families.transfer {
       Some(family) => device.get_device_queue(family.index, 0),
       None => get_next_graphics_queue(),
     };
 
-    Queues { graphics, transfer }
+    Queues {
+      presentation,
+      graphics,
+      transfer,
+    }
   }
 }

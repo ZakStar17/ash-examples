@@ -31,7 +31,7 @@ impl Render {
     let instance = instance::create_instance(&entry, event_loop);
 
     Self {
-     entry,
+      entry,
       instance,
       #[cfg(feature = "vl")]
       debug_utils,
@@ -85,6 +85,11 @@ impl WindowedRender {
 
     let renderer = SyncRenderer::new(event_loop, instance);
 
-    Self { window, surface_loader, surface,  renderer }
+    Self {
+      window,
+      surface_loader,
+      surface,
+      renderer,
+    }
   }
 }
