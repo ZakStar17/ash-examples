@@ -2,7 +2,7 @@ use std::ops::{BitOr, Deref};
 
 use ash::vk;
 
-use crate::utility::c_char_array_to_string;
+use crate::{render::objects::Surface, utility::c_char_array_to_string};
 
 use super::{get_extended_properties, select_physical_device};
 
@@ -15,6 +15,10 @@ pub struct PhysicalDevice {
   properties: vk::PhysicalDeviceProperties,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
   max_memory_allocation_size: vk::DeviceSize,
+
+  pub surface_formats: Box<[vk::SurfaceFormatKHR]>,
+  pub surface_present_modes: Box<[vk::PresentModeKHR]>,
+  pub surface_capabilities: vk::SurfaceCapabilitiesKHR
 }
 
 impl Deref for PhysicalDevice {
@@ -26,14 +30,9 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select(
-    instance: &ash::Instance,
-    surface_loader: &ash::extensions::khr::Surface,
-    surface: vk::SurfaceKHR,
-  ) -> PhysicalDevice {
+  pub unsafe fn select(instance: &ash::Instance, surface: &Surface) -> PhysicalDevice {
     let (physical_device, queue_families) =
-      select_physical_device(instance, surface_loader, surface)
-        .expect("No supported physical device available");
+      select_physical_device(instance, surface).expect("No supported physical device available");
 
     let (properties, properties11) = get_extended_properties(instance, physical_device);
     let mem_properties = instance.get_physical_device_memory_properties(physical_device);
@@ -47,12 +46,20 @@ impl PhysicalDevice {
     print_queue_families_debug_info(&queue_family_properties);
     print_device_memory_debug_info(&mem_properties);
 
+    let surface_formats = surface.get_formats(physical_device).into_boxed_slice();
+    let surface_present_modes = surface.get_present_modes(physical_device).into_boxed_slice();
+    let surface_capabilities = surface.get_capabilities(physical_device);
+
     PhysicalDevice {
       vk_device: physical_device,
       properties,
       mem_properties,
       queue_families,
       max_memory_allocation_size: properties11.max_memory_allocation_size,
+
+      surface_formats,
+      surface_present_modes,
+      surface_capabilities
     }
   }
 

@@ -22,6 +22,8 @@ pub const WINDOW_TITLE: &'static str = "Bouncy Ferris";
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
 pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
 
+pub const USE_VSYNC: bool = false;
+
 pub fn main_loop(event_loop: EventLoop<()>, mut app: App) {
   let mut last_frame_instant = Instant::now();
 

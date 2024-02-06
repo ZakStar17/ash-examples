@@ -16,7 +16,7 @@ use crate::{
   utility::{self, c_char_array_to_string},
 };
 
-use super::{REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION};
+use super::{objects::Surface, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION};
 
 pub use logical_device::create_logical_device;
 pub use physical_device::PhysicalDevice;
@@ -68,29 +68,16 @@ fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice)
   .is_empty()
 }
 
-fn check_swapchain_support(
-  device: vk::PhysicalDevice,
-  surface_loader: &ash::extensions::khr::Surface,
-  surface: vk::SurfaceKHR,
-) -> bool {
-  let formats = unsafe {
-    surface_loader
-      .get_physical_device_surface_formats(device, surface)
-      .expect("Failed to query for surface formats.")
-  };
-  let present_modes = unsafe {
-    surface_loader
-      .get_physical_device_surface_present_modes(device, surface)
-      .expect("Failed to query for surface present mode.")
-  };
+fn check_swapchain_support(device: vk::PhysicalDevice, surface: &Surface) -> bool {
+  let formats = unsafe { surface.get_formats(device) };
+  let present_modes = unsafe { surface.get_present_modes(device) };
 
   !formats.is_empty() && !present_modes.is_empty()
 }
 
 unsafe fn select_physical_device(
   instance: &ash::Instance,
-  surface_loader: &ash::extensions::khr::Surface,
-  surface: vk::SurfaceKHR,
+  surface: &Surface,
 ) -> Option<(vk::PhysicalDevice, QueueFamilies)> {
   instance
     .enumerate_physical_devices()
@@ -116,7 +103,7 @@ unsafe fn select_physical_device(
         return false;
       }
 
-      if !check_swapchain_support(physical_device, surface_loader, surface) {
+      if !check_swapchain_support(physical_device, surface) {
         return false;
       }
 
@@ -124,12 +111,7 @@ unsafe fn select_physical_device(
     })
     .filter_map(|physical_device| {
       // filter devices that do not have required queue families
-      match QueueFamilies::get_from_physical_device(
-        instance,
-        physical_device,
-        surface_loader,
-        surface,
-      ) {
+      match QueueFamilies::get_from_physical_device(instance, physical_device, surface) {
         Err(()) => {
           log::info!("Skipped physical device: Device does not contain required queue families");
           None

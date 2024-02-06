@@ -11,8 +11,10 @@ use winit::{
 use crate::{INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE};
 
 #[cfg(feature = "vl")]
-use super::validation_layers::DebugUtils;
-use super::{entry::get_entry, instance::create_instance, sync_renderer::SyncRenderer};
+use super::objects::DebugUtils;
+use super::{
+  objects::{create_instance, get_entry, Surface}, renderer::Renderer, sync_renderer::SyncRenderer
+};
 
 pub struct Render {
   entry: ash::Entry,
@@ -20,7 +22,7 @@ pub struct Render {
   #[cfg(feature = "vl")]
   debug_utils: DebugUtils,
 
-  windowed: Option<ManuallyDrop<WindowedRender>>,
+  windowed: Option<WindowedRender>,
 }
 
 impl Render {
@@ -44,11 +46,7 @@ impl Render {
   pub fn start(&mut self, target: &EventLoopWindowTarget<()>) {
     assert!(self.windowed.is_none());
 
-    self.windowed = Some(ManuallyDrop::new(WindowedRender::new(
-      target,
-      &self.entry,
-      &self.instance,
-    )));
+    self.windowed = Some(WindowedRender::new(target, &self.entry, &self.instance));
   }
 
   pub fn draw(&mut self) {}
@@ -58,7 +56,7 @@ impl Drop for Render {
   fn drop(&mut self) {
     unsafe {
       if let Some(windowed) = self.windowed.as_mut() {
-        ManuallyDrop::drop(windowed);
+        windowed.destroy_self();
       }
 
       self.debug_utils.destroy_self();
@@ -80,8 +78,7 @@ fn create_window(target: &EventLoopWindowTarget<()>) -> Window {
 
 struct WindowedRender {
   window: Window,
-  surface_loader: ash::extensions::khr::Surface,
-  surface: vk::SurfaceKHR,
+  surface: Surface,
   renderer: SyncRenderer,
 }
 
@@ -93,33 +90,26 @@ impl WindowedRender {
   ) -> Self {
     let window = create_window(target);
 
-    let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
-    let surface = unsafe {
-      ash_window::create_surface(
-        entry,
-        instance,
-        target.raw_display_handle(),
-        window.raw_window_handle(),
-        None,
-      )
-      .expect("Failed to create window surface")
-    };
+    let surface = Surface::new(
+      entry,
+      instance,
+      target.raw_display_handle(),
+      window.raw_window_handle(),
+    );
 
-    let renderer = SyncRenderer::new(instance, &surface_loader, surface);
+
+    let renderer = Renderer::new(instance, &surface, window.inner_size());
+    let sync_renderer = SyncRenderer::new(renderer);
 
     Self {
       window,
-      surface_loader,
       surface,
-      renderer,
+      renderer: sync_renderer,
     }
   }
-}
 
-impl Drop for WindowedRender {
-  fn drop(&mut self) {
-    unsafe {
-      self.surface_loader.destroy_surface(self.surface, None);
-    }
+  pub unsafe fn destroy_self(&mut self) {
+    self.renderer.destroy_self();
+    self.surface.destroy_self();
   }
 }

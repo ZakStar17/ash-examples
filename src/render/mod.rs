@@ -1,12 +1,8 @@
 mod device;
-mod entry;
-mod instance;
+mod objects;
 mod render;
 mod renderer;
 mod sync_renderer;
-
-#[cfg(feature = "vl")]
-mod validation_layers;
 
 use std::ffi::CStr;
 

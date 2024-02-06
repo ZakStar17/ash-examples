@@ -1,6 +1,6 @@
 use ash::vk;
 
-use super::renderer::Renderer;
+use super::{objects::Surface, renderer::Renderer};
 
 const FRAMES_IN_FLIGHT: usize = 2;
 
@@ -11,13 +11,7 @@ pub struct SyncRenderer {
 }
 
 impl SyncRenderer {
-  pub fn new(
-    instance: &ash::Instance,
-    surface_loader: &ash::extensions::khr::Surface,
-    surface: vk::SurfaceKHR,
-  ) -> Self {
-    let renderer = Renderer::new(instance, surface_loader, surface);
-
+  pub fn new(renderer: Renderer) -> Self {
     Self {
       renderer,
 
@@ -30,14 +24,9 @@ impl SyncRenderer {
   }
 
   pub fn render_next_frame(&mut self) {}
-}
 
-impl Drop for SyncRenderer {
-  fn drop(&mut self) {
-    unsafe {
-      // for frame in self.frames.iter_mut() {
-      //   frame.destroy(&self.renderer.device);
-      // }
-    }
+  pub unsafe fn destroy_self(&mut self) {
+    self.renderer.destroy_self();
   }
 }
+

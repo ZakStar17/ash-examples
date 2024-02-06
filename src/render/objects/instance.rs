@@ -86,13 +86,10 @@ fn get_app_info() -> vk::ApplicationInfo {
 pub fn create_instance(
   entry: &ash::Entry,
   display_handle: RawDisplayHandle,
-) -> (ash::Instance, crate::render::validation_layers::DebugUtils) {
+) -> (ash::Instance, super::DebugUtils) {
   use std::{ffi::c_void, ptr::addr_of};
 
-  use crate::render::{
-    validation_layers::{self, DebugUtils},
-    ADDITIONAL_VALIDATION_FEATURES,
-  };
+  use crate::render::ADDITIONAL_VALIDATION_FEATURES;
 
   check_target_api_version(entry);
 
@@ -120,12 +117,12 @@ pub fn create_instance(
   let app_info = get_app_info();
 
   // valid until the end of scope
-  let validation_layers = validation_layers::get_supported_validation_layers(&entry);
+  let validation_layers = super::get_supported_validation_layers(&entry);
   let vl_pointers: Vec<*const std::ffi::c_char> =
     validation_layers.iter().map(|name| name.as_ptr()).collect();
 
   // required to be passed in instance creation p_next chain
-  let debug_create_info = DebugUtils::get_debug_messenger_create_info();
+  let debug_create_info = super::DebugUtils::get_debug_messenger_create_info();
 
   // enable/disable some validation features by passing a ValidationFeaturesEXT struct
   let additional_features = vk::ValidationFeaturesEXT {
@@ -156,7 +153,7 @@ pub fn create_instance(
   };
 
   log::debug!("Creating Debug Utils");
-  let debug_utils = DebugUtils::setup(&entry, &instance, debug_create_info);
+  let debug_utils = super::DebugUtils::setup(&entry, &instance, debug_create_info);
 
   (instance, debug_utils)
 }

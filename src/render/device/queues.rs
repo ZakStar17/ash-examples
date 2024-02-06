@@ -2,6 +2,8 @@ use std::{cmp::min, ops::Deref, pin::Pin, ptr};
 
 use ash::vk;
 
+use crate::render::objects::Surface;
+
 #[derive(Debug, Clone, Copy)]
 pub struct QueueFamily {
   pub index: u32,
@@ -22,27 +24,13 @@ pub struct QueueFamilies {
   pub unique_indices: Box<[u32]>,
 }
 
-fn family_supports_surface(
-  physical_device: vk::PhysicalDevice,
-  surface_loader: &ash::extensions::khr::Surface,
-  surface: vk::SurfaceKHR,
-  family_index: usize,
-) -> bool {
-  unsafe {
-    surface_loader
-      .get_physical_device_surface_support(physical_device, family_index as u32, surface)
-      .expect("Failed to query for queue family surface support")
-  }
-}
-
 impl QueueFamilies {
   pub const FAMILY_COUNT: usize = 3;
 
   pub fn get_from_physical_device(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
-    surface_loader: &ash::extensions::khr::Surface,
-    surface: vk::SurfaceKHR,
+    surface: &Surface
   ) -> Result<Self, ()> {
     let properties =
       unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
@@ -59,7 +47,7 @@ impl QueueFamilies {
 
       let mut presentation_set = false;
       if presentation.is_none()
-        && family_supports_surface(physical_device, surface_loader, surface, i)
+        && unsafe {surface.supports_queue_family(physical_device, i)}
       {
         presentation = family;
         presentation_set = true;
@@ -70,7 +58,7 @@ impl QueueFamilies {
           graphics = family;
 
           // set presentation queue to be preferably equal to graphics
-          if presentation.is_some() && !presentation_set {
+          if presentation.is_some() && !presentation_set && unsafe {surface.supports_queue_family(physical_device, i)} {
             presentation = family;
           }
         }
