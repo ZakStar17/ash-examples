@@ -3,9 +3,9 @@ use std::{ops::Deref, ptr};
 pub use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::{render::device::PhysicalDevice, USE_VSYNC};
+use crate::USE_VSYNC;
 
-use super::Surface;
+use super::{device::PhysicalDevice, Surface};
 
 pub struct Swapchains {
   loader: ash::extensions::khr::Swapchain,

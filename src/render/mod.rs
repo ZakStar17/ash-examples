@@ -1,8 +1,9 @@
-mod device;
 mod objects;
 mod render;
 mod renderer;
+mod shaders;
 mod sync_renderer;
+mod vertex;
 
 use std::ffi::CStr;
 

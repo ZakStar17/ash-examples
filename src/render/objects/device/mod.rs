@@ -3,6 +3,10 @@ mod physical_device;
 mod queues;
 mod vendor;
 
+pub use logical_device::create_logical_device;
+pub use physical_device::PhysicalDevice;
+pub use queues::{QueueFamilies, Queues};
+
 use std::{
   ffi::c_void,
   mem::MaybeUninit,
@@ -12,15 +16,11 @@ use std::{
 use ash::vk;
 
 use crate::{
-  render::device::vendor::Vendor,
+  render::{objects::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION},
   utility::{self, c_char_array_to_string},
 };
 
-use super::{objects::Surface, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION};
-
-pub use logical_device::create_logical_device;
-pub use physical_device::PhysicalDevice;
-pub use queues::{QueueFamilies, Queues};
+use super::Surface;
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);

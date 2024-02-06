@@ -1,9 +1,10 @@
 use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use super::{
-  device::{create_logical_device, PhysicalDevice},
-  objects::{create_framebuffer, create_render_pass, Surface, Swapchains},
+use crate::render::objects::create_pipeline_cache;
+
+use super::objects::{
+  create_framebuffer, create_render_pass, device::{create_logical_device, PhysicalDevice}, save_pipeline_cache, GraphicsPipeline, Surface, Swapchains
 };
 
 pub struct Renderer {
@@ -13,6 +14,9 @@ pub struct Renderer {
   swapchains: Swapchains,
   render_pass: vk::RenderPass,
   framebuffers: Box<[vk::Framebuffer]>,
+
+  pipeline_cache: vk::PipelineCache,
+  pipeline: GraphicsPipeline,
 }
 
 impl Renderer {
@@ -39,6 +43,20 @@ impl Renderer {
       .map(|&view| create_framebuffer(&device, render_pass, view, swapchains.get_extent()))
       .collect();
 
+    log::info!("Creating pipeline cache");
+    let (pipeline_cache, created_from_file) = create_pipeline_cache(&device, &physical_device);
+    if created_from_file {
+      log::info!("Cache successfully created from an existing cache file");
+    } else {
+      log::info!("Cache initialized as empty");
+    }
+    let pipeline = GraphicsPipeline::create(
+      &device,
+      pipeline_cache,
+      render_pass,
+      swapchains.get_extent(),
+    );
+
     Self {
       physical_device,
       device,
@@ -46,10 +64,21 @@ impl Renderer {
       swapchains,
       render_pass,
       framebuffers,
+
+      pipeline_cache,
+      pipeline
     }
   }
 
   pub unsafe fn destroy_self(&mut self) {
+    log::info!("Saving pipeline cache");
+    if let Err(err) = save_pipeline_cache(&self.device, &self.physical_device, self.pipeline_cache) {
+      log::error!("Failed to save pipeline cache: {:?}", err);
+    }
+    self.device.destroy_pipeline_cache(self.pipeline_cache, None);
+    
+    self.pipeline.destroy_self(&self.device);
+
     for &framebuffer in self.framebuffers.iter() {
       self.device.destroy_framebuffer(framebuffer, None);
     }

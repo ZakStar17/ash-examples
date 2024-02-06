@@ -1,10 +1,9 @@
 use ash::vk::{self};
 use std::{os::raw::c_char, ptr};
 
-use crate::render::{
-  device::{PhysicalDevice, Queues},
-  REQUIRED_DEVICE_EXTENSIONS,
-};
+use crate::render::REQUIRED_DEVICE_EXTENSIONS;
+
+use super::{PhysicalDevice, Queues};
 
 pub fn create_logical_device(
   instance: &ash::Instance,
