@@ -15,7 +15,7 @@ use super::{
   sync_renderer::SyncRenderer,
 };
 
-pub struct Render {
+pub struct RenderEngine {
   entry: ash::Entry,
   instance: ash::Instance,
   #[cfg(feature = "vl")]
@@ -24,14 +24,14 @@ pub struct Render {
   windowed: Option<WindowedRender>,
 }
 
-impl Render {
+impl RenderEngine {
   pub fn init(event_loop: &EventLoop<()>) -> Self {
     let entry: ash::Entry = unsafe { get_entry() };
 
     #[cfg(feature = "vl")]
     let (instance, debug_utils) = create_instance(&entry, event_loop.raw_display_handle());
     #[cfg(not(feature = "vl"))]
-    let instance = instance::create_instance(&entry, event_loop);
+    let instance = create_instance(&entry, event_loop.raw_display_handle());
 
     Self {
       entry,
@@ -60,24 +60,25 @@ impl Render {
     panic!("Failed to render frame multiple consecutive times");
   }
 
+  pub fn request_window_redraw(&self) {
+    self.windowed.as_ref().unwrap().window.request_redraw();
+  }
+
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
-    self
-      .windowed
-      .as_mut()
-      .unwrap()
-      .renderer
-      .window_resized(new_size);
+    self.windowed.as_mut().unwrap().window_resized(new_size);
   }
 }
 
-impl Drop for Render {
+impl Drop for RenderEngine {
   fn drop(&mut self) {
     unsafe {
       if let Some(windowed) = self.windowed.as_mut() {
         windowed.destroy_self();
       }
 
+      #[cfg(feature = "vl")]
       self.debug_utils.destroy_self();
+
       self.instance.destroy_instance(None);
     }
   }
@@ -87,15 +88,15 @@ fn create_window(target: &EventLoopWindowTarget<()>, initial_size: PhysicalSize<
   WindowBuilder::new()
     .with_title(WINDOW_TITLE)
     .with_inner_size(initial_size)
-    .with_resizable(false)
     .build(target)
     .expect("Failed to create window.")
 }
 
 struct WindowedRender {
-  window: Window,
+  pub window: Window,
+  window_size: PhysicalSize<u32>,
   surface: Surface,
-  pub renderer: SyncRenderer,
+  pub sync: SyncRenderer,
 }
 
 impl WindowedRender {
@@ -119,21 +120,38 @@ impl WindowedRender {
     );
 
     let renderer = Renderer::new(instance, &surface, initial_size);
-    let sync_renderer = SyncRenderer::new(renderer, initial_size);
+    let sync_renderer = SyncRenderer::new(renderer);
 
     Self {
       window,
+      window_size: initial_size,
       surface,
-      renderer: sync_renderer,
+      sync: sync_renderer,
     }
   }
 
   pub fn render_next_frame(&mut self) -> Result<(), ()> {
-    self.renderer.render_next_frame(&self.surface)
+    self.sync.render_next_frame(&self.surface, self.window_size)
+  }
+
+  pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
+    if new_size != self.window_size {
+      self.window_size = new_size;
+
+      let capabilities = unsafe {
+        self
+          .surface
+          .get_capabilities(*self.sync.renderer.physical_device)
+      };
+      let new_extent = Surface::get_extent_from_capabilities(&capabilities);
+      if new_extent.is_some_and(|extent| self.sync.renderer.swapchains.get_extent() != extent) {
+        self.sync.extent_changed();
+      }
+    }
   }
 
   pub unsafe fn destroy_self(&mut self) {
-    self.renderer.destroy_self();
+    self.sync.destroy_self();
     self.surface.destroy_self();
   }
 }

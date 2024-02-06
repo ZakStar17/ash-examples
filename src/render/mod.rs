@@ -1,6 +1,6 @@
+mod engine;
 mod frame;
 mod objects;
-mod render;
 mod renderer;
 mod shaders;
 mod sync_renderer;
@@ -48,4 +48,4 @@ pub const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
 
-pub use render::Render;
+pub use engine::RenderEngine;

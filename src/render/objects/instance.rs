@@ -159,7 +159,7 @@ pub fn create_instance(
 }
 
 #[cfg(not(feature = "vl"))]
-pub fn create_instance(entry: &ash::Entry) -> ash::Instance {
+pub fn create_instance(entry: &ash::Entry, display_handle: RawDisplayHandle) -> ash::Instance {
   check_target_api_version(entry);
 
   let mut required_extensions = vec![];
@@ -167,7 +167,7 @@ pub fn create_instance(entry: &ash::Entry) -> ash::Instance {
     .expect("Failed to enumerate window extensions")
     .into_iter()
     .map(|&ptr| unsafe { CStr::from_ptr(ptr) });
-  required_extensions.append(surface_extensions);
+  required_extensions.extend(surface_extensions);
 
   if let Err(unavailable) = check_instance_extension_support(entry, required_extensions.as_slice())
   {

@@ -8,11 +8,9 @@ use crate::utility::populate_array_with_expression;
 use super::{frame::Frame, objects::Surface, renderer::Renderer, FRAMES_IN_FLIGHT};
 
 pub struct SyncRenderer {
-  renderer: Renderer,
+  pub renderer: Renderer,
   frames: [Frame; FRAMES_IN_FLIGHT],
   last_frame_i: usize,
-
-  cur_window_size: PhysicalSize<u32>,
 
   // last frame swapchain was recreated and so current frame resources are marked as old
   // having more than two frames in flight could require having more than one old set of resources
@@ -22,7 +20,7 @@ pub struct SyncRenderer {
 }
 
 impl SyncRenderer {
-  pub fn new(renderer: Renderer, window_size: PhysicalSize<u32>) -> Self {
+  pub fn new(renderer: Renderer) -> Self {
     let frames = populate_array_with_expression!(Frame::new(&renderer.device), FRAMES_IN_FLIGHT);
 
     Self {
@@ -30,19 +28,20 @@ impl SyncRenderer {
       frames,
       last_frame_i: 0,
 
-      cur_window_size: window_size,
-
       last_frame_recreated_swapchain: false,
       recreate_swapchain_next_frame: false,
     }
   }
 
-  pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
+  pub fn extent_changed(&mut self) {
     self.recreate_swapchain_next_frame = true;
-    self.cur_window_size = new_size;
   }
 
-  pub fn render_next_frame(&mut self, surface: &Surface) -> Result<(), ()> {
+  pub fn render_next_frame(
+    &mut self,
+    surface: &Surface,
+    window_size: PhysicalSize<u32>,
+  ) -> Result<(), ()> {
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     let cur_frame = &self.frames[cur_frame_i];
     self.last_frame_i = cur_frame_i;
@@ -58,9 +57,7 @@ impl SyncRenderer {
 
     if self.recreate_swapchain_next_frame {
       unsafe {
-        self
-          .renderer
-          .recreate_swapchain(surface, self.cur_window_size);
+        self.renderer.recreate_swapchain(surface, window_size);
       }
       self.recreate_swapchain_next_frame = false;
       self.last_frame_recreated_swapchain = true;

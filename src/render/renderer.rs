@@ -19,7 +19,7 @@ use super::{
 };
 
 pub struct Renderer {
-  physical_device: PhysicalDevice,
+  pub physical_device: PhysicalDevice,
   pub device: ash::Device,
   pub queues: Queues,
 
@@ -46,7 +46,7 @@ impl Renderer {
 
     let swapchains = Swapchains::new(
       instance,
-      &physical_device,
+      *physical_device,
       &device,
       surface,
       initial_window_size,
@@ -127,7 +127,7 @@ impl Renderer {
     let changes =
       self
         .swapchains
-        .recreate_swapchain(&self.physical_device, &self.device, surface, window_size);
+        .recreate_swapchain(*self.physical_device, &self.device, surface, window_size);
 
     if changes.format {
       log::info!("Changing swapchain format");

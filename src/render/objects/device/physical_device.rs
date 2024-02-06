@@ -15,10 +15,6 @@ pub struct PhysicalDevice {
   properties: vk::PhysicalDeviceProperties,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
   max_memory_allocation_size: vk::DeviceSize,
-
-  pub surface_formats: Box<[vk::SurfaceFormatKHR]>,
-  pub surface_present_modes: Box<[vk::PresentModeKHR]>,
-  pub surface_capabilities: vk::SurfaceCapabilitiesKHR,
 }
 
 impl Deref for PhysicalDevice {
@@ -46,22 +42,12 @@ impl PhysicalDevice {
     print_queue_families_debug_info(&queue_family_properties);
     print_device_memory_debug_info(&mem_properties);
 
-    let surface_formats = surface.get_formats(physical_device).into_boxed_slice();
-    let surface_present_modes = surface
-      .get_present_modes(physical_device)
-      .into_boxed_slice();
-    let surface_capabilities = surface.get_capabilities(physical_device);
-
     PhysicalDevice {
       vk_device: physical_device,
       properties,
       mem_properties,
       queue_families,
       max_memory_allocation_size: properties11.max_memory_allocation_size,
-
-      surface_formats,
-      surface_present_modes,
-      surface_capabilities,
     }
   }
 

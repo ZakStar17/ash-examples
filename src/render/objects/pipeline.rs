@@ -88,6 +88,7 @@ impl GraphicsPipeline {
   pub unsafe fn destroy_old(&mut self, device: &ash::Device) {
     if let Some(old) = self.old {
       device.destroy_pipeline(old, None);
+      self.old = None;
     }
   }
 

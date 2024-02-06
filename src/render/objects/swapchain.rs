@@ -5,7 +5,7 @@ use winit::dpi::PhysicalSize;
 
 use crate::USE_VSYNC;
 
-use super::{device::PhysicalDevice, Surface};
+use super::Surface;
 
 pub struct Swapchains {
   loader: ash::extensions::khr::Swapchain,
@@ -16,7 +16,7 @@ pub struct Swapchains {
 impl Swapchains {
   pub fn new(
     instance: &ash::Instance,
-    physical_device: &PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
@@ -41,7 +41,7 @@ impl Swapchains {
 
   pub unsafe fn recreate_swapchain(
     &mut self,
-    physical_device: &PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
@@ -106,6 +106,7 @@ impl Swapchains {
   }
 }
 
+#[derive(Debug)]
 struct Swapchain {
   vk_obj: vk::SwapchainKHR,
   pub images: Box<[vk::Image]>, // are owned by the swapchain
@@ -129,15 +130,15 @@ pub struct RecreationChanges {
 
 impl Swapchain {
   pub fn create(
-    physical_device: &PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     swapchain_loader: &ash::extensions::khr::Swapchain,
     window_size: PhysicalSize<u32>,
   ) -> Self {
-    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
-    let image_format = select_swapchain_image_format(physical_device);
-    let present_mode = select_swapchain_present_mode(physical_device);
+    let capabilities = unsafe { surface.get_capabilities(physical_device) };
+    let image_format = select_swapchain_image_format(physical_device, surface);
+    let present_mode = select_swapchain_present_mode(physical_device, surface);
     let extent = get_swapchain_extent(&capabilities, window_size);
 
     Self::create_with(
@@ -148,21 +149,22 @@ impl Swapchain {
       image_format,
       present_mode,
       extent,
+      vk::SwapchainKHR::null(),
     )
   }
 
   pub fn recreate(
     &mut self,
-    physical_device: &PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     swapchain_loader: &ash::extensions::khr::Swapchain,
     window_size: PhysicalSize<u32>,
   ) -> (Self, RecreationChanges) {
     log::debug!("Recreating swapchain");
-    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
-    let image_format = select_swapchain_image_format(physical_device);
-    let present_mode = select_swapchain_present_mode(physical_device);
+    let capabilities = unsafe { surface.get_capabilities(physical_device) };
+    let image_format = select_swapchain_image_format(physical_device, surface);
+    let present_mode = select_swapchain_present_mode(physical_device, surface);
     let extent = get_swapchain_extent(&capabilities, window_size);
 
     let changes = RecreationChanges {
@@ -178,11 +180,17 @@ impl Swapchain {
       image_format,
       present_mode,
       extent,
+      self.vk_obj,
     );
 
-    std::mem::swap(&mut new, self);
+    println!("old {:#?}, new {:#?}", self, new);
 
-    (new, changes)
+    let old = {
+      std::mem::swap(&mut new, self);
+      new
+    };
+
+    (old, changes)
   }
 
   fn create_with(
@@ -193,6 +201,7 @@ impl Swapchain {
     image_format: vk::SurfaceFormatKHR,
     present_mode: vk::PresentModeKHR,
     extent: vk::Extent2D,
+    old_swapchain: vk::SwapchainKHR,
   ) -> Self {
     let image_count = if capabilities.max_image_count > 0 {
       (capabilities.min_image_count + 1).min(capabilities.max_image_count)
@@ -222,7 +231,7 @@ impl Swapchain {
       composite_alpha: vk::CompositeAlphaFlagsKHR::OPAQUE,
       present_mode,
       clipped: vk::TRUE,
-      old_swapchain: vk::SwapchainKHR::null(),
+      old_swapchain,
     };
 
     let swapchain = unsafe {
@@ -269,8 +278,12 @@ impl Swapchain {
   }
 }
 
-fn select_swapchain_image_format(physical_device: &PhysicalDevice) -> vk::SurfaceFormatKHR {
-  for available_format in physical_device.surface_formats.iter() {
+fn select_swapchain_image_format(
+  physical_device: vk::PhysicalDevice,
+  surface: &Surface,
+) -> vk::SurfaceFormatKHR {
+  let formats = unsafe { surface.get_formats(physical_device) };
+  for available_format in formats.iter() {
     // commonly available
     if available_format.format == vk::Format::B8G8R8A8_SRGB
       && available_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
@@ -279,22 +292,20 @@ fn select_swapchain_image_format(physical_device: &PhysicalDevice) -> vk::Surfac
     }
   }
 
-  physical_device.surface_formats[0]
+  formats[0]
 }
 
-fn select_swapchain_present_mode(physical_device: &PhysicalDevice) -> vk::PresentModeKHR {
+fn select_swapchain_present_mode(
+  physical_device: vk::PhysicalDevice,
+  surface: &Surface,
+) -> vk::PresentModeKHR {
+  let present_modes = unsafe { surface.get_present_modes(physical_device) };
   if !USE_VSYNC {
-    if physical_device
-      .surface_present_modes
-      .contains(&vk::PresentModeKHR::FIFO_RELAXED)
-    {
+    if present_modes.contains(&vk::PresentModeKHR::FIFO_RELAXED) {
       return vk::PresentModeKHR::FIFO_RELAXED;
     }
 
-    if physical_device
-      .surface_present_modes
-      .contains(&vk::PresentModeKHR::IMMEDIATE)
-    {
+    if present_modes.contains(&vk::PresentModeKHR::IMMEDIATE) {
       return vk::PresentModeKHR::IMMEDIATE;
     }
   }
@@ -307,10 +318,9 @@ fn get_swapchain_extent(
   capabilities: &vk::SurfaceCapabilitiesKHR,
   size: PhysicalSize<u32>,
 ) -> vk::Extent2D {
-  if capabilities.current_extent.width != u32::max_value() {
-    capabilities.current_extent
-  } else {
-    vk::Extent2D {
+  match Surface::get_extent_from_capabilities(capabilities) {
+    Some(extent) => extent,
+    None => vk::Extent2D {
       width: size.width.clamp(
         capabilities.min_image_extent.width,
         capabilities.max_image_extent.width,
@@ -319,7 +329,7 @@ fn get_swapchain_extent(
         capabilities.min_image_extent.height,
         capabilities.max_image_extent.height,
       ),
-    }
+    },
   }
 }
 

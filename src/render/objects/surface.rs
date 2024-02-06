@@ -73,6 +73,16 @@ impl Surface {
       .expect("Failed to get surface capabilities")
   }
 
+  pub fn get_extent_from_capabilities(
+    capabilities: &vk::SurfaceCapabilitiesKHR,
+  ) -> Option<vk::Extent2D> {
+    if capabilities.current_extent.width != u32::max_value() {
+      Some(capabilities.current_extent)
+    } else {
+      None
+    }
+  }
+
   pub unsafe fn destroy_self(&mut self) {
     self.loader.destroy_surface(self.vk_obj, None);
   }
