@@ -1,4 +1,5 @@
 use std::{
+  ops::Deref,
   pin::pin,
   ptr::{self, addr_of},
 };
@@ -12,7 +13,16 @@ use crate::render::{
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
-  pub pipeline: vk::Pipeline,
+  vk_obj: vk::Pipeline,
+  old: Option<vk::Pipeline>,
+}
+
+impl Deref for GraphicsPipeline {
+  type Target = vk::Pipeline;
+
+  fn deref(&self) -> &Self::Target {
+    &self.vk_obj
+  }
 }
 
 impl GraphicsPipeline {
@@ -22,6 +32,73 @@ impl GraphicsPipeline {
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
   ) -> Self {
+    // no descriptor sets or push constants
+    let layout_create_info = vk::PipelineLayoutCreateInfo {
+      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+      p_next: ptr::null(),
+      flags: vk::PipelineLayoutCreateFlags::empty(),
+      set_layout_count: 0,
+      p_set_layouts: ptr::null(),
+      push_constant_range_count: 0,
+      p_push_constant_ranges: ptr::null(),
+    };
+    let layout = unsafe {
+      device
+        .create_pipeline_layout(&layout_create_info, None)
+        .expect("Failed to create pipeline layout")
+    };
+
+    let pipeline = Self::create_with_base(
+      device,
+      layout,
+      cache,
+      vk::Pipeline::null(),
+      render_pass,
+      extent,
+    );
+
+    Self {
+      layout,
+      vk_obj: pipeline,
+      old: None,
+    }
+  }
+
+  pub fn recreate(
+    &mut self,
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    render_pass: vk::RenderPass,
+    extent: vk::Extent2D,
+  ) {
+    assert!(self.old.is_none());
+
+    let mut new =
+      Self::create_with_base(device, self.layout, cache, self.vk_obj, render_pass, extent);
+
+    let old = {
+      std::mem::swap(&mut self.vk_obj, &mut new);
+      new
+    };
+
+    self.old = Some(old);
+  }
+
+  // destroy old pipeline once it stops being used
+  pub unsafe fn destroy_old(&mut self, device: &ash::Device) {
+    if let Some(old) = self.old {
+      device.destroy_pipeline(old, None);
+    }
+  }
+
+  fn create_with_base(
+    device: &ash::Device,
+    layout: vk::PipelineLayout,
+    cache: vk::PipelineCache,
+    base: vk::Pipeline,
+    render_pass: vk::RenderPass,
+    extent: vk::Extent2D,
+  ) -> vk::Pipeline {
     let mut shader = Shader::load(device);
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
@@ -79,22 +156,6 @@ impl GraphicsPipeline {
       blend_constants: [0.0, 0.0, 0.0, 0.0],
     };
 
-    // no descriptor sets or push constants
-    let layout_create_info = vk::PipelineLayoutCreateInfo {
-      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::PipelineLayoutCreateFlags::empty(),
-      set_layout_count: 0,
-      p_set_layouts: ptr::null(),
-      push_constant_range_count: 0,
-      p_push_constant_ranges: ptr::null(),
-    };
-    let layout = unsafe {
-      device
-        .create_pipeline_layout(&layout_create_info, None)
-        .expect("Failed to create pipeline layout")
-    };
-
     let create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
       p_next: ptr::null(),
@@ -113,7 +174,7 @@ impl GraphicsPipeline {
       layout,
       render_pass,
       subpass: 0,
-      base_pipeline_handle: vk::Pipeline::null(),
+      base_pipeline_handle: base,
       base_pipeline_index: -1, // -1 for null
     };
     let pipeline = unsafe {
@@ -126,11 +187,12 @@ impl GraphicsPipeline {
       shader.destroy_self(device);
     }
 
-    Self { layout, pipeline }
+    pipeline
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_pipeline(self.pipeline, None);
+    self.destroy_old(device);
+    device.destroy_pipeline(self.vk_obj, None);
     device.destroy_pipeline_layout(self.layout, None);
   }
 }

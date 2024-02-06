@@ -2,10 +2,7 @@ mod app;
 mod render;
 mod utility;
 
-use std::{
-  ffi::CStr,
-  time::{Duration, Instant},
-};
+use std::ffi::CStr;
 
 use app::App;
 use ash::vk;
@@ -25,8 +22,6 @@ pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
 pub const USE_VSYNC: bool = false;
 
 pub fn main_loop(event_loop: EventLoop<()>, mut app: App) {
-  let mut last_frame_instant = Instant::now();
-
   let mut started = false;
 
   event_loop
@@ -54,15 +49,14 @@ pub fn main_loop(event_loop: EventLoop<()>, mut app: App) {
         }
         WindowEvent::Occluded(occluded) => {
           log::debug!("Application occluded: {}", occluded);
-
-          // there is no point of rendering if the user doesn't see it
-          // however, the application can still do other things
         }
         WindowEvent::RedrawRequested => {
           log::info!("Rendering");
+          app.resume();
         }
-        WindowEvent::Resized(dimensions) => {
+        WindowEvent::Resized(new_size) => {
           log::info!("Window resized");
+          //app.window_resized(new_size);
         }
         _ => {}
       },

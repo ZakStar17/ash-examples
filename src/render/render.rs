@@ -1,9 +1,6 @@
-use std::mem::ManuallyDrop;
-
-use ash::vk;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::{
-  dpi::LogicalSize,
+  dpi::PhysicalSize,
   event_loop::{EventLoop, EventLoopWindowTarget},
   window::{Window, WindowBuilder},
 };
@@ -51,7 +48,26 @@ impl Render {
     self.windowed = Some(WindowedRender::new(target, &self.entry, &self.instance));
   }
 
-  pub fn draw(&mut self) {}
+  pub fn render_frame(&mut self) {
+    let retries = 7;
+    let windowed = self.windowed.as_mut().unwrap();
+    for _ in 0..retries {
+      if windowed.render_next_frame().is_ok() {
+        return;
+      }
+    }
+
+    panic!("Failed to render frame multiple consecutive times");
+  }
+
+  pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
+    self
+      .windowed
+      .as_mut()
+      .unwrap()
+      .renderer
+      .window_resized(new_size);
+  }
 }
 
 impl Drop for Render {
@@ -67,13 +83,11 @@ impl Drop for Render {
   }
 }
 
-fn create_window(target: &EventLoopWindowTarget<()>) -> Window {
+fn create_window(target: &EventLoopWindowTarget<()>, initial_size: PhysicalSize<u32>) -> Window {
   WindowBuilder::new()
     .with_title(WINDOW_TITLE)
-    .with_inner_size(LogicalSize::new(
-      INITIAL_WINDOW_WIDTH,
-      INITIAL_WINDOW_HEIGHT,
-    ))
+    .with_inner_size(initial_size)
+    .with_resizable(false)
     .build(target)
     .expect("Failed to create window.")
 }
@@ -81,7 +95,7 @@ fn create_window(target: &EventLoopWindowTarget<()>) -> Window {
 struct WindowedRender {
   window: Window,
   surface: Surface,
-  renderer: SyncRenderer,
+  pub renderer: SyncRenderer,
 }
 
 impl WindowedRender {
@@ -90,7 +104,12 @@ impl WindowedRender {
     entry: &ash::Entry,
     instance: &ash::Instance,
   ) -> Self {
-    let window = create_window(target);
+    let initial_size = PhysicalSize {
+      width: INITIAL_WINDOW_WIDTH,
+      height: INITIAL_WINDOW_HEIGHT,
+    };
+
+    let window = create_window(target, initial_size);
 
     let surface = Surface::new(
       entry,
@@ -99,14 +118,18 @@ impl WindowedRender {
       window.raw_window_handle(),
     );
 
-    let renderer = Renderer::new(instance, &surface, window.inner_size());
-    let sync_renderer = SyncRenderer::new(renderer);
+    let renderer = Renderer::new(instance, &surface, initial_size);
+    let sync_renderer = SyncRenderer::new(renderer, initial_size);
 
     Self {
       window,
       surface,
       renderer: sync_renderer,
     }
+  }
+
+  pub fn render_next_frame(&mut self) -> Result<(), ()> {
+    self.renderer.render_next_frame(&self.surface)
   }
 
   pub unsafe fn destroy_self(&mut self) {

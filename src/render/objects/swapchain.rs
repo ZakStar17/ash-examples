@@ -100,11 +100,15 @@ impl Swapchains {
   pub fn get_image_views(&self) -> &[vk::ImageView] {
     &self.current.image_views
   }
+
+  pub fn get_images(&self) -> &[vk::Image] {
+    &self.current.images
+  }
 }
 
 struct Swapchain {
   vk_obj: vk::SwapchainKHR,
-  _images: Box<[vk::Image]>, // are owned by the swapchain
+  pub images: Box<[vk::Image]>, // are owned by the swapchain
   pub format: vk::Format,
   pub extent: vk::Extent2D,
   pub image_views: Box<[vk::ImageView]>,
@@ -238,7 +242,7 @@ impl Swapchain {
 
     Self {
       vk_obj: swapchain,
-      _images: images,
+      images,
       format: image_format.format,
       extent,
       image_views,

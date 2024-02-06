@@ -1,3 +1,5 @@
+pub mod command_pools;
+mod constant_buffers;
 pub mod device;
 mod entry;
 mod instance;
@@ -10,6 +12,7 @@ mod swapchain;
 #[cfg(feature = "vl")]
 mod validation_layers;
 
+pub use constant_buffers::ConstantBuffers;
 pub use entry::get_entry;
 pub use instance::create_instance;
 pub use pipeline::GraphicsPipeline;

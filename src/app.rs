@@ -1,4 +1,7 @@
-use winit::event_loop::{EventLoop, EventLoopWindowTarget};
+use winit::{
+  dpi::PhysicalSize,
+  event_loop::{EventLoop, EventLoopWindowTarget},
+};
 
 use crate::render::Render;
 
@@ -17,5 +20,11 @@ impl App {
     self.render.start(target)
   }
 
-  pub fn get_window(&self) {}
+  pub fn resume(&mut self) {
+    self.render.render_frame();
+  }
+
+  pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
+    self.render.window_resized(new_size);
+  }
 }

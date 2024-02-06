@@ -65,9 +65,20 @@ where
 // transmutes literals to 'static CStr
 macro_rules! cstr {
   ( $s:literal ) => {{
-    use std::ffi::CStr;
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
+    unsafe { std::mem::transmute::<_, &std::ffi::CStr>(concat!($s, "\0")) }
   }};
 }
-
 pub(crate) use cstr;
+
+// populate_array_with_expression!(a + b, 3) transforms into [a + b, a + b, a + b]
+macro_rules! populate_array_with_expression {
+  ($ex:expr, $arr_size:expr) => {{
+    use std::mem::MaybeUninit;
+    let mut tmp: [MaybeUninit<_>; $arr_size] = unsafe { MaybeUninit::uninit().assume_init() };
+    for i in 0..$arr_size {
+      tmp[i] = MaybeUninit::new($ex);
+    }
+    unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) }
+  }};
+}
+pub(crate) use populate_array_with_expression;
