@@ -30,7 +30,7 @@ impl QueueFamilies {
   pub fn get_from_physical_device(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
-    surface: &Surface
+    surface: &Surface,
   ) -> Result<Self, ()> {
     let properties =
       unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
@@ -46,9 +46,7 @@ impl QueueFamilies {
       });
 
       let mut presentation_set = false;
-      if presentation.is_none()
-        && unsafe {surface.supports_queue_family(physical_device, i)}
-      {
+      if presentation.is_none() && unsafe { surface.supports_queue_family(physical_device, i) } {
         presentation = family;
         presentation_set = true;
       }
@@ -58,7 +56,10 @@ impl QueueFamilies {
           graphics = family;
 
           // set presentation queue to be preferably equal to graphics
-          if presentation.is_some() && !presentation_set && unsafe {surface.supports_queue_family(physical_device, i)} {
+          if presentation.is_some()
+            && !presentation_set
+            && unsafe { surface.supports_queue_family(physical_device, i) }
+          {
             presentation = family;
           }
         }

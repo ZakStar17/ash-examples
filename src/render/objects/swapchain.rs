@@ -46,7 +46,10 @@ impl Swapchains {
     surface: &Surface,
     window_size: PhysicalSize<u32>,
   ) -> RecreationChanges {
-    let (old, changes) = self.current.recreate(physical_device, device, surface, &self.loader, window_size);
+    let (old, changes) =
+      self
+        .current
+        .recreate(physical_device, device, surface, &self.loader, window_size);
 
     self.old = Some(old);
     changes
@@ -101,7 +104,7 @@ impl Swapchains {
 
 struct Swapchain {
   vk_obj: vk::SwapchainKHR,
-  _images: Box<[vk::Image]>,  // are owned by the swapchain
+  _images: Box<[vk::Image]>, // are owned by the swapchain
   pub format: vk::Format,
   pub extent: vk::Extent2D,
   pub image_views: Box<[vk::ImageView]>,
@@ -128,14 +131,20 @@ impl Swapchain {
     swapchain_loader: &ash::extensions::khr::Swapchain,
     window_size: PhysicalSize<u32>,
   ) -> Self {
-    let capabilities = unsafe {
-      surface.get_capabilities(**physical_device)
-    };
+    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
     let image_format = select_swapchain_image_format(physical_device);
     let present_mode = select_swapchain_present_mode(physical_device);
     let extent = get_swapchain_extent(&capabilities, window_size);
 
-    Self::create_with(device, surface, swapchain_loader, capabilities, image_format, present_mode, extent)
+    Self::create_with(
+      device,
+      surface,
+      swapchain_loader,
+      capabilities,
+      image_format,
+      present_mode,
+      extent,
+    )
   }
 
   pub fn recreate(
@@ -147,9 +156,7 @@ impl Swapchain {
     window_size: PhysicalSize<u32>,
   ) -> (Self, RecreationChanges) {
     log::debug!("Recreating swapchain");
-    let capabilities = unsafe {
-      surface.get_capabilities(**physical_device)
-    };
+    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
     let image_format = select_swapchain_image_format(physical_device);
     let present_mode = select_swapchain_present_mode(physical_device);
     let extent = get_swapchain_extent(&capabilities, window_size);
@@ -159,7 +166,15 @@ impl Swapchain {
       extent: extent != self.extent,
     };
 
-    let mut new = Self::create_with(device, surface, swapchain_loader, capabilities, image_format, present_mode, extent);
+    let mut new = Self::create_with(
+      device,
+      surface,
+      swapchain_loader,
+      capabilities,
+      image_format,
+      present_mode,
+      extent,
+    );
 
     std::mem::swap(&mut new, self);
 
@@ -198,7 +213,7 @@ impl Swapchain {
       // ignored when SharingMode is EXCLUSIVE
       p_queue_family_indices: ptr::null(),
       queue_family_index_count: 0,
-      
+
       pre_transform: capabilities.current_transform,
       composite_alpha: vk::CompositeAlphaFlagsKHR::OPAQUE,
       present_mode,
@@ -215,7 +230,8 @@ impl Swapchain {
     let images = unsafe {
       swapchain_loader
         .get_swapchain_images(swapchain)
-        .expect("Failed to get Swapchain Images.").into_boxed_slice()
+        .expect("Failed to get Swapchain Images.")
+        .into_boxed_slice()
     };
 
     let image_views = create_image_views(device, image_format.format, &images);
@@ -249,30 +265,32 @@ impl Swapchain {
   }
 }
 
-fn select_swapchain_image_format(
-  physical_device: &PhysicalDevice,
-) -> vk::SurfaceFormatKHR {
+fn select_swapchain_image_format(physical_device: &PhysicalDevice) -> vk::SurfaceFormatKHR {
   for available_format in physical_device.surface_formats.iter() {
     // commonly available
     if available_format.format == vk::Format::B8G8R8A8_SRGB
       && available_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
     {
-      return *available_format
+      return *available_format;
     }
   }
 
   physical_device.surface_formats[0]
 }
 
-fn select_swapchain_present_mode(
-  physical_device: &PhysicalDevice,
-) -> vk::PresentModeKHR {
+fn select_swapchain_present_mode(physical_device: &PhysicalDevice) -> vk::PresentModeKHR {
   if !USE_VSYNC {
-    if physical_device.surface_present_modes.contains(&vk::PresentModeKHR::FIFO_RELAXED) {
+    if physical_device
+      .surface_present_modes
+      .contains(&vk::PresentModeKHR::FIFO_RELAXED)
+    {
       return vk::PresentModeKHR::FIFO_RELAXED;
     }
-  
-    if physical_device.surface_present_modes.contains(&vk::PresentModeKHR::IMMEDIATE) {
+
+    if physical_device
+      .surface_present_modes
+      .contains(&vk::PresentModeKHR::IMMEDIATE)
+    {
       return vk::PresentModeKHR::IMMEDIATE;
     }
   }
@@ -289,10 +307,12 @@ fn get_swapchain_extent(
     capabilities.current_extent
   } else {
     vk::Extent2D {
-      width: size.width.clamp(capabilities.min_image_extent.width,
+      width: size.width.clamp(
+        capabilities.min_image_extent.width,
         capabilities.max_image_extent.width,
       ),
-      height: size.height.clamp(capabilities.min_image_extent.height,
+      height: size.height.clamp(
+        capabilities.min_image_extent.height,
         capabilities.max_image_extent.height,
       ),
     }
@@ -304,33 +324,36 @@ fn create_image_views(
   format: vk::Format,
   images: &[vk::Image],
 ) -> Box<[vk::ImageView]> {
-  images.iter().map(|&image| {
-    let create_info = vk::ImageViewCreateInfo {
-      s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::ImageViewCreateFlags::empty(),
-      view_type: vk::ImageViewType::TYPE_2D,
-      format,
-      components: vk::ComponentMapping {
-        r: vk::ComponentSwizzle::IDENTITY,
-        g: vk::ComponentSwizzle::IDENTITY,
-        b: vk::ComponentSwizzle::IDENTITY,
-        a: vk::ComponentSwizzle::IDENTITY,
-      },
-      subresource_range: vk::ImageSubresourceRange {
-        aspect_mask: vk::ImageAspectFlags::COLOR,
-        base_mip_level: 0,
-        level_count: 1,
-        base_array_layer: 0,
-        layer_count: 1,
-      },
-      image,
-    };
+  images
+    .iter()
+    .map(|&image| {
+      let create_info = vk::ImageViewCreateInfo {
+        s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+        p_next: ptr::null(),
+        flags: vk::ImageViewCreateFlags::empty(),
+        view_type: vk::ImageViewType::TYPE_2D,
+        format,
+        components: vk::ComponentMapping {
+          r: vk::ComponentSwizzle::IDENTITY,
+          g: vk::ComponentSwizzle::IDENTITY,
+          b: vk::ComponentSwizzle::IDENTITY,
+          a: vk::ComponentSwizzle::IDENTITY,
+        },
+        subresource_range: vk::ImageSubresourceRange {
+          aspect_mask: vk::ImageAspectFlags::COLOR,
+          base_mip_level: 0,
+          level_count: 1,
+          base_array_layer: 0,
+          layer_count: 1,
+        },
+        image,
+      };
 
-    unsafe {
-      device
-        .create_image_view(&create_info, None)
-        .expect("Failed to create Image View!")
-    }
-  }).collect()
+      unsafe {
+        device
+          .create_image_view(&create_info, None)
+          .expect("Failed to create Image View!")
+      }
+    })
+    .collect()
 }

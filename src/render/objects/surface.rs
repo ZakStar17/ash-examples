@@ -12,7 +12,7 @@ impl Deref for Surface {
   type Target = vk::SurfaceKHR;
 
   fn deref(&self) -> &Self::Target {
-      &self.vk_obj
+    &self.vk_obj
   }
 }
 
@@ -63,8 +63,14 @@ impl Surface {
       .expect("Failed to get surface present modes")
   }
 
-  pub unsafe fn get_capabilities(&self, physical_device: vk::PhysicalDevice) -> vk::SurfaceCapabilitiesKHR {
-    self.loader.get_physical_device_surface_capabilities(physical_device, self.vk_obj).expect("Failed to get surface capabilities")
+  pub unsafe fn get_capabilities(
+    &self,
+    physical_device: vk::PhysicalDevice,
+  ) -> vk::SurfaceCapabilitiesKHR {
+    self
+      .loader
+      .get_physical_device_surface_capabilities(physical_device, self.vk_obj)
+      .expect("Failed to get surface capabilities")
   }
 
   pub unsafe fn destroy_self(&mut self) {

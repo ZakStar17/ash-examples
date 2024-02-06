@@ -95,7 +95,7 @@ pub fn create_instance(
 
   let mut required_extensions = vec![ash::extensions::ext::DebugUtils::name()];
 
-  let mut surface_extensions = ash_window::enumerate_required_extensions(display_handle)
+  let surface_extensions = ash_window::enumerate_required_extensions(display_handle)
     .expect("Failed to enumerate window extensions")
     .into_iter()
     .map(|&ptr| unsafe { CStr::from_ptr(ptr) });

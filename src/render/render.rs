@@ -13,7 +13,9 @@ use crate::{INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE};
 #[cfg(feature = "vl")]
 use super::objects::DebugUtils;
 use super::{
-  objects::{create_instance, get_entry, Surface}, renderer::Renderer, sync_renderer::SyncRenderer
+  objects::{create_instance, get_entry, Surface},
+  renderer::Renderer,
+  sync_renderer::SyncRenderer,
 };
 
 pub struct Render {
@@ -96,7 +98,6 @@ impl WindowedRender {
       target.raw_display_handle(),
       window.raw_window_handle(),
     );
-
 
     let renderer = Renderer::new(instance, &surface, window.inner_size());
     let sync_renderer = SyncRenderer::new(renderer);

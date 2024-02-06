@@ -29,4 +29,3 @@ impl SyncRenderer {
     self.renderer.destroy_self();
   }
 }
-

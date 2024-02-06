@@ -18,7 +18,7 @@ pub struct PhysicalDevice {
 
   pub surface_formats: Box<[vk::SurfaceFormatKHR]>,
   pub surface_present_modes: Box<[vk::PresentModeKHR]>,
-  pub surface_capabilities: vk::SurfaceCapabilitiesKHR
+  pub surface_capabilities: vk::SurfaceCapabilitiesKHR,
 }
 
 impl Deref for PhysicalDevice {
@@ -47,7 +47,9 @@ impl PhysicalDevice {
     print_device_memory_debug_info(&mem_properties);
 
     let surface_formats = surface.get_formats(physical_device).into_boxed_slice();
-    let surface_present_modes = surface.get_present_modes(physical_device).into_boxed_slice();
+    let surface_present_modes = surface
+      .get_present_modes(physical_device)
+      .into_boxed_slice();
     let surface_capabilities = surface.get_capabilities(physical_device);
 
     PhysicalDevice {
@@ -59,7 +61,7 @@ impl PhysicalDevice {
 
       surface_formats,
       surface_present_modes,
-      surface_capabilities
+      surface_capabilities,
     }
   }
 
