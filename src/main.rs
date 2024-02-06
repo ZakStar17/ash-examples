@@ -11,7 +11,7 @@ use app::App;
 use ash::vk;
 use utility::cstr;
 use winit::{
-  event::{Event, MouseScrollDelta, WindowEvent},
+  event::{Event, WindowEvent},
   event_loop::{ControlFlow, EventLoop},
 };
 
@@ -25,6 +25,8 @@ pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
 pub fn main_loop(event_loop: EventLoop<()>, mut app: App) {
   let mut last_frame_instant = Instant::now();
 
+  let mut started = false;
+
   event_loop
     .run(move |event, target| match event {
       Event::Suspended => {
@@ -32,9 +34,10 @@ pub fn main_loop(event_loop: EventLoop<()>, mut app: App) {
         log::debug!("Application suspended");
       }
       Event::Resumed => {
-        if !app.started {
+        if !started {
           log::debug!("Starting the application");
-          app.start();
+          app.start(target);
+          started = true;
         } else {
           log::debug!("Application resumed");
         }

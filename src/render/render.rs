@@ -1,8 +1,10 @@
+use std::mem::ManuallyDrop;
+
 use ash::vk;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::{
   dpi::LogicalSize,
-  event_loop::EventLoop,
+  event_loop::{EventLoop, EventLoopWindowTarget},
   window::{Window, WindowBuilder},
 };
 
@@ -18,7 +20,7 @@ pub struct Render {
   #[cfg(feature = "vl")]
   debug_utils: DebugUtils,
 
-  windowed: Option<WindowedRender>,
+  windowed: Option<ManuallyDrop<WindowedRender>>,
 }
 
 impl Render {
@@ -26,7 +28,7 @@ impl Render {
     let entry: ash::Entry = unsafe { get_entry() };
 
     #[cfg(feature = "vl")]
-    let (instance, mut debug_utils) = create_instance(&entry, event_loop.raw_display_handle());
+    let (instance, debug_utils) = create_instance(&entry, event_loop.raw_display_handle());
     #[cfg(not(feature = "vl"))]
     let instance = instance::create_instance(&entry, event_loop);
 
@@ -39,24 +41,40 @@ impl Render {
     }
   }
 
-  // creates the window and starts rendering if haven't already
-  pub fn start(&mut self, event_loop: &EventLoop<()>) {
+  pub fn start(&mut self, target: &EventLoopWindowTarget<()>) {
     assert!(self.windowed.is_none());
 
-    self.windowed = Some(WindowedRender::new(event_loop, &self.entry, &self.instance));
+    self.windowed = Some(ManuallyDrop::new(WindowedRender::new(
+      target,
+      &self.entry,
+      &self.instance,
+    )));
   }
 
   pub fn draw(&mut self) {}
 }
 
-fn create_window(event_loop: &EventLoop<()>) -> Window {
+impl Drop for Render {
+  fn drop(&mut self) {
+    unsafe {
+      if let Some(windowed) = self.windowed.as_mut() {
+        ManuallyDrop::drop(windowed);
+      }
+
+      self.debug_utils.destroy_self();
+      self.instance.destroy_instance(None);
+    }
+  }
+}
+
+fn create_window(target: &EventLoopWindowTarget<()>) -> Window {
   WindowBuilder::new()
     .with_title(WINDOW_TITLE)
     .with_inner_size(LogicalSize::new(
       INITIAL_WINDOW_WIDTH,
       INITIAL_WINDOW_HEIGHT,
     ))
-    .build(event_loop)
+    .build(target)
     .expect("Failed to create window.")
 }
 
@@ -68,28 +86,40 @@ struct WindowedRender {
 }
 
 impl WindowedRender {
-  pub fn new(event_loop: &EventLoop<()>, entry: &ash::Entry, instance: &ash::Instance) -> Self {
-    let window = create_window(event_loop);
+  pub fn new(
+    target: &EventLoopWindowTarget<()>,
+    entry: &ash::Entry,
+    instance: &ash::Instance,
+  ) -> Self {
+    let window = create_window(target);
 
     let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
     let surface = unsafe {
       ash_window::create_surface(
         entry,
         instance,
-        event_loop.raw_display_handle(),
+        target.raw_display_handle(),
         window.raw_window_handle(),
         None,
       )
       .expect("Failed to create window surface")
     };
 
-    let renderer = SyncRenderer::new(event_loop, instance);
+    let renderer = SyncRenderer::new(instance, &surface_loader, surface);
 
     Self {
       window,
       surface_loader,
       surface,
       renderer,
+    }
+  }
+}
+
+impl Drop for WindowedRender {
+  fn drop(&mut self) {
+    unsafe {
+      self.surface_loader.destroy_surface(self.surface, None);
     }
   }
 }

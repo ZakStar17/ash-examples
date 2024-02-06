@@ -1,4 +1,4 @@
-use winit::event_loop::EventLoop;
+use winit::event_loop::{EventLoop, EventLoopWindowTarget};
 
 use crate::render::Render;
 
@@ -13,8 +13,8 @@ impl App {
     }
   }
 
-  pub fn resume(&mut self) {
-    self.render.resume()
+  pub fn start(&mut self, target: &EventLoopWindowTarget<()>) {
+    self.render.start(target)
   }
 
   pub fn get_window(&self) {}

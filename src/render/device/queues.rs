@@ -2,7 +2,7 @@ use std::{cmp::min, ops::Deref, pin::Pin, ptr};
 
 use ash::vk;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct QueueFamily {
   pub index: u32,
   pub queue_count: u32,

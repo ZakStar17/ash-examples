@@ -1,5 +1,4 @@
-use raw_window_handle::HasRawDisplayHandle;
-use winit::event_loop::EventLoop;
+use ash::vk;
 
 use super::renderer::Renderer;
 
@@ -12,8 +11,12 @@ pub struct SyncRenderer {
 }
 
 impl SyncRenderer {
-  pub fn new(event_loop: &EventLoop<()>, instance: &ash::Instance) -> Self {
-    let renderer = Renderer::new(event_loop, instance);
+  pub fn new(
+    instance: &ash::Instance,
+    surface_loader: &ash::extensions::khr::Surface,
+    surface: vk::SurfaceKHR,
+  ) -> Self {
+    let renderer = Renderer::new(instance, surface_loader, surface);
 
     Self {
       renderer,

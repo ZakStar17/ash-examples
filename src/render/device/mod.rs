@@ -70,8 +70,8 @@ fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice)
 
 fn check_swapchain_support(
   device: vk::PhysicalDevice,
+  surface_loader: &ash::extensions::khr::Surface,
   surface: vk::SurfaceKHR,
-  surface_loader: ash::extensions::khr::Surface,
 ) -> bool {
   let formats = unsafe {
     surface_loader
@@ -116,11 +116,20 @@ unsafe fn select_physical_device(
         return false;
       }
 
+      if !check_swapchain_support(physical_device, surface_loader, surface) {
+        return false;
+      }
+
       true
     })
     .filter_map(|physical_device| {
       // filter devices that do not have required queue families
-      match QueueFamilies::get_from_physical_device(instance, physical_device, surface_loader) {
+      match QueueFamilies::get_from_physical_device(
+        instance,
+        physical_device,
+        surface_loader,
+        surface,
+      ) {
         Err(()) => {
           log::info!("Skipped physical device: Device does not contain required queue families");
           None

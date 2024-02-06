@@ -4,7 +4,6 @@ mod instance;
 mod render;
 mod renderer;
 mod sync_renderer;
-mod windowed_renderer;
 
 #[cfg(feature = "vl")]
 mod validation_layers;
@@ -12,7 +11,6 @@ mod validation_layers;
 use std::ffi::CStr;
 
 use ash::vk;
-pub use render::Render;
 
 use crate::utility::cstr;
 
@@ -28,3 +26,5 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
   vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
   vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
 ];
+
+pub use render::Render;

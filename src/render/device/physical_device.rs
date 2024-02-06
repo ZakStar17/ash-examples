@@ -29,9 +29,11 @@ impl PhysicalDevice {
   pub unsafe fn select(
     instance: &ash::Instance,
     surface_loader: &ash::extensions::khr::Surface,
+    surface: vk::SurfaceKHR,
   ) -> PhysicalDevice {
-    let (physical_device, queue_families) = select_physical_device(instance, surface_loader)
-      .expect("No supported physical device available");
+    let (physical_device, queue_families) =
+      select_physical_device(instance, surface_loader, surface)
+        .expect("No supported physical device available");
 
     let (properties, properties11) = get_extended_properties(instance, physical_device);
     let mem_properties = instance.get_physical_device_memory_properties(physical_device);
