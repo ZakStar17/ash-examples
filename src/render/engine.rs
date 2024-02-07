@@ -48,20 +48,8 @@ impl RenderEngine {
     self.windowed = Some(WindowedRender::new(target, &self.entry, &self.instance));
   }
 
-  pub fn render_frame(&mut self) {
-    let retries = 7;
-    let windowed = self.windowed.as_mut().unwrap();
-    for _ in 0..retries {
-      if windowed.render_next_frame().is_ok() {
-        return;
-      }
-    }
-
-    panic!("Failed to render frame multiple consecutive times");
-  }
-
-  pub fn request_window_redraw(&self) {
-    self.windowed.as_ref().unwrap().window.request_redraw();
+  pub fn render_frame(&mut self) -> Result<(), ()> {
+    self.windowed.as_mut().unwrap().render_next_frame()
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
@@ -97,6 +85,8 @@ struct WindowedRender {
   window_size: PhysicalSize<u32>,
   surface: Surface,
   pub sync: SyncRenderer,
+
+  extent_may_have_changed: bool,
 }
 
 impl WindowedRender {
@@ -127,16 +117,16 @@ impl WindowedRender {
       window_size: initial_size,
       surface,
       sync: sync_renderer,
+
+      extent_may_have_changed: false,
     }
   }
 
   pub fn render_next_frame(&mut self) -> Result<(), ()> {
-    self.sync.render_next_frame(&self.surface, self.window_size)
-  }
+    let mut extent_changed = false;
 
-  pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
-    if new_size != self.window_size {
-      self.window_size = new_size;
+    if self.extent_may_have_changed {
+      self.extent_may_have_changed = false;
 
       let capabilities = unsafe {
         self
@@ -145,8 +135,19 @@ impl WindowedRender {
       };
       let new_extent = Surface::get_extent_from_capabilities(&capabilities);
       if new_extent.is_some_and(|extent| self.sync.renderer.swapchains.get_extent() != extent) {
-        self.sync.extent_changed();
+        extent_changed = true
       }
+    }
+
+    self
+      .sync
+      .render_next_frame(&self.surface, self.window_size, extent_changed)
+  }
+
+  pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
+    if new_size != self.window_size {
+      self.window_size = new_size;
+      self.extent_may_have_changed = true;
     }
   }
 

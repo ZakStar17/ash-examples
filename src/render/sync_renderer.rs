@@ -33,15 +33,16 @@ impl SyncRenderer {
     }
   }
 
-  pub fn extent_changed(&mut self) {
-    self.recreate_swapchain_next_frame = true;
-  }
-
   pub fn render_next_frame(
     &mut self,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
+    extent_changed: bool,
   ) -> Result<(), ()> {
+    if extent_changed {
+      self.recreate_swapchain_next_frame = true;
+    }
+
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     let cur_frame = &self.frames[cur_frame_i];
     self.last_frame_i = cur_frame_i;
@@ -118,16 +119,25 @@ impl SyncRenderer {
     }
 
     unsafe {
-      // the window may resize or the swapchain may become invalid while this function runs
-      if let Err(_) = self.renderer.swapchains.queue_present(
+      // presenting may fail
+      if let Err(vk_result) = self.renderer.swapchains.queue_present(
         image_index,
         self.renderer.queues.presentation,
         &[cur_frame.presentable],
       ) {
-        log::warn!("Failed to present to swapchain");
-        self.recreate_swapchain_next_frame = true;
+        match vk_result {
+          vk::Result::ERROR_OUT_OF_DATE_KHR => {
+            // window resizes can happen while this function is running and be not detected in time
+            // other reasons may include format changes
 
-        return Err(());
+            log::warn!("Failed to present to swapchain: Swapchain is out of date");
+            self.recreate_swapchain_next_frame = true;
+
+            // errors of this type still signal sync objects accordingly
+            return Err(());
+          }
+          other => panic!("Failed to present to swapchain: {:?}", other),
+        }
       }
     }
 

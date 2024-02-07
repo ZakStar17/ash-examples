@@ -127,6 +127,7 @@ fn get_queue_create_info(
   }
 }
 
+#[derive(Debug)]
 pub struct Queues {
   pub presentation: vk::Queue,
   pub graphics: vk::Queue,

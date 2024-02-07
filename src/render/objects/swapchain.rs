@@ -3,7 +3,7 @@ use std::{ops::Deref, ptr};
 pub use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::USE_VSYNC;
+use crate::PREFERRED_PRESENTATION_METHOD;
 
 use super::Surface;
 
@@ -141,6 +141,14 @@ impl Swapchain {
     let present_mode = select_swapchain_present_mode(physical_device, surface);
     let extent = get_swapchain_extent(&capabilities, window_size);
 
+    log::info!(
+      "Creating swapchain with ({}, {}) extent, {:?} format and {:?} present mode",
+      extent.width,
+      extent.height,
+      image_format,
+      present_mode
+    );
+
     Self::create_with(
       device,
       surface,
@@ -161,11 +169,18 @@ impl Swapchain {
     swapchain_loader: &ash::extensions::khr::Swapchain,
     window_size: PhysicalSize<u32>,
   ) -> (Self, RecreationChanges) {
-    log::debug!("Recreating swapchain");
     let capabilities = unsafe { surface.get_capabilities(physical_device) };
     let image_format = select_swapchain_image_format(physical_device, surface);
     let present_mode = select_swapchain_present_mode(physical_device, surface);
     let extent = get_swapchain_extent(&capabilities, window_size);
+
+    log::info!(
+      "Recreating swapchain with ({}, {}) extent, {:?} format and {:?} present mode",
+      extent.width,
+      extent.height,
+      image_format,
+      present_mode
+    );
 
     let changes = RecreationChanges {
       format: image_format.format != self.format,
@@ -182,8 +197,6 @@ impl Swapchain {
       extent,
       self.vk_obj,
     );
-
-    println!("old {:#?}, new {:#?}", self, new);
 
     let old = {
       std::mem::swap(&mut new, self);
@@ -300,14 +313,14 @@ fn select_swapchain_present_mode(
   surface: &Surface,
 ) -> vk::PresentModeKHR {
   let present_modes = unsafe { surface.get_present_modes(physical_device) };
-  if !USE_VSYNC {
-    if present_modes.contains(&vk::PresentModeKHR::FIFO_RELAXED) {
-      return vk::PresentModeKHR::FIFO_RELAXED;
-    }
+  if present_modes.contains(&PREFERRED_PRESENTATION_METHOD) {
+    return PREFERRED_PRESENTATION_METHOD;
+  }
 
-    if present_modes.contains(&vk::PresentModeKHR::IMMEDIATE) {
-      return vk::PresentModeKHR::IMMEDIATE;
-    }
+  if PREFERRED_PRESENTATION_METHOD == vk::PresentModeKHR::FIFO_RELAXED
+    && present_modes.contains(&vk::PresentModeKHR::IMMEDIATE)
+  {
+    return vk::PresentModeKHR::IMMEDIATE;
   }
 
   // required to be available

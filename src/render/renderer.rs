@@ -207,6 +207,12 @@ impl Renderer {
     for &framebuffer in self.framebuffers.iter() {
       self.device.destroy_framebuffer(framebuffer, None);
     }
+    if let Some(old) = self.old_framebuffers.as_mut() {
+      for &framebuffer in old.iter() {
+        self.device.destroy_framebuffer(framebuffer, None);
+      }
+    }
+
     self.device.destroy_render_pass(self.render_pass, None);
 
     self.swapchains.destroy_self(&self.device);
