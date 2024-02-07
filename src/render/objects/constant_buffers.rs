@@ -7,7 +7,10 @@ use std::{
 use ash::vk;
 use log::debug;
 
-use crate::render::{vertex::Vertex, INDICES, VERTICES};
+use crate::render::{
+  render_object::{INDICES, VERTICES},
+  vertex::Vertex,
+};
 
 use super::{
   command_pools::TransferCommandBufferPool,

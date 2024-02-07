@@ -5,7 +5,7 @@ use winit::dpi::PhysicalSize;
 
 use crate::utility::populate_array_with_expression;
 
-use super::{frame::Frame, objects::Surface, renderer::Renderer, FRAMES_IN_FLIGHT};
+use super::{frame::Frame, objects::Surface, renderer::Renderer, RenderPosition, FRAMES_IN_FLIGHT};
 
 pub struct SyncRenderer {
   pub renderer: Renderer,
@@ -38,13 +38,14 @@ impl SyncRenderer {
     surface: &Surface,
     window_size: PhysicalSize<u32>,
     extent_changed: bool,
+    position: &RenderPosition,
   ) -> Result<(), ()> {
     if extent_changed {
       self.recreate_swapchain_next_frame = true;
     }
 
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
-    let cur_frame = &self.frames[cur_frame_i];
+    let cur_frame: &Frame = &self.frames[cur_frame_i];
     self.last_frame_i = cur_frame_i;
 
     cur_frame.wait_fence(&self.renderer.device);
@@ -91,7 +92,7 @@ impl SyncRenderer {
 
       self
         .renderer
-        .record_graphics(cur_frame_i, image_index as usize);
+        .record_graphics(cur_frame_i, image_index as usize, position);
     }
 
     let wait_stage = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;

@@ -2,9 +2,13 @@ use std::ptr::{self, addr_of};
 
 use ash::vk;
 
-use crate::render::{
-  objects::{constant_buffers::ConstantBuffers, device::QueueFamilies, GraphicsPipeline},
-  BACKGROUND_COLOR, INDICES,
+use crate::{
+  render::{
+    objects::{constant_buffers::ConstantBuffers, device::QueueFamilies, GraphicsPipeline},
+    render_object::INDICES,
+    RenderPosition, BACKGROUND_COLOR,
+  },
+  utility,
 };
 
 pub struct GraphicsCommandBufferPool {
@@ -41,6 +45,7 @@ impl GraphicsCommandBufferPool {
     pipeline: &GraphicsPipeline,
     buffers: &ConstantBuffers,
     swapchain_image: vk::Image,
+    position: &RenderPosition,  // position of the object to be rendered
   ) {
     let cb = self.triangle;
 
@@ -73,6 +78,13 @@ impl GraphicsCommandBufferPool {
 
     device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
     {
+      device.cmd_push_constants(
+        cb,
+        pipeline.layout,
+        vk::ShaderStageFlags::VERTEX,
+        0,
+        utility::any_as_u8_slice(position),
+      );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, **pipeline);
       device.cmd_bind_vertex_buffers(cb, 0, &[buffers.vertex], &[0]);
       device.cmd_bind_index_buffer(cb, buffers.index, 0, vk::IndexType::UINT16);

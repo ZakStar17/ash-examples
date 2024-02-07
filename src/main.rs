@@ -1,4 +1,4 @@
-mod app;
+mod ferris;
 mod render;
 mod utility;
 
@@ -7,8 +7,8 @@ use std::{
   time::{Duration, Instant},
 };
 
-use app::App;
 use ash::vk;
+use ferris::Ferris;
 use render::RenderEngine;
 use utility::cstr;
 use winit::{
@@ -52,6 +52,8 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
     height: u32::MAX,
   };
 
+  let mut ferris = Ferris::new([40, 40]);
+
   let mut last_update_instant = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
   event_loop
@@ -63,8 +65,8 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
       }
       Event::Resumed => {
         if !started {
-          log::debug!("Starting the application");
-          engine.start(target);
+          log::debug!("Starting application");
+          cur_window_size = engine.start(target);
           started = true;
         } else {
           log::debug!("Application resumed");
@@ -74,14 +76,14 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
       Event::AboutToWait => {
         // As of time of writing the Winit docs contradict themselves about when and how to use
         // Event::AboutToWait and WindowEvent::RedrawRequested. Based on my tests RedrawRequested
-        // works well if the application doesn't draw regularly but makes the application lag and 
+        // works well if the application doesn't draw regularly but makes the application lag and
         // be generally unresponsive if it is called multiple times per frame (for example by using
         // window.request_redraw()), specially when PREFERRED_PRESENTATION_METHOD is IMMEDIATE.
-        
-        // Event::AboutToWait seems to work best as the application doesn't have to wait for
-        // anything and can resume rendering when it wants. This works well because the renderer
-        // is synchronized with the GPU anyway. This way vk::PresentModeKHR::IMMEDIATE uses all
-        // resources available and works as intended.
+
+        // Doing everything in Event::AboutToWait seems to work best as the application doesn't
+        // have to wait for anything and can resume rendering when it wants. This works well
+        // because the renderer is synchronized with the GPU anyway. This way
+        // vk::PresentModeKHR::IMMEDIATE uses all resources available and works as intended.
 
         let now = Instant::now();
         let time_passed = now - last_update_instant;
@@ -93,6 +95,8 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           println!("FPS: {}", 1.0 / time_passed.as_secs_f32());
         }
 
+        //ferris.position[0] = ferris.position[0] + 1;
+
         if wait_for_more_window_resizes {
           wait_for_more_window_resizes = false;
           std::thread::sleep(WAIT_AFTER_WINDOW_RESIZE_DURATION);
@@ -101,7 +105,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
         }
 
         if engine_running {
-          if engine.render_frame().is_err() {
+          if engine.render_frame(&ferris.get_render_position(cur_window_size)).is_err() {
             log::warn!("Frame failed to render");
           }
         }
@@ -116,16 +120,16 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
         WindowEvent::Resized(new_size) => {
           engine.window_resized(new_size);
 
-          if WAIT_AFTER_WINDOW_RESIZE_ENABLED {
-            if cur_window_size.width.abs_diff(new_size.width) <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD
+          if WAIT_AFTER_WINDOW_RESIZE_ENABLED
+            && (cur_window_size.width.abs_diff(new_size.width)
+              <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD
               || cur_window_size.height.abs_diff(new_size.height)
-                <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD
-            {
-              wait_for_more_window_resizes = true;
-            }
-
-            cur_window_size = new_size;
+                <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD)
+          {
+            wait_for_more_window_resizes = true;
           }
+
+          cur_window_size = new_size;
         }
         _ => {}
       },

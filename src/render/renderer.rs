@@ -15,7 +15,7 @@ use super::{
     device::{create_logical_device, PhysicalDevice, Queues},
     save_pipeline_cache, GraphicsPipeline, Surface, Swapchains,
   },
-  FRAMES_IN_FLIGHT,
+  RenderPosition, FRAMES_IN_FLIGHT,
 };
 
 pub struct Renderer {
@@ -103,7 +103,7 @@ impl Renderer {
     }
   }
 
-  pub unsafe fn record_graphics(&mut self, frame_i: usize, image_i: usize) {
+  pub unsafe fn record_graphics(&mut self, frame_i: usize, image_i: usize, position: &RenderPosition) {
     self.graphics_pools[frame_i].record(
       &self.device,
       &self.physical_device.queue_families,
@@ -113,6 +113,7 @@ impl Renderer {
       &self.pipeline,
       &self.buffers,
       self.swapchains.get_images()[image_i],
+      position,
     );
   }
 

@@ -13,6 +13,7 @@ use super::{
   objects::{create_instance, get_entry, Surface},
   renderer::Renderer,
   sync_renderer::SyncRenderer,
+  RenderPosition,
 };
 
 pub struct RenderEngine {
@@ -42,14 +43,17 @@ impl RenderEngine {
     }
   }
 
-  pub fn start(&mut self, target: &EventLoopWindowTarget<()>) {
+  pub fn start(&mut self, target: &EventLoopWindowTarget<()>) -> PhysicalSize<u32> {
     assert!(self.windowed.is_none());
 
-    self.windowed = Some(WindowedRender::new(target, &self.entry, &self.instance));
+    let (windowed, initial_window_size) = WindowedRender::new(target, &self.entry, &self.instance);
+    self.windowed = Some(windowed);
+
+    initial_window_size
   }
 
-  pub fn render_frame(&mut self) -> Result<(), ()> {
-    self.windowed.as_mut().unwrap().render_next_frame()
+  pub fn render_frame(&mut self, position: &RenderPosition) -> Result<(), ()> {
+    self.windowed.as_mut().unwrap().render_next_frame(position)
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
@@ -81,7 +85,7 @@ fn create_window(target: &EventLoopWindowTarget<()>, initial_size: PhysicalSize<
 }
 
 struct WindowedRender {
-  pub window: Window,
+  _window: Window,
   window_size: PhysicalSize<u32>,
   surface: Surface,
   pub sync: SyncRenderer,
@@ -94,7 +98,7 @@ impl WindowedRender {
     target: &EventLoopWindowTarget<()>,
     entry: &ash::Entry,
     instance: &ash::Instance,
-  ) -> Self {
+  ) -> (Self, PhysicalSize<u32>) {
     let initial_size = PhysicalSize {
       width: INITIAL_WINDOW_WIDTH,
       height: INITIAL_WINDOW_HEIGHT,
@@ -112,17 +116,20 @@ impl WindowedRender {
     let renderer = Renderer::new(instance, &surface, initial_size);
     let sync_renderer = SyncRenderer::new(renderer);
 
-    Self {
-      window,
-      window_size: initial_size,
-      surface,
-      sync: sync_renderer,
+    (
+      Self {
+        _window: window,
+        window_size: initial_size,
+        surface,
+        sync: sync_renderer,
 
-      extent_may_have_changed: false,
-    }
+        extent_may_have_changed: false,
+      },
+      initial_size,
+    )
   }
 
-  pub fn render_next_frame(&mut self) -> Result<(), ()> {
+  pub fn render_next_frame(&mut self, position: &RenderPosition) -> Result<(), ()> {
     let mut extent_changed = false;
 
     if self.extent_may_have_changed {
@@ -141,7 +148,7 @@ impl WindowedRender {
 
     self
       .sync
-      .render_next_frame(&self.surface, self.window_size, extent_changed)
+      .render_next_frame(&self.surface, self.window_size, extent_changed, position)
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {

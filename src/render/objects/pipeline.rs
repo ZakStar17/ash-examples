@@ -1,4 +1,5 @@
 use std::{
+  mem::size_of,
   ops::Deref,
   pin::pin,
   ptr::{self, addr_of},
@@ -9,6 +10,7 @@ use ash::vk;
 use crate::render::{
   shaders::Shader,
   vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
+  RenderPosition,
 };
 
 pub struct GraphicsPipeline {
@@ -32,15 +34,19 @@ impl GraphicsPipeline {
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
   ) -> Self {
-    // no descriptor sets or push constants
+    let push_constant_range = vk::PushConstantRange {
+      stage_flags: vk::ShaderStageFlags::VERTEX,
+      offset: 0,
+      size: size_of::<RenderPosition>() as u32,
+    };
     let layout_create_info = vk::PipelineLayoutCreateInfo {
       s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
       p_next: ptr::null(),
       flags: vk::PipelineLayoutCreateFlags::empty(),
       set_layout_count: 0,
       p_set_layouts: ptr::null(),
-      push_constant_range_count: 0,
-      p_push_constant_ranges: ptr::null(),
+      push_constant_range_count: 1,
+      p_push_constant_ranges: &push_constant_range,
     };
     let layout = unsafe {
       device
