@@ -9,6 +9,7 @@ use std::{
 
 use ash::vk;
 use ferris::Ferris;
+use rand::Rng;
 use render::RenderEngine;
 use utility::cstr;
 use winit::{
@@ -52,7 +53,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
     height: u32::MAX,
   };
 
-  let mut ferris = Ferris::new([40, 40]);
+  let mut ferris = Ferris::new([400.0, 400.0], true, true);
 
   let mut last_update_instant = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
@@ -68,6 +69,15 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           log::debug!("Starting application");
           cur_window_size = engine.start(target);
           started = true;
+
+          // give Ferris a random position and direction
+          let mut rng = rand::thread_rng();
+          ferris.position = [
+            rng.gen::<f32>() * (cur_window_size.width - Ferris::SIZE) as f32,
+            rng.gen::<f32>() * (cur_window_size.width - Ferris::SIZE) as f32,
+          ];
+          ferris.going_down = rand::random();
+          ferris.going_right = rand::random();
         } else {
           log::debug!("Application resumed");
         }
@@ -95,7 +105,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           println!("FPS: {}", 1.0 / time_passed.as_secs_f32());
         }
 
-        //ferris.position[0] = ferris.position[0] + 1;
+        ferris.update(time_passed, cur_window_size);
 
         if wait_for_more_window_resizes {
           wait_for_more_window_resizes = false;
@@ -105,7 +115,10 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
         }
 
         if engine_running {
-          if engine.render_frame(&ferris.get_render_position(cur_window_size)).is_err() {
+          if engine
+            .render_frame(&ferris.get_render_position(cur_window_size))
+            .is_err()
+          {
             log::warn!("Frame failed to render");
           }
         }

@@ -103,7 +103,12 @@ impl Renderer {
     }
   }
 
-  pub unsafe fn record_graphics(&mut self, frame_i: usize, image_i: usize, position: &RenderPosition) {
+  pub unsafe fn record_graphics(
+    &mut self,
+    frame_i: usize,
+    image_i: usize,
+    position: &RenderPosition,
+  ) {
     self.graphics_pools[frame_i].record(
       &self.device,
       &self.physical_device.queue_families,

@@ -1,9 +1,9 @@
 mod engine;
 mod frame;
 mod objects;
+mod render_object;
 mod renderer;
 mod shaders;
-mod render_object;
 mod sync_renderer;
 mod vertex;
 

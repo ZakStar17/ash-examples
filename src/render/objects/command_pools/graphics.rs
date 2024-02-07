@@ -45,7 +45,7 @@ impl GraphicsCommandBufferPool {
     pipeline: &GraphicsPipeline,
     buffers: &ConstantBuffers,
     swapchain_image: vk::Image,
-    position: &RenderPosition,  // position of the object to be rendered
+    position: &RenderPosition, // position of the object to be rendered
   ) {
     let cb = self.triangle;
 

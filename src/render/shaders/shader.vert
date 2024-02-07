@@ -2,7 +2,7 @@
 
 layout(push_constant) uniform PushConstantData {
   vec2 position;
-  float zoom;
+  vec2 ratio;
 } pc;
 
 // vertex
@@ -12,6 +12,9 @@ layout(location = 1) in vec2 tex_coords;
 layout(location = 0) out vec2 out_tex_coords;
 
 void main() {
-  gl_Position = vec4(pos * pc.zoom + pc.position, 1.0, 1.0);
+  float x = pos.x * pc.ratio.x + pc.position.x;
+  float y = pos.y * pc.ratio.y + pc.position.y;
+  gl_Position = vec4(x, y, 1.0, 1.0);
+  
   out_tex_coords = tex_coords;
 }
