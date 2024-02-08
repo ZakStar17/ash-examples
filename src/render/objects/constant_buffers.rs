@@ -17,7 +17,7 @@ use super::{
   device::{PhysicalDevice, Queues},
 };
 
-fn create_buffer(device: &ash::Device, size: u64, usage: vk::BufferUsageFlags) -> vk::Buffer {
+pub fn create_buffer(device: &ash::Device, size: u64, usage: vk::BufferUsageFlags) -> vk::Buffer {
   assert!(size > 0);
   let create_info = vk::BufferCreateInfo {
     s_type: vk::StructureType::BUFFER_CREATE_INFO,
@@ -36,7 +36,7 @@ fn create_buffer(device: &ash::Device, size: u64, usage: vk::BufferUsageFlags) -
   }
 }
 
-struct BuffersAllocation {
+pub struct BuffersAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_size: u64,
   pub memory_type: u32,
@@ -44,7 +44,7 @@ struct BuffersAllocation {
 }
 
 // allocates multiple buffers in one vk::DeviceMemory
-fn allocate_buffers(
+pub fn allocate_and_bind_memory_to_buffers(
   device: &ash::Device,
   physical_device: &PhysicalDevice,
   buffers: &[vk::Buffer],
@@ -81,6 +81,8 @@ fn allocate_buffers(
       prev
     })
     .collect();
+
+  // todo: do memory and heap check for total_size
 
   let memory_type = physical_device
     .find_optimal_memory_type(
@@ -157,7 +159,7 @@ impl ConstantBuffers {
       vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::INDEX_BUFFER),
     );
 
-    let host_allocation = allocate_buffers(
+    let host_allocation = allocate_and_bind_memory_to_buffers(
       device,
       &physical_device,
       &[vertex_buffer_src, index_buffer_src],
@@ -167,7 +169,7 @@ impl ConstantBuffers {
     let vertex_offset = host_allocation.offsets[0];
     let index_offset = host_allocation.offsets[1];
 
-    let local_allocation = allocate_buffers(
+    let local_allocation = allocate_and_bind_memory_to_buffers(
       device,
       &physical_device,
       &[vertex_buffer_dst, index_buffer_dst],

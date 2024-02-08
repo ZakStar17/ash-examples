@@ -1,10 +1,17 @@
+use std::ptr;
+
 use ash::vk;
 use winit::dpi::PhysicalSize;
 
 use crate::{
-  render::objects::{
-    command_pools::{GraphicsCommandBufferPool, TransferCommandBufferPool},
-    create_pipeline_cache, ConstantBuffers,
+  render::{
+    objects::{
+      command_pools::{
+        GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool,
+      },
+      create_pipeline_cache, ConstantBuffers,
+    },
+    texture::Texture,
   },
   utility::populate_array_with_expression,
 };
@@ -17,6 +24,34 @@ use super::{
   },
   RenderPosition, FRAMES_IN_FLIGHT,
 };
+
+fn create_sampler(device: &ash::Device) -> vk::Sampler {
+  let sampler_create_info = vk::SamplerCreateInfo {
+    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SamplerCreateFlags::empty(),
+    mag_filter: vk::Filter::NEAREST,
+    min_filter: vk::Filter::NEAREST,
+    address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    anisotropy_enable: vk::FALSE,
+    max_anisotropy: 0.0,
+    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+    unnormalized_coordinates: vk::FALSE,
+    compare_enable: vk::FALSE,
+    compare_op: vk::CompareOp::NEVER,
+    mipmap_mode: vk::SamplerMipmapMode::NEAREST,
+    mip_lod_bias: 0.0,
+    max_lod: 0.0,
+    min_lod: 0.0,
+  };
+  unsafe {
+    device
+      .create_sampler(&sampler_create_info, None)
+      .expect("Failed to create a sampler")
+  }
+}
 
 pub struct Renderer {
   pub physical_device: PhysicalDevice,
@@ -33,6 +68,7 @@ pub struct Renderer {
 
   pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
   buffers: ConstantBuffers,
+  texture: Texture,
 }
 
 impl Renderer {
@@ -73,12 +109,27 @@ impl Renderer {
       swapchains.get_extent(),
     );
 
-    let mut transfer_pool =
-      TransferCommandBufferPool::create(&device, &physical_device.queue_families);
-    let buffers = ConstantBuffers::new(&device, &physical_device, &queues, &mut transfer_pool);
-    unsafe {
-      transfer_pool.destroy_self(&device);
-    }
+    let (buffers, texture) = {
+      let mut transfer_pool =
+        TransferCommandBufferPool::create(&device, &physical_device.queue_families);
+      let mut graphics_pool =
+        TemporaryGraphicsCommandBufferPool::create(&device, &physical_device.queue_families);
+
+      let buffers = ConstantBuffers::new(&device, &physical_device, &queues, &mut transfer_pool);
+      let texture = Texture::load(
+        &device,
+        &physical_device,
+        &queues,
+        &mut transfer_pool,
+        &mut graphics_pool,
+      );
+      unsafe {
+        transfer_pool.destroy_self(&device);
+        graphics_pool.destroy_self(&device);
+      }
+
+      (buffers, texture)
+    };
 
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
@@ -100,6 +151,7 @@ impl Renderer {
 
       graphics_pools,
       buffers,
+      texture,
     }
   }
 
@@ -111,13 +163,11 @@ impl Renderer {
   ) {
     self.graphics_pools[frame_i].record(
       &self.device,
-      &self.physical_device.queue_families,
       self.render_pass,
       self.swapchains.get_extent(),
       self.framebuffers[image_i],
       &self.pipeline,
       &self.buffers,
-      self.swapchains.get_images()[image_i],
       position,
     );
   }
@@ -194,6 +244,7 @@ impl Renderer {
   }
 
   pub unsafe fn destroy_self(&mut self) {
+    self.texture.destroy_self(&self.device);
     self.buffers.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {
       pool.destroy_self(&self.device);

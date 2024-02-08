@@ -3,9 +3,11 @@ use std::ptr;
 use ash::vk;
 
 mod graphics;
+mod temporary_graphics;
 mod transfer;
 
 pub use graphics::GraphicsCommandBufferPool;
+pub use temporary_graphics::TemporaryGraphicsCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
 pub fn create_command_pool(

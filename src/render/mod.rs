@@ -5,6 +5,7 @@ mod render_object;
 mod renderer;
 mod shaders;
 mod sync_renderer;
+mod texture;
 mod vertex;
 
 use std::ffi::CStr;

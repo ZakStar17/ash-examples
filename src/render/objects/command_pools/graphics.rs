@@ -38,13 +38,11 @@ impl GraphicsCommandBufferPool {
   pub unsafe fn record(
     &mut self,
     device: &ash::Device,
-    queue_families: &QueueFamilies,
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
     buffers: &ConstantBuffers,
-    swapchain_image: vk::Image,
     position: &RenderPosition, // position of the object to be rendered
   ) {
     let cb = self.triangle;
@@ -91,37 +89,6 @@ impl GraphicsCommandBufferPool {
       device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);
-
-    if queue_families.presentation != queue_families.graphics {
-      let subresource_range = vk::ImageSubresourceRange {
-        aspect_mask: vk::ImageAspectFlags::COLOR,
-        base_mip_level: 0,
-        level_count: 1,
-        base_array_layer: 0,
-        layer_count: 1,
-      };
-      let release = vk::ImageMemoryBarrier {
-        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-        p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-        dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
-        old_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-        new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-        src_queue_family_index: queue_families.get_graphics_index(),
-        dst_queue_family_index: queue_families.get_presentation_index(),
-        image: swapchain_image,
-        subresource_range,
-      };
-      device.cmd_pipeline_barrier(
-        cb,
-        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        vk::DependencyFlags::empty(),
-        &[],
-        &[],
-        &[release],
-      );
-    }
 
     device
       .end_command_buffer(cb)

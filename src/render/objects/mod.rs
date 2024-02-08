@@ -12,7 +12,7 @@ mod swapchain;
 #[cfg(feature = "vl")]
 mod validation_layers;
 
-pub use constant_buffers::ConstantBuffers;
+pub use constant_buffers::{allocate_and_bind_memory_to_buffers, create_buffer, ConstantBuffers};
 pub use entry::get_entry;
 pub use instance::create_instance;
 pub use pipeline::GraphicsPipeline;
