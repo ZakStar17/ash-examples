@@ -48,7 +48,7 @@ impl SyncRenderer {
     let cur_frame: &Frame = &self.frames[cur_frame_i];
     self.last_frame_i = cur_frame_i;
 
-    cur_frame.wait_fence(&self.renderer.device);
+    cur_frame.wait_finished(&self.renderer.device);
 
     // current frame resources are now safe to use as they are not being used by the GPU
 
@@ -120,7 +120,6 @@ impl SyncRenderer {
     }
 
     unsafe {
-      // presenting may fail
       if let Err(vk_result) = self.renderer.swapchains.queue_present(
         image_index,
         self.renderer.queues.presentation,

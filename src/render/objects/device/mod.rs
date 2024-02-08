@@ -16,11 +16,21 @@ use std::{
 use ash::vk;
 
 use crate::{
-  render::{objects::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION},
-  utility::{self, c_char_array_to_string},
+  render::{
+    objects::device::vendor::Vendor, texture::TEXTURE_FORMAT, REQUIRED_DEVICE_EXTENSIONS,
+    TARGET_API_VERSION,
+  },
+  utility::{self, c_char_array_to_string, const_flag_bitor},
 };
 
 use super::Surface;
+
+const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
+  vk::FormatFeatureFlags =>
+  vk::FormatFeatureFlags::TRANSFER_DST,
+  vk::FormatFeatureFlags::SAMPLED_IMAGE,
+  vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR // can be used with linear sampler
+);
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
@@ -68,6 +78,15 @@ fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice)
   .is_empty()
 }
 
+fn check_formats_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+  let properties =
+    unsafe { instance.get_physical_device_format_properties(physical_device, TEXTURE_FORMAT) };
+
+  properties
+    .optimal_tiling_features
+    .contains(REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL)
+}
+
 fn check_swapchain_support(device: vk::PhysicalDevice, surface: &Surface) -> bool {
   let formats = unsafe { surface.get_formats(device) };
   let present_modes = unsafe { surface.get_present_modes(device) };
@@ -100,6 +119,12 @@ unsafe fn select_physical_device(
       // check if device supports all required extensions
       if !check_extension_support(instance, physical_device) {
         log::info!("Skipped physical device: Device does not support all required extensions");
+        return false;
+      }
+
+      // check if all required formats are supported
+      if !check_formats_support(instance, physical_device) {
+        log::warn!("Skipped physical device: Device does not support required formats");
         return false;
       }
 

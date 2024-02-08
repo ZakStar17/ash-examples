@@ -2,6 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
+// contains synchronization objects for one frame
 pub struct Frame {
   pub image_available: vk::Semaphore,
   pub presentable: vk::Semaphore,
@@ -43,8 +44,7 @@ impl Frame {
     }
   }
 
-  // wait until all frame work submitted on this frame finishes
-  pub fn wait_fence(&self, device: &ash::Device) {
+  pub fn wait_finished(&self, device: &ash::Device) {
     unsafe {
       device
         .wait_for_fences(&[self.finished], true, u64::MAX)

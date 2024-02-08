@@ -57,13 +57,12 @@ impl QueueFamilies {
         }
 
         // set presentation and graphics to the first family that supports both
-        if let Some(presentation_family) = presentation {
-          if presentation_family != family.unwrap()
+        if presentation.is_some_and(|presentation_family| {
+          presentation_family != family.unwrap()
             && unsafe { surface.supports_queue_family(physical_device, i) }
-          {
-            graphics = family;
-            presentation = family;
-          }
+        }) {
+          graphics = family;
+          presentation = family;
         }
       } else if props.queue_flags.contains(vk::QueueFlags::COMPUTE) {
         if compute.is_none() {

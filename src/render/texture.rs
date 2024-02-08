@@ -81,7 +81,7 @@ impl Texture {
           staging_buffer_alloc.memory_size,
           vk::MemoryMapFlags::empty(),
         )
-        .expect("Failed to map staging buffer texture memory") as *mut u8;
+        .expect("Failed to map staging texture buffer memory") as *mut u8;
 
       copy_nonoverlapping(bytes.as_ptr(), mem_ptr, bytes.len());
 
@@ -105,6 +105,7 @@ impl Texture {
       device.unmap_memory(staging_buffer_alloc.memory);
     }
 
+    // record command buffers
     unsafe {
       transfer_pool.reset(device);
       temp_graphics_pool.reset(device);
@@ -149,6 +150,7 @@ impl Texture {
       }
     };
 
+    // submit command buffers
     let transfer_submit_info = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
@@ -250,6 +252,7 @@ fn create_image(
   }
 }
 
+// usually one allocation is used for multiple images
 fn allocate_and_bind_memory_to_image(
   device: &ash::Device,
   physical_device: &PhysicalDevice,

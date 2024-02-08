@@ -82,7 +82,12 @@ pub fn allocate_and_bind_memory_to_buffers(
     })
     .collect();
 
-  // todo: do memory and heap check for total_size
+  if total_size >= physical_device.get_max_memory_allocation_size() {
+    panic!("Memory required to allocate buffers ({}mb) is higher than the maximum allowed on the device ({}mb)", 
+      total_size / 1_000_000,
+      physical_device.get_max_memory_allocation_size() / 1_000_000
+    );
+  }
 
   let memory_type = physical_device
     .find_optimal_memory_type(
@@ -91,6 +96,14 @@ pub fn allocate_and_bind_memory_to_buffers(
       optional_memory_properties,
     )
     .expect("Failed to find required memory type to allocate buffers");
+
+  let heap_size = physical_device.get_memory_type_heap(memory_type).size;
+  if total_size >= heap_size {
+    panic!("Memory required to allocate buffers ({}mb) is higher than the size of the requested heap ({}mb)", 
+      total_size / 1_000_000,
+      heap_size / 1_000_000
+    );
+  }
 
   let allocate_info = vk::MemoryAllocateInfo {
     s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
