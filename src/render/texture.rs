@@ -4,7 +4,9 @@ use std::{
 };
 
 use ash::vk;
-use image::{ColorType, ImageError};
+use image::ImageError;
+
+use crate::render::objects::create_image_view;
 
 use super::objects::{
   allocate_and_bind_memory_to_buffers,
@@ -19,13 +21,14 @@ pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SNORM;
 pub struct Texture {
   memory: vk::DeviceMemory,
   image: vk::Image,
+  pub image_view: vk::ImageView,
 }
 
 fn read_image_bytes() -> Result<(u32, u32, Vec<u8>), ImageError> {
   let img = image::io::Reader::open(IMAGE_PATH)?.decode()?.to_rgba8();
   let width = img.width();
   let height = img.height();
-  
+
   let bytes = img.into_raw();
   assert!(bytes.len() == width as usize * height as usize * 4);
   Ok((width, height, bytes))
@@ -194,13 +197,17 @@ impl Texture {
       device.free_memory(staging_buffer_alloc.memory, None);
     }
 
+    let image_view = create_image_view(device, texture_image, TEXTURE_FORMAT);
+
     Self {
       memory: texture_memory,
       image: texture_image,
+      image_view,
     }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+    device.destroy_image_view(self.image_view, None);
     device.destroy_image(self.image, None);
     device.free_memory(self.memory, None);
   }

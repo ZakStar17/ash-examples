@@ -9,7 +9,7 @@ use crate::{
       command_pools::{
         GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool,
       },
-      create_pipeline_cache, ConstantBuffers,
+      create_pipeline_cache, ConstantBuffers, DescriptorSets,
     },
     texture::Texture,
   },
@@ -63,12 +63,14 @@ pub struct Renderer {
   framebuffers: Box<[vk::Framebuffer]>,
   old_framebuffers: Option<Box<[vk::Framebuffer]>>,
 
+  descriptor_sets: DescriptorSets,
   pipeline_cache: vk::PipelineCache,
   pipeline: GraphicsPipeline,
 
   pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
   buffers: ConstantBuffers,
   texture: Texture,
+  sampler: vk::Sampler,
 }
 
 impl Renderer {
@@ -82,7 +84,7 @@ impl Renderer {
 
     let swapchains = Swapchains::new(
       instance,
-      *physical_device,
+      &physical_device,
       &device,
       surface,
       initial_window_size,
@@ -95,6 +97,8 @@ impl Renderer {
       .map(|&view| create_framebuffer(&device, render_pass, view, swapchains.get_extent()))
       .collect();
 
+    let mut descriptor_sets = DescriptorSets::new(&device);
+
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) = create_pipeline_cache(&device, &physical_device);
     if created_from_file {
@@ -106,6 +110,7 @@ impl Renderer {
       &device,
       pipeline_cache,
       render_pass,
+      &descriptor_sets,
       swapchains.get_extent(),
     );
 
@@ -131,6 +136,11 @@ impl Renderer {
       (buffers, texture)
     };
 
+    let sampler = create_sampler(&device);
+    descriptor_sets
+      .pool
+      .write_texture(&device, &texture, sampler);
+
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
@@ -146,12 +156,14 @@ impl Renderer {
       framebuffers,
       old_framebuffers: None,
 
+      descriptor_sets,
       pipeline_cache,
       pipeline,
 
       graphics_pools,
       buffers,
       texture,
+      sampler,
     }
   }
 
@@ -164,6 +176,7 @@ impl Renderer {
     self.graphics_pools[frame_i].record(
       &self.device,
       self.render_pass,
+      &self.descriptor_sets,
       self.swapchains.get_extent(),
       self.framebuffers[image_i],
       &self.pipeline,
@@ -183,7 +196,7 @@ impl Renderer {
     let changes =
       self
         .swapchains
-        .recreate_swapchain(*self.physical_device, &self.device, surface, window_size);
+        .recreate_swapchain(&self.physical_device, &self.device, surface, window_size);
 
     if changes.format {
       log::info!("Changing swapchain format");
@@ -244,6 +257,7 @@ impl Renderer {
   }
 
   pub unsafe fn destroy_self(&mut self) {
+    self.device.destroy_sampler(self.sampler, None);
     self.texture.destroy_self(&self.device);
     self.buffers.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {
@@ -260,6 +274,8 @@ impl Renderer {
       .destroy_pipeline_cache(self.pipeline_cache, None);
 
     self.pipeline.destroy_self(&self.device);
+
+    self.descriptor_sets.destroy_self(&self.device);
 
     for &framebuffer in self.framebuffers.iter() {
       self.device.destroy_framebuffer(framebuffer, None);

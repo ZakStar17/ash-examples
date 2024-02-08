@@ -45,21 +45,23 @@ impl QueueFamilies {
         queue_count: props.queue_count,
       });
 
-      let mut presentation_set = false;
+      // set presentation to the first supported family
       if presentation.is_none() && unsafe { surface.supports_queue_family(physical_device, i) } {
         presentation = family;
-        presentation_set = true;
       }
 
       if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+        // set graphics to the first supported family
         if graphics.is_none() {
           graphics = family;
+        }
 
-          // set presentation queue to be preferably equal to graphics
-          if presentation.is_some()
-            && !presentation_set
+        // set presentation and graphics to the first family that supports both
+        if let Some(presentation_family) = presentation {
+          if presentation_family != family.unwrap()
             && unsafe { surface.supports_queue_family(physical_device, i) }
           {
+            graphics = family;
             presentation = family;
           }
         }

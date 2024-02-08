@@ -13,6 +13,8 @@ use crate::render::{
   RenderPosition,
 };
 
+use super::DescriptorSets;
+
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
   vk_obj: vk::Pipeline,
@@ -32,6 +34,7 @@ impl GraphicsPipeline {
     device: &ash::Device,
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
+    descriptor_sets: &DescriptorSets,
     extent: vk::Extent2D,
   ) -> Self {
     let push_constant_range = vk::PushConstantRange {
@@ -43,8 +46,8 @@ impl GraphicsPipeline {
       s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
       p_next: ptr::null(),
       flags: vk::PipelineLayoutCreateFlags::empty(),
-      set_layout_count: 0,
-      p_set_layouts: ptr::null(),
+      set_layout_count: 1,
+      p_set_layouts: &descriptor_sets.layout,
       push_constant_range_count: 1,
       p_push_constant_ranges: &push_constant_range,
     };

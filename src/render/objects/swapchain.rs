@@ -5,7 +5,11 @@ use winit::dpi::PhysicalSize;
 
 use crate::PREFERRED_PRESENTATION_METHOD;
 
-use super::Surface;
+use super::{
+  create_image_view,
+  device::{PhysicalDevice, QueueFamilies},
+  Surface,
+};
 
 pub struct Swapchains {
   loader: ash::extensions::khr::Swapchain,
@@ -16,7 +20,7 @@ pub struct Swapchains {
 impl Swapchains {
   pub fn new(
     instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
+    physical_device: &PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
@@ -41,7 +45,7 @@ impl Swapchains {
 
   pub unsafe fn recreate_swapchain(
     &mut self,
-    physical_device: vk::PhysicalDevice,
+    physical_device: &PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
@@ -100,16 +104,12 @@ impl Swapchains {
   pub fn get_image_views(&self) -> &[vk::ImageView] {
     &self.current.image_views
   }
-
-  pub fn get_images(&self) -> &[vk::Image] {
-    &self.current.images
-  }
 }
 
 #[derive(Debug)]
 struct Swapchain {
   vk_obj: vk::SwapchainKHR,
-  pub images: Box<[vk::Image]>, // are owned by the swapchain
+  _images: Box<[vk::Image]>, // are owned by the swapchain
   pub format: vk::Format,
   pub extent: vk::Extent2D,
   pub image_views: Box<[vk::ImageView]>,
@@ -130,15 +130,15 @@ pub struct RecreationChanges {
 
 impl Swapchain {
   pub fn create(
-    physical_device: vk::PhysicalDevice,
+    physical_device: &PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     swapchain_loader: &ash::extensions::khr::Swapchain,
     window_size: PhysicalSize<u32>,
   ) -> Self {
-    let capabilities = unsafe { surface.get_capabilities(physical_device) };
-    let image_format = select_swapchain_image_format(physical_device, surface);
-    let present_mode = select_swapchain_present_mode(physical_device, surface);
+    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
+    let image_format = select_swapchain_image_format(**physical_device, surface);
+    let present_mode = select_swapchain_present_mode(**physical_device, surface);
     let extent = get_swapchain_extent(&capabilities, window_size);
 
     log::info!(
@@ -151,6 +151,7 @@ impl Swapchain {
 
     Self::create_with(
       device,
+      &physical_device.queue_families,
       surface,
       swapchain_loader,
       capabilities,
@@ -163,15 +164,15 @@ impl Swapchain {
 
   pub fn recreate(
     &mut self,
-    physical_device: vk::PhysicalDevice,
+    physical_device: &PhysicalDevice,
     device: &ash::Device,
     surface: &Surface,
     swapchain_loader: &ash::extensions::khr::Swapchain,
     window_size: PhysicalSize<u32>,
   ) -> (Self, RecreationChanges) {
-    let capabilities = unsafe { surface.get_capabilities(physical_device) };
-    let image_format = select_swapchain_image_format(physical_device, surface);
-    let present_mode = select_swapchain_present_mode(physical_device, surface);
+    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
+    let image_format = select_swapchain_image_format(**physical_device, surface);
+    let present_mode = select_swapchain_present_mode(**physical_device, surface);
     let extent = get_swapchain_extent(&capabilities, window_size);
 
     log::info!(
@@ -189,6 +190,7 @@ impl Swapchain {
 
     let mut new = Self::create_with(
       device,
+      &physical_device.queue_families,
       surface,
       swapchain_loader,
       capabilities,
@@ -208,6 +210,7 @@ impl Swapchain {
 
   fn create_with(
     device: &ash::Device,
+    queue_families: &QueueFamilies,
     surface: &Surface,
     swapchain_loader: &ash::extensions::khr::Swapchain,
     capabilities: vk::SurfaceCapabilitiesKHR,
@@ -222,7 +225,7 @@ impl Swapchain {
       capabilities.min_image_count + 1
     };
 
-    let swapchain_create_info = vk::SwapchainCreateInfoKHR {
+    let mut create_info = vk::SwapchainCreateInfoKHR {
       s_type: vk::StructureType::SWAPCHAIN_CREATE_INFO_KHR,
       p_next: ptr::null(),
       flags: vk::SwapchainCreateFlagsKHR::empty(),
@@ -234,8 +237,8 @@ impl Swapchain {
       image_extent: extent,
       image_array_layers: 1,
       image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
-      image_sharing_mode: vk::SharingMode::EXCLUSIVE,
 
+      image_sharing_mode: vk::SharingMode::EXCLUSIVE,
       // ignored when SharingMode is EXCLUSIVE
       p_queue_family_indices: ptr::null(),
       queue_family_index_count: 0,
@@ -247,9 +250,26 @@ impl Swapchain {
       old_swapchain,
     };
 
+    // in rare cases that presentation != graphics, set sharing mode to CONCURRENT with both
+    // families
+    let _family_indices =
+      if queue_families.get_graphics_index() != queue_families.get_presentation_index() {
+        let family_indices = [
+          queue_families.get_graphics_index(),
+          queue_families.get_presentation_index(),
+        ];
+        create_info.image_sharing_mode = vk::SharingMode::CONCURRENT;
+        create_info.p_queue_family_indices = family_indices.as_ptr();
+        create_info.queue_family_index_count = family_indices.len() as u32;
+
+        Some(family_indices)
+      } else {
+        None
+      };
+
     let swapchain = unsafe {
       swapchain_loader
-        .create_swapchain(&swapchain_create_info, None)
+        .create_swapchain(&create_info, None)
         .expect("Failed to create Swapchain!")
     };
 
@@ -259,12 +279,14 @@ impl Swapchain {
         .expect("Failed to get Swapchain Images.")
         .into_boxed_slice()
     };
-
-    let image_views = create_image_views(device, image_format.format, &images);
+    let image_views = images
+      .iter()
+      .map(|&image| create_image_view(device, image, image_format.format))
+      .collect();
 
     Self {
       vk_obj: swapchain,
-      images,
+      _images: images,
       format: image_format.format,
       extent,
       image_views,
@@ -344,43 +366,4 @@ fn get_swapchain_extent(
       ),
     },
   }
-}
-
-fn create_image_views(
-  device: &ash::Device,
-  format: vk::Format,
-  images: &[vk::Image],
-) -> Box<[vk::ImageView]> {
-  images
-    .iter()
-    .map(|&image| {
-      let create_info = vk::ImageViewCreateInfo {
-        s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-        p_next: ptr::null(),
-        flags: vk::ImageViewCreateFlags::empty(),
-        view_type: vk::ImageViewType::TYPE_2D,
-        format,
-        components: vk::ComponentMapping {
-          r: vk::ComponentSwizzle::IDENTITY,
-          g: vk::ComponentSwizzle::IDENTITY,
-          b: vk::ComponentSwizzle::IDENTITY,
-          a: vk::ComponentSwizzle::IDENTITY,
-        },
-        subresource_range: vk::ImageSubresourceRange {
-          aspect_mask: vk::ImageAspectFlags::COLOR,
-          base_mip_level: 0,
-          level_count: 1,
-          base_array_layer: 0,
-          layer_count: 1,
-        },
-        image,
-      };
-
-      unsafe {
-        device
-          .create_image_view(&create_info, None)
-          .expect("Failed to create Image View!")
-      }
-    })
-    .collect()
 }
