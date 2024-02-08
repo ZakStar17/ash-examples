@@ -73,8 +73,8 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           // give Ferris a random position and direction
           let mut rng = rand::thread_rng();
           ferris.position = [
-            rng.gen::<f32>() * (cur_window_size.width - Ferris::SIZE) as f32,
-            rng.gen::<f32>() * (cur_window_size.width - Ferris::SIZE) as f32,
+            rng.gen::<f32>() * (cur_window_size.width - Ferris::WIDTH) as f32,
+            rng.gen::<f32>() * (cur_window_size.height - Ferris::HEIGHT) as f32,
           ];
           ferris.going_down = rand::random();
           ferris.going_right = rand::random();

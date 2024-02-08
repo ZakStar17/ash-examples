@@ -4,7 +4,9 @@ use ash::vk;
 
 use crate::{
   render::{
-    objects::{constant_buffers::ConstantBuffers, device::QueueFamilies, DescriptorSets, GraphicsPipeline},
+    objects::{
+      constant_buffers::ConstantBuffers, device::QueueFamilies, DescriptorSets, GraphicsPipeline,
+    },
     render_object::INDICES,
     RenderPosition, BACKGROUND_COLOR,
   },
@@ -77,7 +79,14 @@ impl GraphicsCommandBufferPool {
 
     device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
     {
-      device.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.layout, 0, &[descriptor_sets.pool.texture], &[]);
+      device.cmd_bind_descriptor_sets(
+        cb,
+        vk::PipelineBindPoint::GRAPHICS,
+        pipeline.layout,
+        0,
+        &[descriptor_sets.pool.texture],
+        &[],
+      );
       device.cmd_push_constants(
         cb,
         pipeline.layout,

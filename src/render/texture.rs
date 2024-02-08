@@ -16,7 +16,7 @@ use super::objects::{
 };
 
 const IMAGE_PATH: &'static str = "./ferris.png";
-pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SNORM;
+pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 
 pub struct Texture {
   memory: vk::DeviceMemory,
@@ -25,7 +25,7 @@ pub struct Texture {
 }
 
 fn read_image_bytes() -> Result<(u32, u32, Vec<u8>), ImageError> {
-  let img = image::io::Reader::open(IMAGE_PATH)?.decode()?.to_rgba8();
+  let img = image::io::Reader::open(IMAGE_PATH)?.decode()?.into_rgba8();
   let width = img.width();
   let height = img.height();
 

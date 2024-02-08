@@ -11,7 +11,12 @@ pub struct Ferris {
 }
 
 impl Ferris {
-  pub const SIZE: u32 = 80; // width and height in pixels
+  const TEXTURE_DIMENSIONS: [f32; 2] = [428.0, 283.0]; // saved texture dimensions
+  const TEXTURE_TO_SIZE_RATIO: f32 = 0.3;
+  // size in pixels
+  pub const WIDTH: u32 = (Self::TEXTURE_DIMENSIONS[0] * Self::TEXTURE_TO_SIZE_RATIO) as u32;
+  pub const HEIGHT: u32 = (Self::TEXTURE_DIMENSIONS[1] * Self::TEXTURE_TO_SIZE_RATIO) as u32;
+
   const SPEED_X: f32 = 80.0; // speed in pixels per second
   const SPEED_Y: f32 = 80.0;
 
@@ -27,8 +32,8 @@ impl Ferris {
     let secs_f32 = time_since_last_update.as_secs_f32();
     let delta_pos_x = secs_f32 * Self::SPEED_X;
     let delta_pos_y = secs_f32 * Self::SPEED_Y;
-    let window_width = (window_size.width - Self::SIZE) as f32;
-    let window_height = (window_size.height - Self::SIZE) as f32;
+    let window_width = (window_size.width - Self::WIDTH) as f32;
+    let window_height = (window_size.height - Self::HEIGHT) as f32;
 
     let (new_x, x_dir_changed) = Self::calculate_position(
       self.position[0],
@@ -91,8 +96,8 @@ impl Ferris {
       ((self.position[1] * 2.0) - window_size_float.height) / window_size_float.height,
     ];
     let ratio = [
-      Ferris::SIZE as f32 / window_size_float.width,
-      Ferris::SIZE as f32 / window_size_float.height,
+      Ferris::WIDTH as f32 / window_size_float.width,
+      Ferris::HEIGHT as f32 / window_size_float.height,
     ];
     RenderPosition::new(normal_pos, ratio)
   }

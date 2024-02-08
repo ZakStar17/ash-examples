@@ -148,12 +148,19 @@ impl GraphicsPipeline {
     let multisample_state_ci = no_multisample_state();
 
     let attachment_state = vk::PipelineColorBlendAttachmentState {
-      // no blend state
-      blend_enable: vk::FALSE,
+      // blend by opacity
+      blend_enable: vk::TRUE,
       color_write_mask: vk::ColorComponentFlags::RGBA,
 
-      // everything else doesn't matter
-      ..Default::default()
+      // final_color = (src_alpha * src_color) + ((1 - src_alpha) * dst_color)
+      src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+      dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+      color_blend_op: vk::BlendOp::ADD,
+
+      // final_alpha = src_alpha
+      src_alpha_blend_factor: vk::BlendFactor::ONE,
+      dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+      alpha_blend_op: vk::BlendOp::ADD,
     };
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo {
       s_type: vk::StructureType::PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
