@@ -219,6 +219,7 @@ impl Swapchain {
     extent: vk::Extent2D,
     old_swapchain: vk::SwapchainKHR,
   ) -> Self {
+    // it is usually recommended to use one more than the minimum number of images
     let image_count = if capabilities.max_image_count > 0 {
       (capabilities.min_image_count + 1).min(capabilities.max_image_count)
     } else {

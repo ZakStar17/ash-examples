@@ -9,7 +9,7 @@ pub use queues::{QueueFamilies, Queues};
 
 use std::{
   ffi::c_void,
-  mem::MaybeUninit,
+  mem::{size_of, MaybeUninit},
   ptr::{self, addr_of_mut},
 };
 
@@ -17,8 +17,8 @@ use ash::vk;
 
 use crate::{
   render::{
-    objects::device::vendor::Vendor, texture::TEXTURE_FORMAT, REQUIRED_DEVICE_EXTENSIONS,
-    TARGET_API_VERSION,
+    objects::device::vendor::Vendor, texture::TEXTURE_FORMAT, RenderPosition,
+    REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
   },
   utility::{self, c_char_array_to_string, const_flag_bitor},
 };
@@ -129,6 +129,12 @@ unsafe fn select_physical_device(
       }
 
       if !check_swapchain_support(physical_device, surface) {
+        log::warn!("Skipped physical device: Device does not support swapchain");
+        return false;
+      }
+
+      if (properties.limits.max_push_constants_size as usize) < size_of::<RenderPosition>() {
+        log::warn!("Skipped physical device: Device does not support required push constant size");
         return false;
       }
 

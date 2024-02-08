@@ -235,12 +235,14 @@ impl Renderer {
     };
     self.old_framebuffers = Some(old_framebuffers);
 
-    self.pipeline.recreate(
-      &self.device,
-      self.pipeline_cache,
-      self.render_pass,
-      self.swapchains.get_extent(),
-    );
+    if changes.extent || changes.format {
+      self.pipeline.recreate(
+        &self.device,
+        self.pipeline_cache,
+        self.render_pass,
+        self.swapchains.get_extent(),
+      );
+    }
   }
 
   // destroy old objects that resulted of a swapchain recreation

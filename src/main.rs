@@ -16,6 +16,7 @@ use winit::{
   dpi::PhysicalSize,
   event::{Event, WindowEvent},
   event_loop::{ControlFlow, EventLoop},
+  keyboard::{KeyCode, PhysicalKey},
 };
 
 pub const APPLICATION_NAME: &'static CStr = cstr!("Bouncy Ferris");
@@ -144,6 +145,15 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
 
           cur_window_size = new_size;
         }
+        WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+          // close on escape
+          PhysicalKey::Code(code) => {
+            if code == KeyCode::Escape {
+              target.exit();
+            }
+          }
+          _ => {}
+        },
         _ => {}
       },
       _ => (),

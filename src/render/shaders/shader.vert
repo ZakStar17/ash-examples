@@ -2,7 +2,7 @@
 
 layout(push_constant) uniform PushConstantData {
   vec2 position;
-  vec2 ratio;
+  vec2 ratio; // relative width and height
 } pc;
 
 // vertex
