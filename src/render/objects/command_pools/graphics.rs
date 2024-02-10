@@ -4,9 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    objects::{
-      constant_buffers::ConstantBuffers, device::QueueFamilies, DescriptorSets, GraphicsPipeline,
-    },
+    objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, GraphicsPipeline},
     render_object::INDICES,
     RenderPosition, BACKGROUND_COLOR,
   },
@@ -45,7 +43,7 @@ impl GraphicsCommandBufferPool {
     extent: vk::Extent2D,
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
-    buffers: &ConstantBuffers,
+    constant_allocated_objects: &ConstantAllocatedObjects,
     position: &RenderPosition, // position of the object to be rendered
   ) {
     let cb = self.triangle;
@@ -95,8 +93,13 @@ impl GraphicsCommandBufferPool {
         utility::any_as_u8_slice(position),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, **pipeline);
-      device.cmd_bind_vertex_buffers(cb, 0, &[buffers.vertex], &[0]);
-      device.cmd_bind_index_buffer(cb, buffers.index, 0, vk::IndexType::UINT16);
+      device.cmd_bind_vertex_buffers(cb, 0, &[constant_allocated_objects.vertex], &[0]);
+      device.cmd_bind_index_buffer(
+        cb,
+        constant_allocated_objects.index,
+        0,
+        vk::IndexType::UINT16,
+      );
       device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);

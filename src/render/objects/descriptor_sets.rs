@@ -2,8 +2,6 @@ use std::ptr::{self, addr_of};
 
 use ash::vk;
 
-use crate::render::texture::Texture;
-
 pub struct DescriptorSets {
   pub layout: vk::DescriptorSetLayout,
   pub pool: DescriptorSetPool,
@@ -91,10 +89,15 @@ impl DescriptorSetPool {
     }
   }
 
-  pub fn write_texture(&mut self, device: &ash::Device, texture: &Texture, sampler: vk::Sampler) {
+  pub fn write_texture(
+    &mut self,
+    device: &ash::Device,
+    texture_view: vk::ImageView,
+    sampler: vk::Sampler,
+  ) {
     let image_info = vk::DescriptorImageInfo {
       sampler,
-      image_view: texture.image_view,
+      image_view: texture_view,
       image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
     };
 

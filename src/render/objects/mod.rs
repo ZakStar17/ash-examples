@@ -1,5 +1,5 @@
 pub mod command_pools;
-mod constant_buffers;
+mod constant_allocations;
 mod descriptor_sets;
 pub mod device;
 mod entry;
@@ -17,7 +17,7 @@ use std::ptr;
 
 use ash::vk;
 
-pub use constant_buffers::{allocate_and_bind_memory_to_buffers, create_buffer, ConstantBuffers};
+pub use constant_allocations::ConstantAllocatedObjects;
 pub use descriptor_sets::DescriptorSets;
 pub use entry::get_entry;
 pub use instance::create_instance;
@@ -62,5 +62,31 @@ pub fn create_image_view(
     device
       .create_image_view(&create_info, None)
       .expect("Failed to create image view")
+  }
+}
+
+pub fn create_semaphore(device: &ash::Device) -> vk::Semaphore {
+  let semaphore_create_info = vk::SemaphoreCreateInfo {
+    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SemaphoreCreateFlags::empty(),
+  };
+  unsafe {
+    device
+      .create_semaphore(&semaphore_create_info, None)
+      .expect("Failed to create semaphore")
+  }
+}
+
+pub fn create_unsignaled_fence(device: &ash::Device) -> vk::Fence {
+  let create_info = vk::FenceCreateInfo {
+    s_type: vk::StructureType::FENCE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::FenceCreateFlags::empty(),
+  };
+  unsafe {
+    device
+      .create_fence(&create_info, None)
+      .expect("Failed to create fence")
   }
 }

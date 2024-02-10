@@ -17,13 +17,12 @@ use ash::vk;
 
 use crate::{
   render::{
-    objects::device::vendor::Vendor, texture::TEXTURE_FORMAT, RenderPosition,
-    REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+    objects::device::vendor::Vendor, RenderPosition, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
   },
   utility::{self, c_char_array_to_string, const_flag_bitor},
 };
 
-use super::Surface;
+use super::{ConstantAllocatedObjects, Surface};
 
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags =>
@@ -79,8 +78,12 @@ fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice)
 }
 
 fn check_formats_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
-  let properties =
-    unsafe { instance.get_physical_device_format_properties(physical_device, TEXTURE_FORMAT) };
+  let properties = unsafe {
+    instance.get_physical_device_format_properties(
+      physical_device,
+      ConstantAllocatedObjects::TEXTURE_FORMAT,
+    )
+  };
 
   properties
     .optimal_tiling_features

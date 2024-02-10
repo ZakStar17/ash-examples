@@ -5,7 +5,6 @@ mod render_object;
 mod renderer;
 mod shaders;
 mod sync_renderer;
-mod texture;
 mod vertex;
 
 use std::ffi::CStr;
@@ -13,6 +12,9 @@ use std::ffi::CStr;
 use ash::vk;
 
 use crate::utility::cstr;
+
+pub use engine::RenderEngine;
+pub use render_object::RenderPosition;
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
@@ -33,5 +35,4 @@ pub const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
 
-pub use engine::RenderEngine;
-pub use render_object::RenderPosition;
+const TEXTURE_PATH: &'static str = "./ferris.png";

@@ -1,6 +1,7 @@
 use std::ptr;
 
 use ash::vk;
+use image::ImageError;
 use winit::dpi::PhysicalSize;
 
 use crate::{
@@ -9,9 +10,10 @@ use crate::{
       command_pools::{
         GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool,
       },
-      create_pipeline_cache, ConstantBuffers, DescriptorSets,
+      create_pipeline_cache, DescriptorSets,
     },
-    texture::Texture,
+    render_object::{INDICES, VERTICES},
+    TEXTURE_PATH,
   },
   utility::populate_array_with_expression,
 };
@@ -20,7 +22,7 @@ use super::{
   objects::{
     create_framebuffer, create_render_pass,
     device::{create_logical_device, PhysicalDevice, Queues},
-    save_pipeline_cache, GraphicsPipeline, Surface, Swapchains,
+    save_pipeline_cache, ConstantAllocatedObjects, GraphicsPipeline, Surface, Swapchains,
   },
   RenderPosition, FRAMES_IN_FLIGHT,
 };
@@ -53,6 +55,18 @@ fn create_sampler(device: &ash::Device) -> vk::Sampler {
   }
 }
 
+fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), ImageError> {
+  let img = image::io::Reader::open(TEXTURE_PATH)?
+    .decode()?
+    .into_rgba8();
+  let width = img.width();
+  let height = img.height();
+
+  let bytes = img.into_raw();
+  assert!(bytes.len() == width as usize * height as usize * 4);
+  Ok((width, height, bytes))
+}
+
 pub struct Renderer {
   pub physical_device: PhysicalDevice,
   pub device: ash::Device,
@@ -68,8 +82,7 @@ pub struct Renderer {
   pipeline: GraphicsPipeline,
 
   pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
-  buffers: ConstantBuffers,
-  texture: Texture,
+  constant_objects: ConstantAllocatedObjects,
   sampler: vk::Sampler,
 }
 
@@ -114,32 +127,40 @@ impl Renderer {
       swapchains.get_extent(),
     );
 
-    let (buffers, texture) = {
+    let constant_objects = {
       let mut transfer_pool =
         TransferCommandBufferPool::create(&device, &physical_device.queue_families);
       let mut graphics_pool =
         TemporaryGraphicsCommandBufferPool::create(&device, &physical_device.queue_families);
 
-      let buffers = ConstantBuffers::new(&device, &physical_device, &queues, &mut transfer_pool);
-      let texture = Texture::load(
+      let (texture_width, texture_height, texture_bytes) =
+        read_texture_bytes_as_rgba8().expect("Failed to read texture file");
+
+      let objects = ConstantAllocatedObjects::new(
         &device,
         &physical_device,
         &queues,
         &mut transfer_pool,
         &mut graphics_pool,
+        &VERTICES,
+        &INDICES,
+        &texture_bytes,
+        texture_width,
+        texture_height,
       );
+
       unsafe {
         transfer_pool.destroy_self(&device);
         graphics_pool.destroy_self(&device);
       }
 
-      (buffers, texture)
+      objects
     };
 
     let sampler = create_sampler(&device);
     descriptor_sets
       .pool
-      .write_texture(&device, &texture, sampler);
+      .write_texture(&device, constant_objects.texture_view, sampler);
 
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
@@ -161,8 +182,7 @@ impl Renderer {
       pipeline,
 
       graphics_pools,
-      buffers,
-      texture,
+      constant_objects,
       sampler,
     }
   }
@@ -180,7 +200,7 @@ impl Renderer {
       self.swapchains.get_extent(),
       self.framebuffers[image_i],
       &self.pipeline,
-      &self.buffers,
+      &self.constant_objects,
       position,
     );
   }
@@ -260,8 +280,7 @@ impl Renderer {
 
   pub unsafe fn destroy_self(&mut self) {
     self.device.destroy_sampler(self.sampler, None);
-    self.texture.destroy_self(&self.device);
-    self.buffers.destroy_self(&self.device);
+    self.constant_objects.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {
       pool.destroy_self(&self.device);
     }
