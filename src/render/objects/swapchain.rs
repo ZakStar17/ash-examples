@@ -6,7 +6,6 @@ use winit::dpi::PhysicalSize;
 use crate::PREFERRED_PRESENTATION_METHOD;
 
 use super::{
-  create_image_view,
   device::{PhysicalDevice, QueueFamilies},
   Surface,
 };
@@ -93,26 +92,21 @@ impl Swapchains {
     self.current.destroy_self(device, &self.loader);
   }
 
-  pub fn get_format(&self) -> vk::Format {
-    self.current.format
-  }
-
   pub fn get_extent(&self) -> vk::Extent2D {
     self.current.extent
   }
 
-  pub fn get_image_views(&self) -> &[vk::ImageView] {
-    &self.current.image_views
+  pub fn get_images(&self) -> &[vk::Image] {
+    &self.current.images
   }
 }
 
 #[derive(Debug)]
 struct Swapchain {
   vk_obj: vk::SwapchainKHR,
-  _images: Box<[vk::Image]>, // are owned by the swapchain
+  images: Box<[vk::Image]>, // are owned by the swapchain
   pub format: vk::Format,
   pub extent: vk::Extent2D,
-  pub image_views: Box<[vk::ImageView]>,
 }
 
 impl Deref for Swapchain {
@@ -209,7 +203,7 @@ impl Swapchain {
   }
 
   fn create_with(
-    device: &ash::Device,
+    _device: &ash::Device,
     queue_families: &QueueFamilies,
     surface: &Surface,
     swapchain_loader: &ash::extensions::khr::Swapchain,
@@ -237,7 +231,7 @@ impl Swapchain {
       image_format: image_format.format,
       image_extent: extent,
       image_array_layers: 1,
-      image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+      image_usage: vk::ImageUsageFlags::TRANSFER_DST,
 
       image_sharing_mode: vk::SharingMode::EXCLUSIVE,
       // ignored when SharingMode is EXCLUSIVE
@@ -280,17 +274,12 @@ impl Swapchain {
         .expect("Failed to get Swapchain Images.")
         .into_boxed_slice()
     };
-    let image_views = images
-      .iter()
-      .map(|&image| create_image_view(device, image, image_format.format))
-      .collect();
 
     Self {
       vk_obj: swapchain,
-      _images: images,
+      images,
       format: image_format.format,
       extent,
-      image_views,
     }
   }
 
@@ -304,12 +293,9 @@ impl Swapchain {
 
   pub unsafe fn destroy_self(
     &mut self,
-    device: &ash::Device,
+    _device: &ash::Device,
     loader: &ash::extensions::khr::Swapchain,
   ) {
-    for &view in self.image_views.iter() {
-      device.destroy_image_view(view, None);
-    }
     loader.destroy_swapchain(self.vk_obj, None);
   }
 }

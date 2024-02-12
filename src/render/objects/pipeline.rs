@@ -7,21 +7,22 @@ use std::{
 
 use ash::vk;
 
-use crate::{player_sprite::SpritePushConstants, render::{
-  shaders::Shader,
-  vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
-  
-}};
+use crate::{
+  player_sprite::SpritePushConstants,
+  render::{
+    shaders::Shader,
+    vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
+  },
+};
 
 use super::DescriptorSets;
 
-pub struct GraphicsPipeline {
+pub struct Pipeline {
   pub layout: vk::PipelineLayout,
   vk_obj: vk::Pipeline,
-  old: Option<vk::Pipeline>,
 }
 
-impl Deref for GraphicsPipeline {
+impl Deref for Pipeline {
   type Target = vk::Pipeline;
 
   fn deref(&self) -> &Self::Target {
@@ -29,7 +30,7 @@ impl Deref for GraphicsPipeline {
   }
 }
 
-impl GraphicsPipeline {
+impl Pipeline {
   pub fn create(
     device: &ash::Device,
     cache: vk::PipelineCache,
@@ -69,35 +70,6 @@ impl GraphicsPipeline {
     Self {
       layout,
       vk_obj: pipeline,
-      old: None,
-    }
-  }
-
-  pub fn recreate(
-    &mut self,
-    device: &ash::Device,
-    cache: vk::PipelineCache,
-    render_pass: vk::RenderPass,
-    extent: vk::Extent2D,
-  ) {
-    assert!(self.old.is_none());
-
-    let mut new =
-      Self::create_with_base(device, self.layout, cache, self.vk_obj, render_pass, extent);
-
-    let old = {
-      std::mem::swap(&mut self.vk_obj, &mut new);
-      new
-    };
-
-    self.old = Some(old);
-  }
-
-  // destroy old pipeline once it stops being used
-  pub unsafe fn destroy_old(&mut self, device: &ash::Device) {
-    if let Some(old) = self.old {
-      device.destroy_pipeline(old, None);
-      self.old = None;
     }
   }
 
@@ -208,7 +180,6 @@ impl GraphicsPipeline {
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    self.destroy_old(device);
     device.destroy_pipeline(self.vk_obj, None);
     device.destroy_pipeline_layout(self.layout, None);
   }

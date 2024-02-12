@@ -3,10 +3,12 @@ use std::ptr::{self, addr_of};
 use ash::vk;
 
 use crate::{
-  player_sprite::{self, SpritePushConstants}, render::{
-    objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, GraphicsPipeline},
-    BACKGROUND_COLOR,
-  }, utility
+  player_sprite::{self, SpritePushConstants},
+  render::{
+    objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, Pipeline},
+    BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
+  },
+  utility,
 };
 
 pub struct GraphicsCommandBufferPool {
@@ -36,11 +38,17 @@ impl GraphicsCommandBufferPool {
   pub unsafe fn record(
     &mut self,
     device: &ash::Device,
+
     render_pass: vk::RenderPass,
-    descriptor_sets: &DescriptorSets,
-    extent: vk::Extent2D,
+    render_image: vk::Image,
     framebuffer: vk::Framebuffer,
-    pipeline: &GraphicsPipeline,
+    render_extent: vk::Extent2D,
+
+    swapchain_image: vk::Image,
+    swapchain_extent: vk::Extent2D,
+
+    descriptor_sets: &DescriptorSets,
+    pipeline: &Pipeline,
     constant_allocated_objects: &ConstantAllocatedObjects,
     player: &SpritePushConstants, // position of the object to be rendered
   ) {
@@ -56,6 +64,15 @@ impl GraphicsCommandBufferPool {
       .begin_command_buffer(cb, &command_buffer_begin_info)
       .expect("Failed to start recording command buffer");
 
+    // 1 mip_level / 1 array layer
+    let subresource_range = vk::ImageSubresourceRange {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      base_mip_level: 0,
+      level_count: 1,
+      base_array_layer: 0,
+      layer_count: 1,
+    };
+
     let clear_value = vk::ClearValue {
       color: BACKGROUND_COLOR,
     };
@@ -67,7 +84,7 @@ impl GraphicsCommandBufferPool {
       // whole image
       render_area: vk::Rect2D {
         offset: vk::Offset2D { x: 0, y: 0 },
-        extent,
+        extent: render_extent,
       },
       clear_value_count: 1,
       p_clear_values: addr_of!(clear_value),
@@ -101,6 +118,157 @@ impl GraphicsCommandBufferPool {
       device.cmd_draw_indexed(cb, player_sprite::INDICES.len() as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);
+
+    // change swapchain image layout to transfer dst
+    {
+      let swapchain_transfer_dst_layout = vk::ImageMemoryBarrier {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags::NONE,
+        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        old_layout: vk::ImageLayout::UNDEFINED,
+        new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image: swapchain_image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier(
+        cb,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[],
+        &[swapchain_transfer_dst_layout],
+      );
+    }
+
+    device.cmd_clear_color_image(
+      cb,
+      swapchain_image,
+      vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      &OUT_OF_BOUNDS_AREA_COLOR,
+      &[subresource_range],
+    );
+
+    {
+      // transfer barrier
+      let barrier = vk::MemoryBarrier {
+        s_type: vk::StructureType::MEMORY_BARRIER,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE
+      };
+      device.cmd_pipeline_barrier(
+        cb,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[barrier],
+        &[],
+        &[],
+      );
+    }
+
+    {
+      let layers = vk::ImageSubresourceLayers {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        mip_level: 0,
+        base_array_layer: 0,
+        layer_count: 1,
+      };
+
+      let src_width = render_extent.width as i32;
+      let src_height = render_extent.height as i32;
+      let dst_width = swapchain_extent.width as i32;
+      let dst_height = swapchain_extent.height as i32;
+
+      // calculate blit region in swapchain image
+      let width_diff = dst_width - src_width;
+      let height_diff = dst_height - src_height;
+      let dst_start;
+      let dst_end;
+      if width_diff > height_diff {
+        // clamp to height
+        let ratio = dst_height as f32 / src_height as f32;
+        let resized_width = (src_width as f32 * ratio) as i32;
+
+        let half = (dst_width - resized_width) / 2;
+        dst_start = [half, 0];
+        dst_end = [half + resized_width, dst_height];
+      } else if width_diff == height_diff {
+        dst_start = [0, 0];
+        dst_end = [dst_width, dst_height];
+      } else {
+        // clamp to width
+        let ratio = dst_width as f32 / src_width as f32;
+        let resized_height = (src_height as f32 * ratio) as i32;
+
+        let half = (dst_height - resized_height) / 2;
+        dst_start = [0, half];
+        dst_end = [dst_width, half + resized_height];
+      }
+      let blit_region = vk::ImageBlit {
+        src_subresource: layers,
+        src_offsets: [
+          vk::Offset3D { x: 0, y: 0, z: 0 },
+          vk::Offset3D {
+            x: render_extent.width as i32,
+            y: render_extent.height as i32,
+            z: 1,
+          },
+        ],
+        dst_subresource: layers,
+        dst_offsets: [
+          vk::Offset3D {
+            x: dst_start[0],
+            y: dst_start[1],
+            z: 0,
+          },
+          vk::Offset3D {
+            x: dst_end[0],
+            y: dst_end[1],
+            z: 1,
+          },
+        ],
+      };
+
+      device.cmd_blit_image(
+        cb,
+        render_image,
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        swapchain_image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &[blit_region],
+        vk::Filter::NEAREST,
+      );
+    }
+
+    // change swapchain image layout to presentation
+    {
+      let swapchain_presentation_layout = vk::ImageMemoryBarrier {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags::NONE,
+        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image: swapchain_image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier(
+        cb,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[],
+        &[swapchain_presentation_layout],
+      );
+    }
 
     device
       .end_command_buffer(cb)

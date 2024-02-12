@@ -42,10 +42,7 @@ impl SpritePushConstants {
     Self {
       position,
       // sprite textures are layed out horizontally in the texture file
-      texture_offset: [
-        OFFSET_X + (WIDTH * texture_i as f32),
-        OFFSET_Y,
-      ],
+      texture_offset: [OFFSET_X + (WIDTH * texture_i as f32), OFFSET_Y],
     }
   }
 }

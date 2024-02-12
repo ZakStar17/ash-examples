@@ -16,9 +16,9 @@ use std::{
 use ash::vk;
 
 use crate::{
-  player_sprite::SpritePushConstants, render::{
-    objects::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
-  }, utility::{self, c_char_array_to_string, const_flag_bitor}
+  player_sprite::SpritePushConstants,
+  render::{objects::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION},
+  utility::{self, c_char_array_to_string, const_flag_bitor},
 };
 
 use super::{ConstantAllocatedObjects, Surface};

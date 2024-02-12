@@ -26,6 +26,8 @@ pub const WINDOW_TITLE: &'static str = "Bouncy Ferris";
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
 pub const INITIAL_WINDOW_HEIGHT: u32 = 800;
 
+pub const RESOLUTION: [u32; 2] = [800, 800];
+
 // see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
 // FIFO_KHR is required to be supported and corresponds as to enabling VSync in games
 // IMMEDIATE will be chosen over RELAXED_KHR if the latter is not supported
@@ -107,10 +109,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
         }
 
         if engine_running {
-          if engine
-            .render_frame(&player.sprite_data())
-            .is_err()
-          {
+          if engine.render_frame(&player.sprite_data()).is_err() {
             log::warn!("Frame failed to render");
           }
         }

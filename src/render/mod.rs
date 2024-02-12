@@ -31,7 +31,14 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 pub const FRAMES_IN_FLIGHT: usize = 2;
 
 pub const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  float32: [0.01, 0.01, 0.01, 1.0],
+  float32: [0.005, 0.005, 0.005, 1.0],
 };
+// color exterior the game area
+// (that appears if window is resized to a size with ratio different that in RESOLUTION)
+pub const OUT_OF_BOUNDS_AREA_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  float32: [0.0, 0.0, 0.0, 1.0],
+};
+
+const RENDER_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 
 const TEXTURE_PATH: &'static str = "./sprites.png";

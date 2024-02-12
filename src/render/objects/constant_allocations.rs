@@ -1,5 +1,4 @@
 use std::{
-  fmt::Debug,
   mem::size_of_val,
   ops::BitOr,
   ptr::{self, copy_nonoverlapping},
@@ -8,7 +7,10 @@ use std::{
 use ash::vk;
 
 use crate::render::{
-  objects::{create_image_view, create_semaphore, create_unsignaled_fence},
+  objects::{
+    allocations::allocate_and_bind_memory, create_image, create_image_view, create_semaphore,
+    create_unsignaled_fence,
+  },
   vertex::Vertex,
 };
 
@@ -16,135 +18,6 @@ use super::{
   command_pools::{TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool},
   device::{PhysicalDevice, Queues},
 };
-
-pub struct PackedAllocation {
-  pub memory: vk::DeviceMemory,
-  pub memory_size: u64,
-  pub memory_type: u32,
-  pub offsets: AllocationOffsets,
-}
-
-pub struct AllocationOffsets {
-  buffers_len: usize,
-  offsets: Box<[u64]>,
-}
-
-impl AllocationOffsets {
-  pub fn buffer_offsets(&self) -> &[u64] {
-    &self.offsets[0..self.buffers_len]
-  }
-
-  pub fn image_offsets(&self) -> &[u64] {
-    &self.offsets[self.buffers_len..]
-  }
-}
-
-pub enum PackedAllocationError {
-  MemoryTypeNotSupported,
-  TotalSizeExceedsAllowed(u64),
-  TotalSizeExceedsHeapSize(u64),
-  VkError(vk::Result),
-}
-
-impl Debug for PackedAllocationError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::MemoryTypeNotSupported => f.write_str(
-        "No device memory type supports all requested buffers and images with the requested properties"
-      ),
-      Self::TotalSizeExceedsAllowed(size) => f.write_fmt(
-        format_args!("Total allocation size ({}) is bigger than the value allowed by the device", size)
-      ),
-      Self::TotalSizeExceedsHeapSize(size) => f.write_fmt(
-        format_args!("A allocation memory type was found but the total allocation size ({}) exceeds its heap capacity", size)
-      ),
-      Self::VkError(err) => err.fmt(f)
-    }
-  }
-}
-
-// allocates vk::DeviceMemory and binds buffers and images to it with correct alignments
-pub fn allocate_and_bind_memory(
-  device: &ash::Device,
-  physical_device: &PhysicalDevice,
-  required_memory_properties: vk::MemoryPropertyFlags,
-  optional_memory_properties: vk::MemoryPropertyFlags,
-  buffers: &[vk::Buffer],
-  images: &[vk::Image],
-) -> Result<PackedAllocation, PackedAllocationError> {
-  let mut req_mem_type_bits = 0;
-  let mut total_size = 0;
-  let offsets: Box<[u64]> = buffers
-    .iter()
-    .map(|&buffer| unsafe { device.get_buffer_memory_requirements(buffer) })
-    .chain(
-      images
-        .iter()
-        .map(|&image| unsafe { device.get_image_memory_requirements(image) }),
-    )
-    .map(|mem_requirements| {
-      req_mem_type_bits |= mem_requirements.memory_type_bits;
-
-      // align internal offset to follow memory requirements
-      let mut offset = total_size;
-      let align_error = offset % mem_requirements.alignment;
-      if align_error > 0 {
-        offset += mem_requirements.alignment - align_error;
-      }
-
-      total_size = offset + mem_requirements.size;
-      offset
-    })
-    .collect();
-
-  let offsets = AllocationOffsets {
-    offsets,
-    buffers_len: buffers.len(),
-  };
-
-  // in this case it can be possible to sub allocate
-  if total_size >= physical_device.get_max_memory_allocation_size() {
-    return Err(PackedAllocationError::TotalSizeExceedsAllowed(total_size));
-  }
-
-  let memory_type = physical_device
-    .find_optimal_memory_type(
-      req_mem_type_bits,
-      required_memory_properties,
-      optional_memory_properties,
-    )
-    .or(Err(PackedAllocationError::MemoryTypeNotSupported))?;
-
-  let heap_size = physical_device.get_memory_type_heap(memory_type).size;
-  if total_size >= heap_size {
-    return Err(PackedAllocationError::TotalSizeExceedsHeapSize(total_size));
-  }
-
-  let allocate_info = vk::MemoryAllocateInfo {
-    s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
-    p_next: ptr::null(),
-    allocation_size: total_size,
-    memory_type_index: memory_type,
-  };
-  let memory = unsafe { device.allocate_memory(&allocate_info, None) }
-    .map_err(|vk_err| PackedAllocationError::VkError(vk_err))?;
-
-  for (&buffer, &offset) in buffers.iter().zip(offsets.buffer_offsets().iter()) {
-    unsafe { device.bind_buffer_memory(buffer, memory, offset) }
-      .map_err(|vk_err| PackedAllocationError::VkError(vk_err))?;
-  }
-  for (&image, &offset) in images.iter().zip(offsets.image_offsets().iter()) {
-    unsafe { device.bind_image_memory(image, memory, offset) }
-      .map_err(|vk_err| PackedAllocationError::VkError(vk_err))?;
-  }
-
-  Ok(PackedAllocation {
-    memory,
-    memory_size: total_size,
-    memory_type,
-    offsets,
-  })
-}
 
 pub struct ConstantAllocatedObjects {
   memory: vk::DeviceMemory,
@@ -518,43 +391,5 @@ pub fn create_buffer(device: &ash::Device, size: u64, usage: vk::BufferUsageFlag
     device
       .create_buffer(&create_info, None)
       .expect("Failed to create buffer")
-  }
-}
-
-fn create_image(
-  device: &ash::Device,
-  width: u32,
-  height: u32,
-  format: vk::Format,
-  tiling: vk::ImageTiling,
-  usage: vk::ImageUsageFlags,
-) -> vk::Image {
-  // 1 color layer 2d image
-  let create_info = vk::ImageCreateInfo {
-    s_type: vk::StructureType::IMAGE_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::ImageCreateFlags::empty(),
-    image_type: vk::ImageType::TYPE_2D,
-    format,
-    extent: vk::Extent3D {
-      width,
-      height,
-      depth: 1,
-    },
-    mip_levels: 1,
-    array_layers: 1,
-    samples: vk::SampleCountFlags::TYPE_1,
-    tiling,
-    usage,
-    sharing_mode: vk::SharingMode::EXCLUSIVE,
-    queue_family_index_count: 0,
-    p_queue_family_indices: ptr::null(), // ignored if sharing mode is exclusive
-    initial_layout: vk::ImageLayout::UNDEFINED,
-  };
-
-  unsafe {
-    device
-      .create_image(&create_info, None)
-      .expect("Failed to create image")
   }
 }

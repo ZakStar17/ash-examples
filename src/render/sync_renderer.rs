@@ -95,7 +95,7 @@ impl SyncRenderer {
         .record_graphics(cur_frame_i, image_index as usize, player);
     }
 
-    let wait_stage = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
+    let wait_stage = vk::PipelineStageFlags::TRANSFER;
     let submit_info = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),

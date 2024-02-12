@@ -2,17 +2,17 @@ use std::ptr;
 
 use ash::vk;
 
-pub fn create_render_pass(device: &ash::Device, surface_format: vk::Format) -> vk::RenderPass {
+pub fn create_render_pass(device: &ash::Device, format: vk::Format) -> vk::RenderPass {
   let image_attachment = vk::AttachmentDescription {
     flags: vk::AttachmentDescriptionFlags::empty(),
-    format: surface_format,
+    format,
     samples: vk::SampleCountFlags::TYPE_1,
     load_op: vk::AttachmentLoadOp::CLEAR,
     store_op: vk::AttachmentStoreOp::STORE,
     stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
     stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
     initial_layout: vk::ImageLayout::UNDEFINED,
-    final_layout: vk::ImageLayout::PRESENT_SRC_KHR, // layout after render pass finishes
+    final_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
   };
 
   let attachment_ref = vk::AttachmentReference {
@@ -38,11 +38,21 @@ pub fn create_render_pass(device: &ash::Device, surface_format: vk::Format) -> v
     // change access flags to attachment before subpass begins
     vk::SubpassDependency {
       src_subpass: vk::SUBPASS_EXTERNAL,
-      dst_subpass: 0, // image_subpass
-      src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+      dst_subpass: 0,
+      src_stage_mask: vk::PipelineStageFlags::NONE,
       dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
       src_access_mask: vk::AccessFlags::NONE,
       dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+      dependency_flags: vk::DependencyFlags::empty(),
+    },
+    // wait for subpass to finish before doing any transfer
+    vk::SubpassDependency {
+      src_subpass: 0,
+      dst_subpass: vk::SUBPASS_EXTERNAL,
+      src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+      dst_stage_mask: vk::PipelineStageFlags::TRANSFER,
+      src_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+      dst_access_mask: vk::AccessFlags::TRANSFER_READ,
       dependency_flags: vk::DependencyFlags::empty(),
     },
   ];

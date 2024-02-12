@@ -5,7 +5,9 @@ use winit::{
   window::{Window, WindowBuilder},
 };
 
-use crate::{player_sprite::SpritePushConstants, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE};
+use crate::{
+  player_sprite::SpritePushConstants, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
+};
 
 #[cfg(feature = "vl")]
 use super::objects::DebugUtils;

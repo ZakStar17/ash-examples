@@ -49,8 +49,8 @@ impl Player {
   fn texture_index(&self) -> usize {
     match self.hor_movement {
       HorMovement::NO => 0,
-        HorMovement::RIGHT => 1,
-        HorMovement::LEFT => 2,
+      HorMovement::RIGHT => 1,
+      HorMovement::LEFT => 2,
     }
   }
 

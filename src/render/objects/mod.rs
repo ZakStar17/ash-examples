@@ -1,3 +1,4 @@
+pub mod allocations;
 pub mod command_pools;
 mod constant_allocations;
 mod descriptor_sets;
@@ -21,7 +22,7 @@ pub use constant_allocations::ConstantAllocatedObjects;
 pub use descriptor_sets::DescriptorSets;
 pub use entry::get_entry;
 pub use instance::create_instance;
-pub use pipeline::GraphicsPipeline;
+pub use pipeline::Pipeline;
 pub use pipeline_cache::{create_pipeline_cache, save_pipeline_cache};
 pub use render_pass::{create_framebuffer, create_render_pass};
 pub use surface::Surface;
@@ -29,6 +30,44 @@ pub use swapchain::Swapchains;
 
 #[cfg(feature = "vl")]
 pub use validation_layers::{get_supported_validation_layers, DebugUtils};
+
+// 1 color layer 2d image
+pub fn create_image(
+  device: &ash::Device,
+  width: u32,
+  height: u32,
+  format: vk::Format,
+  tiling: vk::ImageTiling,
+  usage: vk::ImageUsageFlags,
+) -> vk::Image {
+  let create_info = vk::ImageCreateInfo {
+    s_type: vk::StructureType::IMAGE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::ImageCreateFlags::empty(),
+    image_type: vk::ImageType::TYPE_2D,
+    format,
+    extent: vk::Extent3D {
+      width,
+      height,
+      depth: 1,
+    },
+    mip_levels: 1,
+    array_layers: 1,
+    samples: vk::SampleCountFlags::TYPE_1,
+    tiling,
+    usage,
+    sharing_mode: vk::SharingMode::EXCLUSIVE,
+    queue_family_index_count: 0,
+    p_queue_family_indices: ptr::null(), // ignored if sharing mode is exclusive
+    initial_layout: vk::ImageLayout::UNDEFINED,
+  };
+
+  unsafe {
+    device
+      .create_image(&create_info, None)
+      .expect("Failed to create image")
+  }
+}
 
 // 2d image all color channels
 pub fn create_image_view(
