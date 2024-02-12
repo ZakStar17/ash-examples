@@ -7,11 +7,11 @@ use std::{
 
 use ash::vk;
 
-use crate::render::{
+use crate::{player_sprite::SpritePushConstants, render::{
   shaders::Shader,
   vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
-  RenderPosition,
-};
+  
+}};
 
 use super::DescriptorSets;
 
@@ -40,7 +40,7 @@ impl GraphicsPipeline {
     let push_constant_range = vk::PushConstantRange {
       stage_flags: vk::ShaderStageFlags::VERTEX,
       offset: 0,
-      size: size_of::<RenderPosition>() as u32,
+      size: size_of::<SpritePushConstants>() as u32,
     };
     let layout_create_info = vk::PipelineLayoutCreateInfo {
       s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,

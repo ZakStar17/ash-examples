@@ -5,17 +5,15 @@ use image::ImageError;
 use winit::dpi::PhysicalSize;
 
 use crate::{
-  render::{
+  player_sprite::{self, SpritePushConstants}, render::{
     objects::{
       command_pools::{
         GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool,
       },
       create_pipeline_cache, DescriptorSets,
     },
-    render_object::{INDICES, VERTICES},
     TEXTURE_PATH,
-  },
-  utility::populate_array_with_expression,
+  }, utility::populate_array_with_expression
 };
 
 use super::{
@@ -24,7 +22,7 @@ use super::{
     device::{create_logical_device, PhysicalDevice, Queues},
     save_pipeline_cache, ConstantAllocatedObjects, GraphicsPipeline, Surface, Swapchains,
   },
-  RenderPosition, FRAMES_IN_FLIGHT,
+FRAMES_IN_FLIGHT,
 };
 
 fn create_sampler(device: &ash::Device) -> vk::Sampler {
@@ -142,8 +140,8 @@ impl Renderer {
         &queues,
         &mut transfer_pool,
         &mut graphics_pool,
-        &VERTICES,
-        &INDICES,
+        &player_sprite::VERTICES,
+        &player_sprite::INDICES,
         &texture_bytes,
         texture_width,
         texture_height,
@@ -191,7 +189,7 @@ impl Renderer {
     &mut self,
     frame_i: usize,
     image_i: usize,
-    position: &RenderPosition,
+    player: &SpritePushConstants,
   ) {
     self.graphics_pools[frame_i].record(
       &self.device,
@@ -201,7 +199,7 @@ impl Renderer {
       self.framebuffers[image_i],
       &self.pipeline,
       &self.constant_objects,
-      position,
+      player,
     );
   }
 

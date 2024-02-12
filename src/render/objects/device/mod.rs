@@ -16,10 +16,9 @@ use std::{
 use ash::vk;
 
 use crate::{
-  render::{
-    objects::device::vendor::Vendor, RenderPosition, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
-  },
-  utility::{self, c_char_array_to_string, const_flag_bitor},
+  player_sprite::SpritePushConstants, render::{
+    objects::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+  }, utility::{self, c_char_array_to_string, const_flag_bitor}
 };
 
 use super::{ConstantAllocatedObjects, Surface};
@@ -136,7 +135,7 @@ unsafe fn select_physical_device(
         return false;
       }
 
-      if (properties.limits.max_push_constants_size as usize) < size_of::<RenderPosition>() {
+      if (properties.limits.max_push_constants_size as usize) < size_of::<SpritePushConstants>() {
         log::warn!("Skipped physical device: Device does not support required push constant size");
         return false;
       }

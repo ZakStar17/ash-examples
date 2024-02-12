@@ -5,7 +5,7 @@ use winit::{
   window::{Window, WindowBuilder},
 };
 
-use crate::{INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE};
+use crate::{player_sprite::SpritePushConstants, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE};
 
 #[cfg(feature = "vl")]
 use super::objects::DebugUtils;
@@ -13,7 +13,6 @@ use super::{
   objects::{create_instance, get_entry, Surface},
   renderer::Renderer,
   sync_renderer::SyncRenderer,
-  RenderPosition,
 };
 
 pub struct RenderEngine {
@@ -52,8 +51,8 @@ impl RenderEngine {
     initial_window_size
   }
 
-  pub fn render_frame(&mut self, position: &RenderPosition) -> Result<(), ()> {
-    self.windowed.as_mut().unwrap().render_next_frame(position)
+  pub fn render_frame(&mut self, player: &SpritePushConstants) -> Result<(), ()> {
+    self.windowed.as_mut().unwrap().render_next_frame(player)
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
@@ -129,7 +128,7 @@ impl WindowedRender {
     )
   }
 
-  pub fn render_next_frame(&mut self, position: &RenderPosition) -> Result<(), ()> {
+  pub fn render_next_frame(&mut self, player: &SpritePushConstants) -> Result<(), ()> {
     let mut extent_changed = false;
 
     if self.extent_may_have_changed {
@@ -148,7 +147,7 @@ impl WindowedRender {
 
     self
       .sync
-      .render_next_frame(&self.surface, self.window_size, extent_changed, position)
+      .render_next_frame(&self.surface, self.window_size, extent_changed, player)
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {

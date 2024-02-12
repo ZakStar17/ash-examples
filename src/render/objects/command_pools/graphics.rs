@@ -3,12 +3,10 @@ use std::ptr::{self, addr_of};
 use ash::vk;
 
 use crate::{
-  render::{
+  player_sprite::{self, SpritePushConstants}, render::{
     objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, GraphicsPipeline},
-    render_object::INDICES,
-    RenderPosition, BACKGROUND_COLOR,
-  },
-  utility,
+    BACKGROUND_COLOR,
+  }, utility
 };
 
 pub struct GraphicsCommandBufferPool {
@@ -44,7 +42,7 @@ impl GraphicsCommandBufferPool {
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
     constant_allocated_objects: &ConstantAllocatedObjects,
-    position: &RenderPosition, // position of the object to be rendered
+    player: &SpritePushConstants, // position of the object to be rendered
   ) {
     let cb = self.triangle;
 
@@ -90,7 +88,7 @@ impl GraphicsCommandBufferPool {
         pipeline.layout,
         vk::ShaderStageFlags::VERTEX,
         0,
-        utility::any_as_u8_slice(position),
+        utility::any_as_u8_slice(player),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, **pipeline);
       device.cmd_bind_vertex_buffers(cb, 0, &[constant_allocated_objects.vertex], &[0]);
@@ -100,7 +98,7 @@ impl GraphicsCommandBufferPool {
         0,
         vk::IndexType::UINT16,
       );
-      device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
+      device.cmd_draw_indexed(cb, player_sprite::INDICES.len() as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);
 

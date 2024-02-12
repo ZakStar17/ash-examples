@@ -3,9 +3,9 @@ use std::ptr;
 use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::utility::populate_array_with_expression;
+use crate::{player_sprite::SpritePushConstants, utility::populate_array_with_expression};
 
-use super::{frame::Frame, objects::Surface, renderer::Renderer, RenderPosition, FRAMES_IN_FLIGHT};
+use super::{frame::Frame, objects::Surface, renderer::Renderer, FRAMES_IN_FLIGHT};
 
 pub struct SyncRenderer {
   pub renderer: Renderer,
@@ -38,7 +38,7 @@ impl SyncRenderer {
     surface: &Surface,
     window_size: PhysicalSize<u32>,
     extent_changed: bool,
-    position: &RenderPosition,
+    player: &SpritePushConstants,
   ) -> Result<(), ()> {
     if extent_changed {
       self.recreate_swapchain_next_frame = true;
@@ -92,7 +92,7 @@ impl SyncRenderer {
 
       self
         .renderer
-        .record_graphics(cur_frame_i, image_index as usize, position);
+        .record_graphics(cur_frame_i, image_index as usize, player);
     }
 
     let wait_stage = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
