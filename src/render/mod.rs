@@ -14,7 +14,7 @@ use ash::vk;
 use crate::utility::cstr;
 
 pub use engine::RenderEngine;
-pub use render_object::RenderPosition;
+pub use vertex::Vertex;
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 

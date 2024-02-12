@@ -1,4 +1,6 @@
 mod ferris;
+mod player;
+mod player_sprite;
 mod render;
 mod utility;
 
@@ -8,8 +10,7 @@ use std::{
 };
 
 use ash::vk;
-use ferris::Ferris;
-use rand::Rng;
+use player::Player;
 use render::RenderEngine;
 use utility::cstr;
 use winit::{
@@ -54,7 +55,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
     height: u32::MAX,
   };
 
-  let mut ferris = Ferris::new([400.0, 400.0], true, true);
+  let mut player = Player::new([0.0, 0.0]);
 
   let mut last_update_instant = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
@@ -70,15 +71,6 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           log::debug!("Starting application");
           cur_window_size = engine.start(target);
           started = true;
-
-          // give Ferris a random position and direction
-          let mut rng = rand::thread_rng();
-          ferris.position = [
-            rng.gen::<f32>() * (cur_window_size.width - Ferris::WIDTH) as f32,
-            rng.gen::<f32>() * (cur_window_size.height - Ferris::HEIGHT) as f32,
-          ];
-          ferris.going_down = rand::random();
-          ferris.going_right = rand::random();
         } else {
           log::debug!("Application resumed");
         }
@@ -106,7 +98,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           println!("FPS: {}", 1.0 / time_passed.as_secs_f32());
         }
 
-        ferris.update(time_passed, cur_window_size);
+        player.update(time_passed.as_secs_f32());
 
         if wait_for_more_window_resizes {
           wait_for_more_window_resizes = false;
@@ -145,15 +137,48 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
 
           cur_window_size = new_size;
         }
-        WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
-          // close on escape
-          PhysicalKey::Code(code) => {
-            if code == KeyCode::Escape {
-              target.exit();
-            }
+        WindowEvent::KeyboardInput { event, .. } => {
+          let pressed = event.state.is_pressed();
+          match event.physical_key {
+            // close on escape
+            PhysicalKey::Code(code) => match code {
+              KeyCode::Escape => target.exit(),
+              KeyCode::Pause => {
+                todo!();
+              }
+              KeyCode::ArrowUp | KeyCode::KeyW | KeyCode::KeyK => {
+                if pressed {
+                  player.up_press();
+                } else {
+                  player.up_release();
+                }
+              }
+              KeyCode::ArrowDown | KeyCode::KeyS | KeyCode::KeyJ => {
+                if pressed {
+                  player.down_press();
+                } else {
+                  player.down_release();
+                }
+              }
+              KeyCode::ArrowLeft | KeyCode::KeyA | KeyCode::KeyH => {
+                if pressed {
+                  player.left_press();
+                } else {
+                  player.left_release();
+                }
+              }
+              KeyCode::ArrowRight | KeyCode::KeyD | KeyCode::KeyL => {
+                if pressed {
+                  player.right_press();
+                } else {
+                  player.right_release();
+                }
+              }
+              _ => {}
+            },
+            _ => {}
           }
-          _ => {}
-        },
+        }
         _ => {}
       },
       _ => (),
