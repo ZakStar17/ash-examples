@@ -4,7 +4,7 @@ mod objects;
 mod renderer;
 mod shaders;
 mod sync_renderer;
-mod vertex;
+mod vertices;
 
 use std::ffi::CStr;
 
@@ -13,7 +13,7 @@ use ash::vk;
 use crate::utility::cstr;
 
 pub use engine::RenderEngine;
-pub use vertex::Vertex;
+pub use vertices::Vertex;
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 

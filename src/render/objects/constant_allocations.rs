@@ -11,7 +11,7 @@ use crate::render::{
     allocations::allocate_and_bind_memory, create_image, create_image_view, create_semaphore,
     create_unsignaled_fence,
   },
-  vertex::Vertex,
+  Vertex,
 };
 
 use super::{

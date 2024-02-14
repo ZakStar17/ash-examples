@@ -5,7 +5,7 @@ use ash::vk;
 use crate::{
   player_sprite::{self, SpritePushConstants},
   render::{
-    objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, Pipeline},
+    objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, Pipelines},
     BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
   },
   utility,
@@ -48,7 +48,7 @@ impl GraphicsCommandBufferPool {
     swapchain_extent: vk::Extent2D,
 
     descriptor_sets: &DescriptorSets,
-    pipeline: &Pipeline,
+    pipelines: &Pipelines,
     constant_allocated_objects: &ConstantAllocatedObjects,
     player: &SpritePushConstants, // position of the object to be rendered
   ) {
@@ -95,19 +95,19 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_descriptor_sets(
         cb,
         vk::PipelineBindPoint::GRAPHICS,
-        pipeline.layout,
+        pipelines.player_layout,
         0,
         &[descriptor_sets.pool.texture],
         &[],
       );
       device.cmd_push_constants(
         cb,
-        pipeline.layout,
+        pipelines.player_layout,
         vk::ShaderStageFlags::VERTEX,
         0,
         utility::any_as_u8_slice(player),
       );
-      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, **pipeline);
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.player);
       device.cmd_bind_vertex_buffers(cb, 0, &[constant_allocated_objects.vertex], &[0]);
       device.cmd_bind_index_buffer(
         cb,
@@ -158,7 +158,7 @@ impl GraphicsCommandBufferPool {
         s_type: vk::StructureType::MEMORY_BARRIER,
         p_next: ptr::null(),
         src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE
+        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
       };
       device.cmd_pipeline_barrier(
         cb,

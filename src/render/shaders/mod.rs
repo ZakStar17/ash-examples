@@ -2,9 +2,8 @@ use std::{fs::File, io::Read, path::Path, ptr};
 
 use ash::vk;
 
-pub mod shader;
-
-pub use shader::Shader;
+pub mod player;
+pub mod projectiles;
 
 pub fn load_shader(device: &ash::Device, shader_path: &Path) -> vk::ShaderModule {
   let code = read_shader_code(shader_path);

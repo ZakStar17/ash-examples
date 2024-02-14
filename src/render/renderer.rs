@@ -24,7 +24,7 @@ use super::{
   objects::{
     create_framebuffer, create_render_pass,
     device::{create_logical_device, PhysicalDevice, Queues},
-    save_pipeline_cache, ConstantAllocatedObjects, Pipeline, Surface, Swapchains,
+    save_pipeline_cache, ConstantAllocatedObjects, Pipelines, Surface, Swapchains,
   },
   FRAMES_IN_FLIGHT,
 };
@@ -90,7 +90,7 @@ pub struct Renderer {
 
   descriptor_sets: DescriptorSets,
   pipeline_cache: vk::PipelineCache,
-  pipelines: Pipeline,
+  pipelines: Pipelines,
 
   pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
   constant_objects: ConstantAllocatedObjects,
@@ -152,7 +152,7 @@ impl Renderer {
     } else {
       log::info!("Cache initialized as empty");
     }
-    let pipelines = Pipeline::create(
+    let pipelines = Pipelines::new(
       &device,
       pipeline_cache,
       render_pass,

@@ -1,7 +1,5 @@
 use std::{
   mem::size_of,
-  ops::Deref,
-  pin::pin,
   ptr::{self, addr_of},
 };
 
@@ -10,28 +8,45 @@ use ash::vk;
 use crate::{
   player_sprite::SpritePushConstants,
   render::{
-    shaders::Shader,
-    vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
+    shaders::{self},
+    vertices::{vertex_input_state_create_info, Instance},
+    Vertex,
   },
 };
 
 use super::DescriptorSets;
 
-pub struct Pipeline {
-  pub layout: vk::PipelineLayout,
-  vk_obj: vk::Pipeline,
-}
-
-impl Deref for Pipeline {
-  type Target = vk::Pipeline;
-
-  fn deref(&self) -> &Self::Target {
-    &self.vk_obj
+fn create_layout(
+  device: &ash::Device,
+  descriptor_set_layouts: &[vk::DescriptorSetLayout],
+  push_constant_ranges: &[vk::PushConstantRange],
+) -> vk::PipelineLayout {
+  let layout_create_info = vk::PipelineLayoutCreateInfo {
+    s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::PipelineLayoutCreateFlags::empty(),
+    set_layout_count: descriptor_set_layouts.len() as u32,
+    p_set_layouts: descriptor_set_layouts.as_ptr(),
+    push_constant_range_count: push_constant_ranges.len() as u32,
+    p_push_constant_ranges: push_constant_ranges.as_ptr(),
+  };
+  unsafe {
+    device
+      .create_pipeline_layout(&layout_create_info, None)
+      .expect("Failed to create pipeline layout")
   }
 }
 
-impl Pipeline {
-  pub fn create(
+pub struct Pipelines {
+  pub player_layout: vk::PipelineLayout,
+  pub player: vk::Pipeline,
+
+  pub projectiles_layout: vk::PipelineLayout,
+  pub projectiles: vk::Pipeline,
+}
+
+impl Pipelines {
+  pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
@@ -43,50 +58,44 @@ impl Pipeline {
       offset: 0,
       size: size_of::<SpritePushConstants>() as u32,
     };
-    let layout_create_info = vk::PipelineLayoutCreateInfo {
-      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::PipelineLayoutCreateFlags::empty(),
-      set_layout_count: 1,
-      p_set_layouts: &descriptor_sets.layout,
-      push_constant_range_count: 1,
-      p_push_constant_ranges: &push_constant_range,
-    };
-    let layout = unsafe {
-      device
-        .create_pipeline_layout(&layout_create_info, None)
-        .expect("Failed to create pipeline layout")
-    };
+    let player_layout = create_layout(device, &[descriptor_sets.layout], &[push_constant_range]);
+    let projectiles_layout = create_layout(device, &[descriptor_sets.layout], &[]);
 
-    let pipeline = Self::create_with_base(
+    let (player, projectiles) = Self::create_pipelines(
       device,
-      layout,
+      player_layout,
+      projectiles_layout,
       cache,
-      vk::Pipeline::null(),
       render_pass,
       extent,
     );
 
     Self {
-      layout,
-      vk_obj: pipeline,
+      player_layout,
+      player,
+      projectiles_layout,
+      projectiles,
     }
   }
 
-  fn create_with_base(
+  fn create_pipelines(
     device: &ash::Device,
-    layout: vk::PipelineLayout,
+
+    player_layout: vk::PipelineLayout,
+    projectiles_layout: vk::PipelineLayout,
     cache: vk::PipelineCache,
-    base: vk::Pipeline,
+
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
-  ) -> vk::Pipeline {
-    let mut shader = Shader::load(device);
-    let shader_stages = shader.get_pipeline_shader_creation_info();
+  ) -> (vk::Pipeline, vk::Pipeline) {
+    let mut player_shader = shaders::player::Shader::load(device);
+    let mut projectiles_shader = shaders::projectiles::Shader::load(device);
 
-    let vertex_input_state_gen = pin!(Vertex::get_input_state_create_info_gen(0, 0));
-    let vertex_input_state =
-      PipelineVertexInputStateCreateInfoGen::gen(vertex_input_state_gen.as_ref());
+    let player_shader_stages = player_shader.get_pipeline_shader_creation_info();
+    let projectiles_shader_stages = projectiles_shader.get_pipeline_shader_creation_info();
+
+    let player_vertex_input_state = vertex_input_state_create_info!(Vertex);
+    let projectiles_vertex_input_state = vertex_input_state_create_info!(Vertex, Instance);
 
     let input_assembly_state_ci = triangle_input_assembly_state();
 
@@ -101,10 +110,7 @@ impl Pipeline {
     };
     let scissor = vk::Rect2D {
       offset: vk::Offset2D { x: 0, y: 0 },
-      extent: vk::Extent2D {
-        width: extent.width,
-        height: extent.height,
-      },
+      extent,
     };
     let viewport_state = vk::PipelineViewportStateCreateInfo {
       s_type: vk::StructureType::PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -145,13 +151,13 @@ impl Pipeline {
       blend_constants: [0.0, 0.0, 0.0, 0.0],
     };
 
-    let create_info = vk::GraphicsPipelineCreateInfo {
+    let player_create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
       p_next: ptr::null(),
-      flags: vk::PipelineCreateFlags::empty(),
-      stage_count: shader_stages.len() as u32,
-      p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: vertex_input_state.as_ptr(),
+      flags: vk::PipelineCreateFlags::ALLOW_DERIVATIVES,
+      stage_count: player_shader_stages.len() as u32,
+      p_stages: player_shader_stages.as_ptr(),
+      p_vertex_input_state: player_vertex_input_state.get(),
       p_input_assembly_state: &input_assembly_state_ci,
       p_tessellation_state: ptr::null(),
       p_viewport_state: &viewport_state,
@@ -160,28 +166,41 @@ impl Pipeline {
       p_depth_stencil_state: ptr::null(),
       p_color_blend_state: &color_blend_state,
       p_dynamic_state: ptr::null(),
-      layout,
+      layout: player_layout,
       render_pass,
       subpass: 0,
-      base_pipeline_handle: base,
+      base_pipeline_handle: vk::Pipeline::null(),
       base_pipeline_index: -1, // -1 for null
     };
-    let pipeline = unsafe {
+
+    let mut projectiles_create_info = player_create_info.clone();
+    projectiles_create_info.flags = vk::PipelineCreateFlags::empty();
+    projectiles_create_info.stage_count = projectiles_shader_stages.len() as u32;
+    projectiles_create_info.p_stages = projectiles_shader_stages.as_ptr();
+    projectiles_create_info.p_vertex_input_state = projectiles_vertex_input_state.get();
+    projectiles_create_info.layout = projectiles_layout;
+    projectiles_create_info.base_pipeline_index = 0;
+
+    let pipelines = unsafe {
       device
-        .create_graphics_pipelines(cache, &[create_info], None)
-        .expect("Failed to create graphics pipelines")[0]
+        .create_graphics_pipelines(cache, &[player_create_info, projectiles_create_info], None)
+        .expect("Failed to create graphics pipelines")
     };
 
     unsafe {
-      shader.destroy_self(device);
+      player_shader.destroy_self(device);
+      projectiles_shader.destroy_self(device);
     }
 
-    pipeline
+    (pipelines[0], pipelines[1])
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_pipeline(self.vk_obj, None);
-    device.destroy_pipeline_layout(self.layout, None);
+    device.destroy_pipeline(self.player, None);
+    device.destroy_pipeline_layout(self.player_layout, None);
+
+    device.destroy_pipeline(self.projectiles, None);
+    device.destroy_pipeline_layout(self.projectiles_layout, None);
   }
 }
 
