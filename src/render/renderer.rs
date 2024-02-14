@@ -5,7 +5,6 @@ use image::ImageError;
 use winit::dpi::PhysicalSize;
 
 use crate::{
-  player_sprite::{self, SpritePushConstants},
   render::{
     objects::{
       allocations::allocate_and_bind_memory,
@@ -26,6 +25,7 @@ use super::{
     device::{create_logical_device, PhysicalDevice, Queues},
     save_pipeline_cache, ConstantAllocatedObjects, Pipelines, Surface, Swapchains,
   },
+  push_constants::SpritePushConstants,
   FRAMES_IN_FLIGHT,
 };
 
@@ -175,8 +175,6 @@ impl Renderer {
         &queues,
         &mut transfer_pool,
         &mut graphics_pool,
-        &player_sprite::VERTICES,
-        &player_sprite::INDICES,
         &texture_bytes,
         texture_width,
         texture_height,

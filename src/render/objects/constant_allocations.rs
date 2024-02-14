@@ -11,7 +11,8 @@ use crate::render::{
     allocations::allocate_and_bind_memory, create_image, create_image_view, create_semaphore,
     create_unsignaled_fence,
   },
-  Vertex,
+  sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES},
+  vertices::InstanceVertex,
 };
 
 use super::{
@@ -19,9 +20,15 @@ use super::{
   device::{PhysicalDevice, Queues},
 };
 
+const INSTANCE_TEMP: [InstanceVertex; 2] = [
+  InstanceVertex { pos: [-0.8, -0.8] },
+  InstanceVertex { pos: [0.3, 0.2] },
+];
+
 pub struct ConstantAllocatedObjects {
   memory: vk::DeviceMemory,
   pub vertex: vk::Buffer,
+  pub instance: vk::Buffer,
   pub index: vk::Buffer,
   pub texture: vk::Image,
   pub texture_view: vk::ImageView,
@@ -36,19 +43,27 @@ impl ConstantAllocatedObjects {
     queues: &Queues,
     transfer_command_pool: &mut TransferCommandBufferPool,
     graphics_command_pool: &mut TemporaryGraphicsCommandBufferPool,
-    vertices: &[Vertex],
-    indices: &[u16],
     texture_bytes: &[u8],
     texture_width: u32,
     texture_height: u32,
   ) -> Self {
-    let vertex_size = size_of_val(vertices) as u64;
-    let index_size = size_of_val(indices) as u64;
+    let player_vertices = PLAYER_VERTICES;
+    let projectile_vertices = PROJECTILE_VERTICES;
+    let indices = SQUARE_INDICES;
+
+    let player_vertex_size = size_of_val(&player_vertices);
+    let projectile_vertex_size = size_of_val(&projectile_vertices);
+    let vertex_size = (player_vertex_size + projectile_vertex_size) as u64;
+    let index_size = size_of_val(&indices) as u64;
+    let instance_size = size_of_val(&INSTANCE_TEMP) as u64;
+
+    // each pixel should contain RGBA components (4 bytes)
     assert!(texture_bytes.len() == texture_height as usize * texture_width as usize * 4);
 
     // staging buffers
     let vertex_src = create_buffer(device, vertex_size, vk::BufferUsageFlags::TRANSFER_SRC);
     let index_src = create_buffer(device, index_size, vk::BufferUsageFlags::TRANSFER_SRC);
+    let instance_src = create_buffer(device, instance_size, vk::BufferUsageFlags::TRANSFER_SRC);
     let texture_src = create_buffer(
       device,
       texture_bytes.len() as u64,
@@ -58,13 +73,18 @@ impl ConstantAllocatedObjects {
     // final buffers and images
     let vertex_dst = create_buffer(
       device,
-      vertex_size as u64,
+      vertex_size,
       vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::VERTEX_BUFFER),
     );
     let index_dst = create_buffer(
       device,
-      index_size as u64,
+      index_size,
       vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::INDEX_BUFFER),
+    );
+    let instance_dst = create_buffer(
+      device,
+      instance_size,
+      vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::VERTEX_BUFFER),
     );
     let texture_dst = create_image(
       device,
@@ -81,14 +101,15 @@ impl ConstantAllocatedObjects {
       &physical_device,
       vk::MemoryPropertyFlags::HOST_VISIBLE,
       vk::MemoryPropertyFlags::HOST_CACHED,
-      &[vertex_src, index_src, texture_src],
+      &[vertex_src, index_src, instance_src, texture_src],
       &[],
     )
     .expect("Failed to allocate staging constant buffers");
     let src_buffer_offsets = src_allocation.offsets.buffer_offsets();
     let vertex_src_offset = src_buffer_offsets[0];
     let index_src_offset = src_buffer_offsets[1];
-    let texture_src_offset = src_buffer_offsets[2];
+    let instance_src_offset = src_buffer_offsets[2];
+    let texture_src_offset = src_buffer_offsets[3];
 
     log::info!("Allocating constant buffers and textures");
     let dst_allocation = allocate_and_bind_memory(
@@ -96,7 +117,7 @@ impl ConstantAllocatedObjects {
       &physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       vk::MemoryPropertyFlags::empty(),
-      &[vertex_dst, index_dst],
+      &[vertex_dst, index_dst, instance_dst],
       &[texture_dst],
     )
     .expect("Failed to allocate constant buffers and textures");
@@ -112,16 +133,30 @@ impl ConstantAllocatedObjects {
         )
         .expect("Failed to map staging constant source memory") as *mut u8;
 
+      let vertex_write_ptr = mem_ptr.byte_add(vertex_src_offset as usize);
       copy_nonoverlapping(
-        vertices.as_ptr() as *const u8,
-        mem_ptr.byte_add(vertex_src_offset as usize) as *mut u8,
-        vertex_size as usize,
+        player_vertices.as_ptr() as *const u8,
+        vertex_write_ptr,
+        player_vertex_size as usize,
       );
+      copy_nonoverlapping(
+        projectile_vertices.as_ptr() as *const u8,
+        vertex_write_ptr.byte_add(player_vertex_size),
+        projectile_vertex_size as usize,
+      );
+
       copy_nonoverlapping(
         indices.as_ptr() as *const u8,
         mem_ptr.byte_add(index_src_offset as usize) as *mut u8,
         index_size as usize,
       );
+
+      copy_nonoverlapping(
+        INSTANCE_TEMP.as_ptr() as *const u8,
+        mem_ptr.byte_add(instance_src_offset as usize) as *mut u8,
+        instance_size as usize,
+      );
+
       copy_nonoverlapping(
         texture_bytes.as_ptr(),
         mem_ptr.byte_add(texture_src_offset as usize) as *mut u8,
@@ -162,6 +197,9 @@ impl ConstantAllocatedObjects {
         index_src,
         index_dst,
         index_size,
+        instance_src,
+        instance_dst,
+        instance_size,
       );
       Self::record_texture_load_and_transfer(
         device,
@@ -189,6 +227,7 @@ impl ConstantAllocatedObjects {
     unsafe {
       device.destroy_buffer(vertex_src, None);
       device.destroy_buffer(index_src, None);
+      device.destroy_buffer(instance_src, None);
       device.destroy_buffer(texture_src, None);
       device.free_memory(src_allocation.memory, None);
     }
@@ -199,6 +238,7 @@ impl ConstantAllocatedObjects {
       memory: dst_allocation.memory,
       vertex: vertex_dst,
       index: index_dst,
+      instance: instance_dst,
       texture: texture_dst,
       texture_view,
     }
@@ -213,6 +253,9 @@ impl ConstantAllocatedObjects {
     index_src: vk::Buffer,
     index_dst: vk::Buffer,
     index_size: u64,
+    instance_src: vk::Buffer,
+    instance_dst: vk::Buffer,
+    instance_size: u64,
   ) {
     let vertex_copy_region = vk::BufferCopy2 {
       s_type: vk::StructureType::BUFFER_COPY_2,
@@ -227,6 +270,13 @@ impl ConstantAllocatedObjects {
       src_offset: 0,
       dst_offset: 0,
       size: index_size as u64,
+    };
+    let instance_copy_region = vk::BufferCopy2 {
+      s_type: vk::StructureType::BUFFER_COPY_2,
+      p_next: ptr::null(),
+      src_offset: 0,
+      dst_offset: 0,
+      size: instance_size as u64,
     };
 
     let copy_infos = [
@@ -245,6 +295,14 @@ impl ConstantAllocatedObjects {
         dst_buffer: index_dst,
         region_count: 1,
         p_regions: &index_copy_region,
+      },
+      vk::CopyBufferInfo2 {
+        s_type: vk::StructureType::COPY_BUFFER_INFO_2,
+        p_next: ptr::null(),
+        src_buffer: instance_src,
+        dst_buffer: instance_dst,
+        region_count: 1,
+        p_regions: &instance_copy_region,
       },
     ];
 
@@ -367,6 +425,7 @@ impl ConstantAllocatedObjects {
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
     device.destroy_buffer(self.vertex, None);
     device.destroy_buffer(self.index, None);
+    device.destroy_buffer(self.instance, None);
 
     device.destroy_image_view(self.texture_view, None);
     device.destroy_image(self.texture, None);

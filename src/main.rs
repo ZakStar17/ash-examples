@@ -1,5 +1,4 @@
 mod player;
-mod player_sprite;
 mod render;
 mod utility;
 

@@ -5,13 +5,11 @@ use std::{
 
 use ash::vk;
 
-use crate::{
-  player_sprite::SpritePushConstants,
-  render::{
-    shaders::{self},
-    vertices::{vertex_input_state_create_info, Instance},
-    Vertex,
-  },
+use crate::render::{
+  push_constants::SpritePushConstants,
+  shaders,
+  vertices::{vertex_input_state_create_info, InstanceVertex},
+  Vertex,
 };
 
 use super::DescriptorSets;
@@ -95,7 +93,7 @@ impl Pipelines {
     let projectiles_shader_stages = projectiles_shader.get_pipeline_shader_creation_info();
 
     let player_vertex_input_state = vertex_input_state_create_info!(Vertex);
-    let projectiles_vertex_input_state = vertex_input_state_create_info!(Vertex, Instance);
+    let projectiles_vertex_input_state = vertex_input_state_create_info!(Vertex, InstanceVertex);
 
     let input_assembly_state_ci = triangle_input_assembly_state();
 
@@ -222,8 +220,8 @@ fn no_depth_rasterization_state() -> vk::PipelineRasterizationStateCreateInfo {
     p_next: ptr::null(),
     flags: vk::PipelineRasterizationStateCreateFlags::empty(),
     depth_clamp_enable: vk::FALSE,
-    cull_mode: vk::CullModeFlags::NONE,
-    front_face: vk::FrontFace::CLOCKWISE, // doesn't matter if cull_mode is none
+    cull_mode: vk::CullModeFlags::FRONT,
+    front_face: vk::FrontFace::CLOCKWISE,
     line_width: 1.0,
     polygon_mode: vk::PolygonMode::FILL,
     rasterizer_discard_enable: vk::FALSE,

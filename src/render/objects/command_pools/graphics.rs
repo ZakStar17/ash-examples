@@ -3,9 +3,10 @@ use std::ptr::{self, addr_of};
 use ash::vk;
 
 use crate::{
-  player_sprite::{self, SpritePushConstants},
   render::{
     objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, Pipelines},
+    push_constants::SpritePushConstants,
+    sprites::SQUARE_INDICES,
     BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
   },
   utility,
@@ -95,6 +96,24 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_descriptor_sets(
         cb,
         vk::PipelineBindPoint::GRAPHICS,
+        pipelines.projectiles_layout,
+        0,
+        &[descriptor_sets.pool.texture],
+        &[],
+      );
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.projectiles);
+      device.cmd_bind_vertex_buffers(cb, 0, &[constant_allocated_objects.vertex, constant_allocated_objects.instance], &[0, 0]);
+      device.cmd_bind_index_buffer(
+        cb,
+        constant_allocated_objects.index,
+        0,
+        vk::IndexType::UINT16,
+      );
+      device.cmd_draw_indexed(cb, SQUARE_INDICES.len() as u32, 2, 0, 4, 0);
+
+      device.cmd_bind_descriptor_sets(
+        cb,
+        vk::PipelineBindPoint::GRAPHICS,
         pipelines.player_layout,
         0,
         &[descriptor_sets.pool.texture],
@@ -108,14 +127,7 @@ impl GraphicsCommandBufferPool {
         utility::any_as_u8_slice(player),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.player);
-      device.cmd_bind_vertex_buffers(cb, 0, &[constant_allocated_objects.vertex], &[0]);
-      device.cmd_bind_index_buffer(
-        cb,
-        constant_allocated_objects.index,
-        0,
-        vk::IndexType::UINT16,
-      );
-      device.cmd_draw_indexed(cb, player_sprite::INDICES.len() as u32, 1, 0, 0, 0);
+      device.cmd_draw_indexed(cb, SQUARE_INDICES.len() as u32, 1, 0, 0, 0);
     }
     device.cmd_end_render_pass(cb);
 

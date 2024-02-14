@@ -5,11 +5,11 @@ use memoffset::offset_of;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default)]
-pub struct Instance {
+pub struct InstanceVertex {
   pub pos: [f32; 2],
 }
 
-impl Instance {
+impl InstanceVertex {
   const ATTRIBUTE_SIZE: usize = 1;
 
   pub const fn get_binding_description(binding: u32) -> vk::VertexInputBindingDescription {

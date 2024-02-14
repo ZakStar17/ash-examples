@@ -1,8 +1,10 @@
 mod engine;
 mod frame;
 mod objects;
+pub mod push_constants;
 mod renderer;
 mod shaders;
+pub mod sprites;
 mod sync_renderer;
 mod vertices;
 

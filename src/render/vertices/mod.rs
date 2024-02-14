@@ -8,7 +8,7 @@ use std::{
 
 use ash::vk;
 
-pub use instance::Instance;
+pub use instance::InstanceVertex;
 pub use vertex::Vertex;
 
 pub struct PipelineVertexInputStateCreateInfo {

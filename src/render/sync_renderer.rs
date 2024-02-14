@@ -3,9 +3,12 @@ use std::ptr;
 use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::{player_sprite::SpritePushConstants, utility::populate_array_with_expression};
+use crate::utility::populate_array_with_expression;
 
-use super::{frame::Frame, objects::Surface, renderer::Renderer, FRAMES_IN_FLIGHT};
+use super::{
+  frame::Frame, objects::Surface, push_constants::SpritePushConstants, renderer::Renderer,
+  FRAMES_IN_FLIGHT,
+};
 
 pub struct SyncRenderer {
   pub renderer: Renderer,

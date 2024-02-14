@@ -1,4 +1,4 @@
-use crate::player_sprite::SpritePushConstants;
+use crate::render::push_constants::SpritePushConstants;
 
 #[derive(PartialEq)]
 enum HorMovement {
