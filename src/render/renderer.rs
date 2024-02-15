@@ -1,4 +1,4 @@
-use std::{ops::BitOr, ptr};
+use std::{mem::size_of, ops::BitOr, ptr};
 
 use ash::vk;
 use image::ImageError;
@@ -7,13 +7,13 @@ use winit::dpi::PhysicalSize;
 use crate::{
   render::{
     objects::{
-      allocations::allocate_and_bind_memory,
+      allocations::{allocate_and_bind_memory, create_buffer},
       command_pools::{
         GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool,
       },
       create_image, create_image_view, create_pipeline_cache, DescriptorSets,
     },
-    RENDER_FORMAT, TEXTURE_PATH,
+    ComputeOutput, RENDER_FORMAT, TEXTURE_PATH,
   },
   utility::{self, populate_array_with_expression},
   RESOLUTION,
@@ -23,7 +23,7 @@ use super::{
   objects::{
     create_framebuffer, create_render_pass,
     device::{create_logical_device, PhysicalDevice, Queues},
-    save_pipeline_cache, ConstantAllocatedObjects, Pipelines, Surface, Swapchains,
+    save_pipeline_cache, ComputePipeline, ConstantAllocatedObjects, Pipelines, Surface, Swapchains,
   },
   push_constants::SpritePushConstants,
   FRAMES_IN_FLIGHT,
@@ -88,13 +88,18 @@ pub struct Renderer {
   render_target_views: [vk::ImageView; FRAMES_IN_FLIGHT],
   framebuffers: [vk::Framebuffer; FRAMES_IN_FLIGHT],
 
+  texture_sampler: vk::Sampler,
   descriptor_sets: DescriptorSets,
   pipeline_cache: vk::PipelineCache,
   pipelines: Pipelines,
+  compute_pipeline: ComputePipeline,
 
   pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
   constant_objects: ConstantAllocatedObjects,
-  sampler: vk::Sampler,
+
+  // temporary
+  compute_output: vk::Buffer,
+  compute_output_memory: vk::DeviceMemory,
 }
 
 impl Renderer {
@@ -143,7 +148,8 @@ impl Renderer {
       temp
     };
 
-    let mut descriptor_sets = DescriptorSets::new(&device);
+    let texture_sampler = create_sampler(&device);
+    let mut descriptor_sets = DescriptorSets::new(&device, texture_sampler);
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) = create_pipeline_cache(&device, &physical_device);
@@ -159,6 +165,7 @@ impl Renderer {
       &descriptor_sets,
       RENDER_EXTENT,
     );
+    let compute_pipeline = ComputePipeline::new(&device, pipeline_cache, &descriptor_sets);
 
     let constant_objects = {
       let mut transfer_pool =
@@ -188,10 +195,26 @@ impl Renderer {
       objects
     };
 
-    let sampler = create_sampler(&device);
-    descriptor_sets
-      .pool
-      .write_texture(&device, constant_objects.texture_view, sampler);
+    let compute_output = create_buffer(
+      &device,
+      size_of::<ComputeOutput>() as u64,
+      vk::BufferUsageFlags::STORAGE_BUFFER,
+    );
+    let allocation = allocate_and_bind_memory(
+      &device,
+      &physical_device,
+      vk::MemoryPropertyFlags::HOST_VISIBLE,
+      vk::MemoryPropertyFlags::HOST_CACHED,
+      &[compute_output],
+      &[],
+    )
+    .unwrap();
+    descriptor_sets.write_sets(
+      &device,
+      constant_objects.texture_view,
+      constant_objects.instance,
+      compute_output,
+    );
 
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
@@ -219,13 +242,17 @@ impl Renderer {
       render_target_views,
       framebuffers,
 
+      texture_sampler,
       descriptor_sets,
       pipeline_cache,
       pipelines,
+      compute_pipeline,
 
       graphics_pools,
       constant_objects,
-      sampler,
+
+      compute_output,
+      compute_output_memory: allocation.memory,
     }
   }
 
@@ -269,7 +296,9 @@ impl Renderer {
   }
 
   pub unsafe fn destroy_self(&mut self) {
-    self.device.destroy_sampler(self.sampler, None);
+    self.device.destroy_buffer(self.compute_output, None);
+    self.device.free_memory(self.compute_output_memory, None);
+
     self.constant_objects.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {
       pool.destroy_self(&self.device);
@@ -285,8 +314,10 @@ impl Renderer {
       .destroy_pipeline_cache(self.pipeline_cache, None);
 
     self.pipelines.destroy_self(&self.device);
+    self.compute_pipeline.destroy_self(&self.device);
 
     self.descriptor_sets.destroy_self(&self.device);
+    self.device.destroy_sampler(self.texture_sampler, None);
 
     for &framebuffer in self.framebuffers.iter() {
       self.device.destroy_framebuffer(framebuffer, None);

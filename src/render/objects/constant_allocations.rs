@@ -8,8 +8,8 @@ use ash::vk;
 
 use crate::render::{
   objects::{
-    allocations::allocate_and_bind_memory, create_image, create_image_view, create_semaphore,
-    create_unsignaled_fence,
+    allocations::{allocate_and_bind_memory, create_buffer},
+    create_image, create_image_view, create_semaphore, create_unsignaled_fence,
   },
   sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES},
   vertices::InstanceVertex,
@@ -20,7 +20,7 @@ use super::{
   device::{PhysicalDevice, Queues},
 };
 
-const INSTANCE_TEMP: [InstanceVertex; 2] = [
+pub const INSTANCE_TEMP: [InstanceVertex; 2] = [
   InstanceVertex { pos: [-0.8, -0.8] },
   InstanceVertex { pos: [0.3, 0.2] },
 ];
@@ -84,7 +84,9 @@ impl ConstantAllocatedObjects {
     let instance_dst = create_buffer(
       device,
       instance_size,
-      vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::VERTEX_BUFFER),
+      vk::BufferUsageFlags::TRANSFER_DST
+        .bitor(vk::BufferUsageFlags::VERTEX_BUFFER)
+        .bitor(vk::BufferUsageFlags::STORAGE_BUFFER),
     );
     let texture_dst = create_image(
       device,
@@ -431,24 +433,5 @@ impl ConstantAllocatedObjects {
     device.destroy_image(self.texture, None);
 
     device.free_memory(self.memory, None);
-  }
-}
-
-pub fn create_buffer(device: &ash::Device, size: u64, usage: vk::BufferUsageFlags) -> vk::Buffer {
-  assert!(size > 0);
-  let create_info = vk::BufferCreateInfo {
-    s_type: vk::StructureType::BUFFER_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::BufferCreateFlags::empty(),
-    size,
-    usage,
-    sharing_mode: vk::SharingMode::EXCLUSIVE,
-    queue_family_index_count: 0,
-    p_queue_family_indices: ptr::null(), // ignored when exclusive
-  };
-  unsafe {
-    device
-      .create_buffer(&create_info, None)
-      .expect("Failed to create buffer")
   }
 }

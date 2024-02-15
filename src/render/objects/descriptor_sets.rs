@@ -1,35 +1,196 @@
-use std::ptr::{self, addr_of};
+use std::{
+  mem::{size_of, size_of_val},
+  ptr::{self},
+};
 
 use ash::vk;
 
+use crate::render::ComputeOutput;
+
+use super::constant_allocations::INSTANCE_TEMP;
+
 pub struct DescriptorSets {
-  pub layout: vk::DescriptorSetLayout,
-  pub pool: DescriptorSetPool,
+  pub graphics_layout: vk::DescriptorSetLayout,
+  pub compute_layout: vk::DescriptorSetLayout,
+
+  pool: vk::DescriptorPool,
+
+  pub texture_set: vk::DescriptorSet,
+  pub instance_storage_set: vk::DescriptorSet,
+  pub compute_output_set: vk::DescriptorSet,
 }
 
 impl DescriptorSets {
-  pub fn new(device: &ash::Device) -> Self {
-    let layout = create_layout(device);
+  pub fn new(device: &ash::Device, texture_sampler: vk::Sampler) -> Self {
+    let graphics_layout = Self::create_graphics_layout(device, texture_sampler);
+    let compute_layout = Self::create_compute_layout(device);
 
-    let pool = DescriptorSetPool::new(device, layout);
-    Self { layout, pool }
+    let pool = Self::create_pool(device);
+
+    let layouts = [graphics_layout, compute_layout, compute_layout];
+    let allocate_info = vk::DescriptorSetAllocateInfo {
+      s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+      p_next: ptr::null(),
+      descriptor_pool: pool,
+      descriptor_set_count: layouts.len() as u32,
+      p_set_layouts: layouts.as_ptr(),
+    };
+    let descriptor_sets = unsafe {
+      device
+        .allocate_descriptor_sets(&allocate_info)
+        .expect("Failed to allocate descriptor set")
+    };
+
+    Self {
+      graphics_layout,
+      compute_layout,
+      pool,
+      texture_set: descriptor_sets[0],
+      instance_storage_set: descriptor_sets[1],
+      compute_output_set: descriptor_sets[2],
+    }
+  }
+
+  // texture_set must not be in use
+  pub fn write_sets(
+    &mut self,
+    device: &ash::Device,
+    texture_view: vk::ImageView,
+    instance: vk::Buffer,
+    compute_output: vk::Buffer,
+  ) {
+    let texture_info = vk::DescriptorImageInfo {
+      sampler: vk::Sampler::null(), // indicated and set as constant in the layout
+      image_view: texture_view,
+      image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    };
+    let texture_write = vk::WriteDescriptorSet {
+      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+      p_next: ptr::null(),
+      dst_set: self.texture_set,
+      dst_binding: 0,
+      dst_array_element: 0,
+      descriptor_count: 1,
+      descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+      p_buffer_info: ptr::null(),
+      p_image_info: &texture_info,
+      p_texel_buffer_view: ptr::null(),
+    };
+
+    let instance_info = vk::DescriptorBufferInfo {
+      buffer: instance,
+      offset: 0,
+      range: size_of_val(&INSTANCE_TEMP) as u64,
+    };
+    let instance_write = vk::WriteDescriptorSet {
+      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+      p_next: ptr::null(),
+      dst_set: self.instance_storage_set,
+      dst_binding: 0,
+      dst_array_element: 0,
+      descriptor_count: 1,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      p_buffer_info: &instance_info,
+      p_image_info: ptr::null(),
+      p_texel_buffer_view: ptr::null(),
+    };
+
+    let compute_output_info = vk::DescriptorBufferInfo {
+      buffer: compute_output,
+      offset: 0,
+      range: size_of::<ComputeOutput>() as u64,
+    };
+    let compute_output_write = vk::WriteDescriptorSet {
+      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+      p_next: ptr::null(),
+      dst_set: self.instance_storage_set,
+      dst_binding: 1,
+      dst_array_element: 0,
+      descriptor_count: 1,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      p_buffer_info: &compute_output_info,
+      p_image_info: ptr::null(),
+      p_texel_buffer_view: ptr::null(),
+    };
+
+    unsafe {
+      device.update_descriptor_sets(&[texture_write, instance_write, compute_output_write], &[]);
+    }
+  }
+
+  fn create_graphics_layout(
+    device: &ash::Device,
+    texture_sampler: vk::Sampler,
+  ) -> vk::DescriptorSetLayout {
+    let bindings = [vk::DescriptorSetLayoutBinding {
+      binding: 0,
+      descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::FRAGMENT,
+      p_immutable_samplers: &texture_sampler,
+    }];
+    create_layout(device, &bindings)
+  }
+
+  fn create_compute_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
+    let bindings = [
+      vk::DescriptorSetLayoutBinding {
+        binding: 0,
+        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+        descriptor_count: 1,
+        stage_flags: vk::ShaderStageFlags::COMPUTE,
+        p_immutable_samplers: ptr::null(),
+      },
+      vk::DescriptorSetLayoutBinding {
+        binding: 1,
+        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+        descriptor_count: 1,
+        stage_flags: vk::ShaderStageFlags::COMPUTE,
+        p_immutable_samplers: ptr::null(),
+      },
+    ];
+    create_layout(device, &bindings)
+  }
+
+  fn create_pool(device: &ash::Device) -> vk::DescriptorPool {
+    let sizes = [
+      vk::DescriptorPoolSize {
+        ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        descriptor_count: 1,
+      },
+      vk::DescriptorPoolSize {
+        ty: vk::DescriptorType::STORAGE_BUFFER,
+        descriptor_count: 2,
+      },
+    ];
+    let pool_create_info = vk::DescriptorPoolCreateInfo {
+      s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
+      p_next: ptr::null(),
+      pool_size_count: sizes.len() as u32,
+      p_pool_sizes: sizes.as_ptr(),
+      max_sets: 3,
+      flags: vk::DescriptorPoolCreateFlags::empty(),
+    };
+
+    unsafe {
+      device
+        .create_descriptor_pool(&pool_create_info, None)
+        .expect("Failed to create descriptor pool")
+    }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    self.pool.destroy_self(device);
-    device.destroy_descriptor_set_layout(self.layout, None);
+    device.destroy_descriptor_pool(self.pool, None);
+
+    device.destroy_descriptor_set_layout(self.graphics_layout, None);
+    device.destroy_descriptor_set_layout(self.compute_layout, None);
   }
 }
 
-fn create_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-  let bindings = [vk::DescriptorSetLayoutBinding {
-    binding: 0,
-    descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-    descriptor_count: 1,
-    stage_flags: vk::ShaderStageFlags::FRAGMENT,
-    p_immutable_samplers: ptr::null(),
-  }];
-
+fn create_layout(
+  device: &ash::Device,
+  bindings: &[vk::DescriptorSetLayoutBinding],
+) -> vk::DescriptorSetLayout {
   let create_info = vk::DescriptorSetLayoutCreateInfo {
     s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
     p_next: ptr::null(),
@@ -37,89 +198,9 @@ fn create_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
     binding_count: bindings.len() as u32,
     p_bindings: bindings.as_ptr(),
   };
-
   unsafe {
     device
       .create_descriptor_set_layout(&create_info, None)
       .expect("Failed to create a descriptor set layout")
-  }
-}
-
-pub struct DescriptorSetPool {
-  pool: vk::DescriptorPool,
-  pub texture: vk::DescriptorSet,
-}
-
-impl DescriptorSetPool {
-  pub fn new(device: &ash::Device, layout: vk::DescriptorSetLayout) -> Self {
-    let sizes = [vk::DescriptorPoolSize {
-      ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-      descriptor_count: 1,
-    }];
-    let pool_create_info = vk::DescriptorPoolCreateInfo {
-      s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
-      p_next: ptr::null(),
-      pool_size_count: sizes.len() as u32,
-      p_pool_sizes: sizes.as_ptr(),
-      max_sets: 1,
-      flags: vk::DescriptorPoolCreateFlags::empty(),
-    };
-    let pool = unsafe {
-      device
-        .create_descriptor_pool(&pool_create_info, None)
-        .expect("Failed to create descriptor pool")
-    };
-
-    let allocate_info = vk::DescriptorSetAllocateInfo {
-      s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
-      p_next: ptr::null(),
-      descriptor_pool: pool,
-      descriptor_set_count: 1,
-      p_set_layouts: addr_of!(layout),
-    };
-    let descriptor_set = unsafe {
-      device
-        .allocate_descriptor_sets(&allocate_info)
-        .expect("Failed to allocate descriptor set")[0]
-    };
-
-    Self {
-      pool,
-      texture: descriptor_set,
-    }
-  }
-
-  pub fn write_texture(
-    &mut self,
-    device: &ash::Device,
-    texture_view: vk::ImageView,
-    sampler: vk::Sampler,
-  ) {
-    let image_info = vk::DescriptorImageInfo {
-      sampler,
-      image_view: texture_view,
-      image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-    };
-
-    let write = vk::WriteDescriptorSet {
-      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-      p_next: ptr::null(),
-      dst_set: self.texture,
-      dst_binding: 0,
-      dst_array_element: 0,
-      descriptor_count: 1,
-      descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-      p_buffer_info: ptr::null(),
-      p_image_info: addr_of!(image_info),
-      p_texel_buffer_view: ptr::null(),
-    };
-
-    unsafe {
-      device.update_descriptor_sets(&[write], &[]);
-    }
-  }
-
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_descriptor_pool(self.pool, None);
   }
 }

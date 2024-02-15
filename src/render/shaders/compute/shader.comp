@@ -1,0 +1,18 @@
+#version 450
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) restrict readonly buffer InputData {
+  vec2 pos[];
+}
+input_data;
+
+layout(set = 0, binding = 0) restrict buffer CPUOutputData {
+  int colision;
+}
+cpu_data;
+
+
+void main() {
+  // set colision to 1 if it's not 1 already
+  atomicCompSwap(cpu_data.colision, 0, 1);
+}

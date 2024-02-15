@@ -36,10 +36,10 @@ fn create_layout(
 }
 
 pub struct Pipelines {
-  pub player_layout: vk::PipelineLayout,
-  pub player: vk::Pipeline,
+  // compatible with both player and projectiles
+  pub layout: vk::PipelineLayout,
 
-  pub projectiles_layout: vk::PipelineLayout,
+  pub player: vk::Pipeline,
   pub projectiles: vk::Pipeline,
 }
 
@@ -56,22 +56,17 @@ impl Pipelines {
       offset: 0,
       size: size_of::<SpritePushConstants>() as u32,
     };
-    let player_layout = create_layout(device, &[descriptor_sets.layout], &[push_constant_range]);
-    let projectiles_layout = create_layout(device, &[descriptor_sets.layout], &[]);
-
-    let (player, projectiles) = Self::create_pipelines(
+    let layout = create_layout(
       device,
-      player_layout,
-      projectiles_layout,
-      cache,
-      render_pass,
-      extent,
+      &[descriptor_sets.graphics_layout],
+      &[push_constant_range],
     );
 
+    let (player, projectiles) = Self::create_pipelines(device, layout, cache, render_pass, extent);
+
     Self {
-      player_layout,
+      layout,
       player,
-      projectiles_layout,
       projectiles,
     }
   }
@@ -79,8 +74,7 @@ impl Pipelines {
   fn create_pipelines(
     device: &ash::Device,
 
-    player_layout: vk::PipelineLayout,
-    projectiles_layout: vk::PipelineLayout,
+    layout: vk::PipelineLayout,
     cache: vk::PipelineCache,
 
     render_pass: vk::RenderPass,
@@ -164,7 +158,7 @@ impl Pipelines {
       p_depth_stencil_state: ptr::null(),
       p_color_blend_state: &color_blend_state,
       p_dynamic_state: ptr::null(),
-      layout: player_layout,
+      layout,
       render_pass,
       subpass: 0,
       base_pipeline_handle: vk::Pipeline::null(),
@@ -176,7 +170,6 @@ impl Pipelines {
     projectiles_create_info.stage_count = projectiles_shader_stages.len() as u32;
     projectiles_create_info.p_stages = projectiles_shader_stages.as_ptr();
     projectiles_create_info.p_vertex_input_state = projectiles_vertex_input_state.get();
-    projectiles_create_info.layout = projectiles_layout;
     projectiles_create_info.base_pipeline_index = 0;
 
     let pipelines = unsafe {
@@ -195,10 +188,9 @@ impl Pipelines {
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
     device.destroy_pipeline(self.player, None);
-    device.destroy_pipeline_layout(self.player_layout, None);
-
     device.destroy_pipeline(self.projectiles, None);
-    device.destroy_pipeline_layout(self.projectiles_layout, None);
+
+    device.destroy_pipeline_layout(self.layout, None);
   }
 }
 

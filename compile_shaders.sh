@@ -9,3 +9,5 @@ glslc -O $DIR/src/render/shaders/player/shader.frag --target-env=$VK_ENV -o $DIR
 
 glslc -O $DIR/src/render/shaders/projectiles/shader.vert --target-env=$VK_ENV -o $DIR/shaders/projectiles/vert.spv
 glslc -O $DIR/src/render/shaders/projectiles/shader.frag --target-env=$VK_ENV -o $DIR/shaders/projectiles/frag.spv
+
+glslc -O $DIR/src/render/shaders/compute/shader.comp --target-env=$VK_ENV -o $DIR/shaders/compute/shader.spv

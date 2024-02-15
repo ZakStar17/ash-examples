@@ -96,36 +96,38 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_descriptor_sets(
         cb,
         vk::PipelineBindPoint::GRAPHICS,
-        pipelines.projectiles_layout,
+        pipelines.layout,
         0,
-        &[descriptor_sets.pool.texture],
+        &[descriptor_sets.texture_set],
         &[],
       );
-      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.projectiles);
-      device.cmd_bind_vertex_buffers(cb, 0, &[constant_allocated_objects.vertex, constant_allocated_objects.instance], &[0, 0]);
+      device.cmd_bind_vertex_buffers(
+        cb,
+        0,
+        &[
+          constant_allocated_objects.vertex,
+          constant_allocated_objects.instance,
+        ],
+        &[0, 0],
+      );
       device.cmd_bind_index_buffer(
         cb,
         constant_allocated_objects.index,
         0,
         vk::IndexType::UINT16,
       );
+
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.projectiles);
       device.cmd_draw_indexed(cb, SQUARE_INDICES.len() as u32, 2, 0, 4, 0);
 
-      device.cmd_bind_descriptor_sets(
-        cb,
-        vk::PipelineBindPoint::GRAPHICS,
-        pipelines.player_layout,
-        0,
-        &[descriptor_sets.pool.texture],
-        &[],
-      );
       device.cmd_push_constants(
         cb,
-        pipelines.player_layout,
+        pipelines.layout,
         vk::ShaderStageFlags::VERTEX,
         0,
         utility::any_as_u8_slice(player),
       );
+
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.player);
       device.cmd_draw_indexed(cb, SQUARE_INDICES.len() as u32, 1, 0, 0, 0);
     }

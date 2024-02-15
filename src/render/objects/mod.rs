@@ -1,5 +1,6 @@
 pub mod allocations;
 pub mod command_pools;
+mod compute_pipeline;
 mod constant_allocations;
 mod descriptor_sets;
 pub mod device;
@@ -18,6 +19,7 @@ use std::ptr;
 
 use ash::vk;
 
+pub use compute_pipeline::ComputePipeline;
 pub use constant_allocations::ConstantAllocatedObjects;
 pub use descriptor_sets::DescriptorSets;
 pub use entry::get_entry;

@@ -2,6 +2,7 @@ use std::{fs::File, io::Read, path::Path, ptr};
 
 use ash::vk;
 
+pub mod compute;
 pub mod player;
 pub mod projectiles;
 
