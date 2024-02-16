@@ -55,40 +55,7 @@ impl SyncRenderer {
 
     // current frame resources are now safe to use as they are not being used by the GPU
 
-    if self.last_frame_recreated_swapchain {
-      unsafe { self.renderer.destroy_old() }
-      self.last_frame_recreated_swapchain = false;
-    }
-
-    if self.recreate_swapchain_next_frame {
-      unsafe {
-        self.renderer.recreate_swapchain(surface, window_size);
-      }
-      self.recreate_swapchain_next_frame = false;
-      self.last_frame_recreated_swapchain = true;
-    }
-
-    let image_index = match unsafe {
-      self
-        .renderer
-        .swapchains
-        .acquire_next_image(cur_frame.image_available)
-    } {
-      Ok((image_index, suboptimal)) => {
-        if suboptimal {
-          self.recreate_swapchain_next_frame = true;
-        }
-        image_index
-      }
-      Err(_) => {
-        log::warn!("Failed to acquire next swapchain image");
-        self.recreate_swapchain_next_frame = true;
-
-        return Err(());
-      }
-    };
-
-    // actual rendering
+    // compute
 
     let data = ComputeOutput { collision: 0 };
 
@@ -124,22 +91,88 @@ impl SyncRenderer {
     }
 
     unsafe {
-      self.renderer.graphics_pools[cur_frame_i].reset(&self.renderer.device);
-      self
-        .renderer
-        .record_graphics(cur_frame_i, image_index as usize, player);
-
       self.renderer.compute_pools[cur_frame_i].reset(&self.renderer.device);
       self.renderer.record_compute(cur_frame_i);
     }
 
-    let wait_stage = vk::PipelineStageFlags::TRANSFER;
     let submit_info = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
-      wait_semaphore_count: 1,
-      p_wait_semaphores: &cur_frame.image_available,
-      p_wait_dst_stage_mask: &wait_stage,
+      wait_semaphore_count: 0,
+      p_wait_semaphores: ptr::null(),
+      p_wait_dst_stage_mask: ptr::null(),
+      command_buffer_count: 1,
+      p_command_buffers: &self.renderer.compute_pools[cur_frame_i].buffer,
+      signal_semaphore_count: 1,
+      p_signal_semaphores: &cur_frame.compute_finished,
+    };
+    unsafe {
+      self
+        .renderer
+        .device
+        .queue_submit(
+          self.renderer.queues.compute,
+          &[submit_info],
+          vk::Fence::null(),
+        )
+        .expect("Failed to submit to queue");
+    }
+
+    // graphics
+
+    if self.last_frame_recreated_swapchain {
+      unsafe { self.renderer.destroy_old() }
+      self.last_frame_recreated_swapchain = false;
+    }
+
+    if self.recreate_swapchain_next_frame {
+      unsafe {
+        self.renderer.recreate_swapchain(surface, window_size);
+      }
+      self.recreate_swapchain_next_frame = false;
+      self.last_frame_recreated_swapchain = true;
+    }
+
+    let image_index = match unsafe {
+      self
+        .renderer
+        .swapchains
+        .acquire_next_image(cur_frame.image_available)
+    } {
+      Ok((image_index, suboptimal)) => {
+        if suboptimal {
+          self.recreate_swapchain_next_frame = true;
+        }
+        image_index
+      }
+      Err(_) => {
+        log::warn!("Failed to acquire next swapchain image");
+        self.recreate_swapchain_next_frame = true;
+
+        return Err(());
+      }
+    };
+
+    // actual rendering
+
+    unsafe {
+      self.renderer.graphics_pools[cur_frame_i].reset(&self.renderer.device);
+      self
+        .renderer
+        .record_graphics(cur_frame_i, image_index as usize, player);
+    }
+
+    let wait_semaphores = [cur_frame.compute_finished, cur_frame.image_available];
+    let wait_stages = [
+      vk::PipelineStageFlags::COMPUTE_SHADER,
+      vk::PipelineStageFlags::TRANSFER,
+    ];
+    let submit_info = vk::SubmitInfo {
+      s_type: vk::StructureType::SUBMIT_INFO,
+      p_next: ptr::null(),
+      wait_semaphore_count: wait_semaphores.len() as u32,
+      p_wait_semaphores: wait_semaphores.as_ptr(),
+      p_wait_dst_stage_mask: wait_stages.as_ptr(),
       command_buffer_count: 1,
       p_command_buffers: &self.renderer.graphics_pools[cur_frame_i].triangle,
       signal_semaphore_count: 1,

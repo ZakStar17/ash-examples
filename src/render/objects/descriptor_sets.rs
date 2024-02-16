@@ -15,9 +15,8 @@ pub struct DescriptorSets {
 
   pool: vk::DescriptorPool,
 
+  pub compute: [vk::DescriptorSet; 2],
   pub texture_set: vk::DescriptorSet,
-  pub instance_storage_set: vk::DescriptorSet,
-  pub compute_output_set: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl DescriptorSets {
@@ -27,12 +26,7 @@ impl DescriptorSets {
 
     let pool = Self::create_pool(device);
 
-    let layouts = [
-      graphics_layout,
-      compute_layout,
-      compute_layout,
-      compute_layout,
-    ];
+    let layouts = [graphics_layout, compute_layout, compute_layout];
     let allocate_info = vk::DescriptorSetAllocateInfo {
       s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
       p_next: ptr::null(),
@@ -51,8 +45,34 @@ impl DescriptorSets {
       compute_layout,
       pool,
       texture_set: descriptor_sets[0],
-      instance_storage_set: descriptor_sets[1],
-      compute_output_set: [descriptor_sets[2], descriptor_sets[3]],
+      compute: [descriptor_sets[1], descriptor_sets[2]],
+    }
+  }
+
+  fn create_pool(device: &ash::Device) -> vk::DescriptorPool {
+    let sizes = [
+      vk::DescriptorPoolSize {
+        ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        descriptor_count: 1,
+      },
+      vk::DescriptorPoolSize {
+        ty: vk::DescriptorType::STORAGE_BUFFER,
+        descriptor_count: 1 + 2,
+      },
+    ];
+    let pool_create_info = vk::DescriptorPoolCreateInfo {
+      s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
+      p_next: ptr::null(),
+      pool_size_count: sizes.len() as u32,
+      p_pool_sizes: sizes.as_ptr(),
+      max_sets: 3,
+      flags: vk::DescriptorPoolCreateFlags::empty(),
+    };
+
+    unsafe {
+      device
+        .create_descriptor_pool(&pool_create_info, None)
+        .expect("Failed to create descriptor pool")
     }
   }
 
@@ -90,7 +110,7 @@ impl DescriptorSets {
     let instance_write = vk::WriteDescriptorSet {
       s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
       p_next: ptr::null(),
-      dst_set: self.instance_storage_set,
+      dst_set: self.compute[0],
       dst_binding: 0,
       dst_array_element: 0,
       descriptor_count: 1,
@@ -99,6 +119,8 @@ impl DescriptorSets {
       p_image_info: ptr::null(),
       p_texel_buffer_view: ptr::null(),
     };
+    let mut instance_write_2 = instance_write.clone();
+    instance_write_2.dst_set = self.compute[1];
 
     // todo: clean this
     let compute_output_infos = [
@@ -117,7 +139,7 @@ impl DescriptorSets {
       vk::WriteDescriptorSet {
         s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
         p_next: ptr::null(),
-        dst_set: self.instance_storage_set,
+        dst_set: self.compute[0],
         dst_binding: 1,
         dst_array_element: 0,
         descriptor_count: 1,
@@ -129,7 +151,7 @@ impl DescriptorSets {
       vk::WriteDescriptorSet {
         s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
         p_next: ptr::null(),
-        dst_set: self.instance_storage_set,
+        dst_set: self.compute[1],
         dst_binding: 1,
         dst_array_element: 0,
         descriptor_count: 1,
@@ -145,6 +167,7 @@ impl DescriptorSets {
         &[
           texture_write,
           instance_write,
+          instance_write_2,
           compute_output_write[0],
           compute_output_write[1],
         ],
@@ -185,33 +208,6 @@ impl DescriptorSets {
       },
     ];
     create_layout(device, &bindings)
-  }
-
-  fn create_pool(device: &ash::Device) -> vk::DescriptorPool {
-    let sizes = [
-      vk::DescriptorPoolSize {
-        ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-        descriptor_count: 1,
-      },
-      vk::DescriptorPoolSize {
-        ty: vk::DescriptorType::STORAGE_BUFFER,
-        descriptor_count: 1 + 2,
-      },
-    ];
-    let pool_create_info = vk::DescriptorPoolCreateInfo {
-      s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
-      p_next: ptr::null(),
-      pool_size_count: sizes.len() as u32,
-      p_pool_sizes: sizes.as_ptr(),
-      max_sets: 4,
-      flags: vk::DescriptorPoolCreateFlags::empty(),
-    };
-
-    unsafe {
-      device
-        .create_descriptor_pool(&pool_create_info, None)
-        .expect("Failed to create descriptor pool")
-    }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

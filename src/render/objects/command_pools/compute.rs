@@ -6,7 +6,7 @@ use crate::render::objects::{device::QueueFamilies, ComputePipeline, DescriptorS
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
-  buffer: vk::CommandBuffer,
+  pub buffer: vk::CommandBuffer,
 }
 
 impl ComputeCommandBufferPool {
@@ -49,10 +49,7 @@ impl ComputeCommandBufferPool {
       vk::PipelineBindPoint::COMPUTE,
       pipelines.layout,
       0,
-      &[
-        descriptor_sets.instance_storage_set,
-        descriptor_sets.compute_output_set[index],
-      ],
+      &[descriptor_sets.compute[index]],
       &[],
     );
 

@@ -4,6 +4,7 @@ use ash::vk;
 
 // contains synchronization objects for one frame
 pub struct Frame {
+  pub compute_finished: vk::Semaphore,
   pub image_available: vk::Semaphore,
   pub presentable: vk::Semaphore,
   pub finished: vk::Fence,
@@ -23,6 +24,7 @@ impl Frame {
         .expect("Failed to create Semaphore")
     };
 
+    let compute_finished = create_semaphore();
     let image_available = create_semaphore();
     let presentable = create_semaphore();
 
@@ -38,6 +40,7 @@ impl Frame {
         .expect("Failed to create Fence Object!")
     };
     Self {
+      compute_finished,
       image_available,
       presentable,
       finished,
@@ -57,6 +60,7 @@ impl Frame {
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+    device.destroy_semaphore(self.compute_finished, None);
     device.destroy_semaphore(self.image_available, None);
     device.destroy_semaphore(self.presentable, None);
 

@@ -1,4 +1,7 @@
-use std::ptr::{self, addr_of};
+use std::{
+  ops::BitOr,
+  ptr::{self, addr_of},
+};
 
 use ash::vk;
 
@@ -149,7 +152,7 @@ impl GraphicsCommandBufferPool {
       };
       device.cmd_pipeline_barrier(
         cb,
-        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::TRANSFER.bitor(vk::PipelineStageFlags::COMPUTE_SHADER),
         vk::PipelineStageFlags::TRANSFER,
         vk::DependencyFlags::empty(),
         &[],
