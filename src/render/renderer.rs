@@ -98,8 +98,8 @@ pub struct Renderer {
   constant_objects: ConstantAllocatedObjects,
 
   // temporary
-  compute_output: vk::Buffer,
-  compute_output_memory: vk::DeviceMemory,
+  pub compute_output: [vk::Buffer; FRAMES_IN_FLIGHT],
+  pub compute_output_memory: vk::DeviceMemory,
 }
 
 impl Renderer {
@@ -195,17 +195,21 @@ impl Renderer {
       objects
     };
 
-    let compute_output = create_buffer(
+    let compute_output = [create_buffer(
       &device,
       size_of::<ComputeOutput>() as u64,
       vk::BufferUsageFlags::STORAGE_BUFFER,
-    );
+    ), create_buffer(
+      &device,
+      size_of::<ComputeOutput>() as u64,
+      vk::BufferUsageFlags::STORAGE_BUFFER,
+    )];
     let allocation = allocate_and_bind_memory(
       &device,
       &physical_device,
       vk::MemoryPropertyFlags::HOST_VISIBLE,
       vk::MemoryPropertyFlags::HOST_CACHED,
-      &[compute_output],
+      &compute_output,
       &[],
     )
     .unwrap();
@@ -296,7 +300,8 @@ impl Renderer {
   }
 
   pub unsafe fn destroy_self(&mut self) {
-    self.device.destroy_buffer(self.compute_output, None);
+    self.device.destroy_buffer(self.compute_output[0], None);
+    self.device.destroy_buffer(self.compute_output[1], None);
     self.device.free_memory(self.compute_output_memory, None);
 
     self.constant_objects.destroy_self(&self.device);

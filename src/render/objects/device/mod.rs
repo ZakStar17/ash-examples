@@ -163,7 +163,8 @@ unsafe fn select_physical_device(
       let device_score_importance = 0;
 
       // rank devices by number of specialized queue families
-      let queue_score = QueueFamilies::FAMILY_COUNT - families.unique_indices.len();
+      let queue_score = if families.compute.is_some() { 0 } else { 1 }
+        + if families.transfer.is_some() { 0 } else { 1 };
 
       // rank devices by commonly most powerful device type
       let device_score = match instance

@@ -10,7 +10,6 @@ use std::{
 use ash::vk;
 use player::Player;
 use render::RenderEngine;
-use utility::cstr;
 use winit::{
   dpi::PhysicalSize,
   event::{Event, WindowEvent},

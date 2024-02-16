@@ -67,6 +67,7 @@ pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 }
 
 // bitor between flags to be used as constants
+#[macro_export]
 macro_rules! const_flag_bitor {
   ($t:ty => $x:expr, $($y:expr),+) => {
     <$t>::from_raw(
@@ -74,17 +75,19 @@ macro_rules! const_flag_bitor {
     )
   };
 }
-pub(crate) use const_flag_bitor;
+pub use const_flag_bitor;
 
 // transmutes literals to 'static CStr
+#[macro_export]
 macro_rules! cstr {
   ( $s:literal ) => {{
     unsafe { std::mem::transmute::<_, &std::ffi::CStr>(concat!($s, "\0")) }
   }};
 }
-pub(crate) use cstr;
+pub use cstr;
 
 // populate_array_with_expression!(a + b, 3) transforms into [a + b, a + b, a + b]
+#[macro_export]
 macro_rules! populate_array_with_expression {
   ($ex:expr, $arr_size:expr) => {{
     use std::mem::MaybeUninit;
@@ -95,4 +98,19 @@ macro_rules! populate_array_with_expression {
     unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) }
   }};
 }
-pub(crate) use populate_array_with_expression;
+pub use populate_array_with_expression;
+
+// advances $iter by $size and copies the values into a array
+#[macro_export]
+macro_rules! copy_iter_into_array {
+  ($iter:expr, $size:expr) => {{
+    use std::mem::MaybeUninit;
+
+    let mut tmp: [MaybeUninit<_>; $size] = unsafe { MaybeUninit::uninit().assume_init() };
+    for i in 0..$size {
+      tmp[i] = MaybeUninit::new($iter.next().unwrap());
+    }
+    unsafe { std::mem::transmute::<_, [_; $size]>(tmp) }
+  }};
+}
+pub use copy_iter_into_array;

@@ -14,5 +14,5 @@ cpu_data;
 
 void main() {
   // set colision to 1 if it's not 1 already
-  atomicCompSwap(cpu_data.colision, 0, 1);
+  atomicAdd(cpu_data.colision, 1);
 }

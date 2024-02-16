@@ -5,7 +5,7 @@ use std::{
 
 use ash::vk;
 
-use crate::render::ComputeOutput;
+use crate::render::{ComputeOutput, FRAMES_IN_FLIGHT};
 
 use super::constant_allocations::INSTANCE_TEMP;
 
@@ -17,7 +17,7 @@ pub struct DescriptorSets {
 
   pub texture_set: vk::DescriptorSet,
   pub instance_storage_set: vk::DescriptorSet,
-  pub compute_output_set: vk::DescriptorSet,
+  pub compute_output_set: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl DescriptorSets {
@@ -27,7 +27,7 @@ impl DescriptorSets {
 
     let pool = Self::create_pool(device);
 
-    let layouts = [graphics_layout, compute_layout, compute_layout];
+    let layouts = [graphics_layout, compute_layout, compute_layout, compute_layout];
     let allocate_info = vk::DescriptorSetAllocateInfo {
       s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
       p_next: ptr::null(),
@@ -47,7 +47,7 @@ impl DescriptorSets {
       pool,
       texture_set: descriptor_sets[0],
       instance_storage_set: descriptor_sets[1],
-      compute_output_set: descriptor_sets[2],
+      compute_output_set: [descriptor_sets[2], descriptor_sets[3]],
     }
   }
 
@@ -57,7 +57,7 @@ impl DescriptorSets {
     device: &ash::Device,
     texture_view: vk::ImageView,
     instance: vk::Buffer,
-    compute_output: vk::Buffer,
+    compute_output: [vk::Buffer; FRAMES_IN_FLIGHT],
   ) {
     let texture_info = vk::DescriptorImageInfo {
       sampler: vk::Sampler::null(), // indicated and set as constant in the layout
@@ -95,12 +95,17 @@ impl DescriptorSets {
       p_texel_buffer_view: ptr::null(),
     };
 
-    let compute_output_info = vk::DescriptorBufferInfo {
-      buffer: compute_output,
+    // todo: clean this
+    let compute_output_infos = [vk::DescriptorBufferInfo {
+      buffer: compute_output[0],
       offset: 0,
       range: size_of::<ComputeOutput>() as u64,
-    };
-    let compute_output_write = vk::WriteDescriptorSet {
+    }, vk::DescriptorBufferInfo {
+      buffer: compute_output[1],
+      offset: 0,
+      range: size_of::<ComputeOutput>() as u64,
+    }];
+    let compute_output_write = [vk::WriteDescriptorSet {
       s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
       p_next: ptr::null(),
       dst_set: self.instance_storage_set,
@@ -108,13 +113,24 @@ impl DescriptorSets {
       dst_array_element: 0,
       descriptor_count: 1,
       descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-      p_buffer_info: &compute_output_info,
+      p_buffer_info: &compute_output_infos[0],
       p_image_info: ptr::null(),
       p_texel_buffer_view: ptr::null(),
-    };
+    }, vk::WriteDescriptorSet {
+      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+      p_next: ptr::null(),
+      dst_set: self.instance_storage_set,
+      dst_binding: 1,
+      dst_array_element: 0,
+      descriptor_count: 1,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      p_buffer_info: &compute_output_infos[1],
+      p_image_info: ptr::null(),
+      p_texel_buffer_view: ptr::null(),
+    }];
 
     unsafe {
-      device.update_descriptor_sets(&[texture_write, instance_write, compute_output_write], &[]);
+      device.update_descriptor_sets(&[texture_write, instance_write, compute_output_write[0], compute_output_write[1]], &[]);
     }
   }
 
@@ -160,7 +176,7 @@ impl DescriptorSets {
       },
       vk::DescriptorPoolSize {
         ty: vk::DescriptorType::STORAGE_BUFFER,
-        descriptor_count: 2,
+        descriptor_count: 1 + 2,
       },
     ];
     let pool_create_info = vk::DescriptorPoolCreateInfo {
@@ -168,7 +184,7 @@ impl DescriptorSets {
       p_next: ptr::null(),
       pool_size_count: sizes.len() as u32,
       p_pool_sizes: sizes.as_ptr(),
-      max_sets: 3,
+      max_sets: 4,
       flags: vk::DescriptorPoolCreateFlags::empty(),
     };
 

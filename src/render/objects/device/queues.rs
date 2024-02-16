@@ -20,12 +20,12 @@ impl PartialEq for QueueFamily {
 pub struct QueueFamilies {
   pub presentation: QueueFamily,
   pub graphics: QueueFamily,
+  pub compute: Option<QueueFamily>,
   pub transfer: Option<QueueFamily>,
-  pub unique_indices: Box<[u32]>,
 }
 
 impl QueueFamilies {
-  pub const FAMILY_COUNT: usize = 3;
+  pub const FAMILY_COUNT: usize = 4;
 
   pub fn get_from_physical_device(
     instance: &ash::Instance,
@@ -79,21 +79,11 @@ impl QueueFamilies {
       return Err(());
     }
 
-    if transfer.is_none() && compute.is_some() {
-      transfer = compute;
-    }
-
-    // commonly used
-    let unique_indices = [graphics.as_ref(), transfer.as_ref()]
-      .into_iter()
-      .filter_map(|opt| opt.map(|f| f.index))
-      .collect();
-
     Ok(QueueFamilies {
       presentation: presentation.unwrap(),
       graphics: graphics.unwrap(),
+      compute,
       transfer,
-      unique_indices,
     })
   }
 
@@ -132,6 +122,7 @@ fn get_queue_create_info(
 pub struct Queues {
   pub presentation: vk::Queue,
   pub graphics: vk::Queue,
+  pub compute: vk::Queue,
   pub transfer: vk::Queue,
 }
 
@@ -156,6 +147,9 @@ impl Queues {
 
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
 
+    if let Some(family) = queue_families.compute {
+      create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
+    }
     if let Some(family) = queue_families.transfer {
       create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
     }
@@ -168,16 +162,15 @@ impl Queues {
       ));
     }
 
-    // add graphics queues, these substitute for missing transfer
+    // add graphics queues, these substitute for missing families
     create_infos.push(get_queue_create_info(
       queue_families.get_graphics_index(),
       min(
         queue_families.graphics.queue_count,
-        1 + (if queue_families.transfer.is_none() {
-          1
-        } else {
-          0
-        }),
+        1 + [queue_families.compute, queue_families.transfer]
+          .into_iter()
+          .filter(|f| f.is_none())
+          .count() as u32,
       ),
       priorities.as_ptr(),
     ));
@@ -189,8 +182,6 @@ impl Queues {
   }
 
   pub unsafe fn retrieve(device: &ash::Device, queue_families: &QueueFamilies) -> Queues {
-    //! Should match get_queue_create_infos
-
     let mut graphics_i = 0;
     let mut get_next_graphics_queue = || {
       let queue = device.get_device_queue(queue_families.graphics.index, graphics_i);
@@ -207,6 +198,10 @@ impl Queues {
       device.get_device_queue(queue_families.presentation.index, 0)
     };
 
+    let compute = match &queue_families.compute {
+      Some(family) => device.get_device_queue(family.index, 0),
+      None => get_next_graphics_queue(),
+    };
     let transfer = match &queue_families.transfer {
       Some(family) => device.get_device_queue(family.index, 0),
       None => get_next_graphics_queue(),
@@ -215,6 +210,7 @@ impl Queues {
     Queues {
       presentation,
       graphics,
+      compute,
       transfer,
     }
   }
