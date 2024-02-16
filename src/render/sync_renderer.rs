@@ -76,7 +76,9 @@ impl SyncRenderer {
       }
 
       let old = (mem_ptr as *const ComputeOutput).as_ref().unwrap();
-      println!("{:?}", old);
+      if old.collision > 0 {
+        println!("colliding");
+      }
 
       std::ptr::copy_nonoverlapping(
         ptr::addr_of!(data) as *mut u8,
@@ -92,7 +94,7 @@ impl SyncRenderer {
 
     unsafe {
       self.renderer.compute_pools[cur_frame_i].reset(&self.renderer.device);
-      self.renderer.record_compute(cur_frame_i);
+      self.renderer.record_compute(cur_frame_i, player);
     }
 
     let submit_info = vk::SubmitInfo {

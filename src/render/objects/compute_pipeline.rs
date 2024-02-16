@@ -1,8 +1,8 @@
-use std::ptr::{self};
+use std::{mem::size_of, ptr};
 
 use ash::vk;
 
-use crate::render::shaders;
+use crate::render::{push_constants::ComputePushConstants, shaders};
 
 use super::DescriptorSets;
 
@@ -19,14 +19,19 @@ impl ComputePipeline {
   ) -> Self {
     let mut shader = shaders::compute::Shader::load(device);
 
+    let push_constant_range = vk::PushConstantRange {
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      offset: 0,
+      size: size_of::<ComputePushConstants>() as u32,
+    };
     let layout_create_info = vk::PipelineLayoutCreateInfo {
       s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
       p_next: ptr::null(),
       flags: vk::PipelineLayoutCreateFlags::empty(),
       set_layout_count: 1,
       p_set_layouts: &descriptor_sets.compute_layout,
-      push_constant_range_count: 0,
-      p_push_constant_ranges: ptr::null(),
+      push_constant_range_count: 1,
+      p_push_constant_ranges: &push_constant_range,
     };
     let layout = unsafe {
       device

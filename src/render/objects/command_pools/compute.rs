@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::render::objects::{device::QueueFamilies, ComputePipeline, DescriptorSets};
+use crate::{render::{objects::{device::QueueFamilies, ComputePipeline, DescriptorSets}, push_constants::{ComputePushConstants, SpritePushConstants}}, utility};
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
@@ -31,6 +31,7 @@ impl ComputeCommandBufferPool {
     index: usize,
     pipelines: &ComputePipeline,
     descriptor_sets: &DescriptorSets,
+    player: &SpritePushConstants,
   ) {
     let cb = self.buffer;
 
@@ -53,9 +54,21 @@ impl ComputeCommandBufferPool {
       &[],
     );
 
+    let compute_pc = ComputePushConstants {
+      position: player.position
+    };
+
+    device.cmd_push_constants(
+      cb,
+      pipelines.layout,
+      vk::ShaderStageFlags::COMPUTE,
+      0,
+      utility::any_as_u8_slice(&compute_pc),
+    );
+
     device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, pipelines.pipeline);
 
-    device.cmd_dispatch(cb, 8, 1, 1);
+    device.cmd_dispatch(cb, 64, 1, 1);
 
     device
       .end_command_buffer(cb)

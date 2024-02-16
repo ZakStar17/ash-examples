@@ -1,18 +1,29 @@
 #version 450
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
+layout(push_constant) uniform PushConstantData {
+  vec2 pos;
+} pc;
+
 layout(set = 0, binding = 0) restrict readonly buffer InputData {
   vec2 pos[];
 }
 input_data;
 
 layout(set = 0, binding = 1) restrict buffer CPUOutputData {
-  int colision;
+  int collision;
 }
 cpu_data;
 
 
 void main() {
-  // set colision to 1 if it's not 1 already
-  atomicAdd(cpu_data.colision, 1);
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= 2) {
+    return;
+  }
+
+  // set collision to 1 if it's not 1 already
+  if (distance(input_data.pos[i], pc.pos) < 0.05) {
+    atomicCompSwap(cpu_data.collision, 0, 1);
+  }
 }

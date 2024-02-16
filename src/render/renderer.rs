@@ -293,12 +293,13 @@ impl Renderer {
     );
   }
 
-  pub unsafe fn record_compute(&mut self, frame_i: usize) {
+  pub unsafe fn record_compute(&mut self, frame_i: usize, player: &SpritePushConstants,) {
     self.compute_pools[frame_i].record(
       &self.device,
       frame_i,
       &self.compute_pipeline,
       &self.descriptor_sets,
+      player
     );
   }
 
