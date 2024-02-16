@@ -27,7 +27,12 @@ impl DescriptorSets {
 
     let pool = Self::create_pool(device);
 
-    let layouts = [graphics_layout, compute_layout, compute_layout, compute_layout];
+    let layouts = [
+      graphics_layout,
+      compute_layout,
+      compute_layout,
+      compute_layout,
+    ];
     let allocate_info = vk::DescriptorSetAllocateInfo {
       s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
       p_next: ptr::null(),
@@ -96,41 +101,55 @@ impl DescriptorSets {
     };
 
     // todo: clean this
-    let compute_output_infos = [vk::DescriptorBufferInfo {
-      buffer: compute_output[0],
-      offset: 0,
-      range: size_of::<ComputeOutput>() as u64,
-    }, vk::DescriptorBufferInfo {
-      buffer: compute_output[1],
-      offset: 0,
-      range: size_of::<ComputeOutput>() as u64,
-    }];
-    let compute_output_write = [vk::WriteDescriptorSet {
-      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-      p_next: ptr::null(),
-      dst_set: self.instance_storage_set,
-      dst_binding: 1,
-      dst_array_element: 0,
-      descriptor_count: 1,
-      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-      p_buffer_info: &compute_output_infos[0],
-      p_image_info: ptr::null(),
-      p_texel_buffer_view: ptr::null(),
-    }, vk::WriteDescriptorSet {
-      s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-      p_next: ptr::null(),
-      dst_set: self.instance_storage_set,
-      dst_binding: 1,
-      dst_array_element: 0,
-      descriptor_count: 1,
-      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-      p_buffer_info: &compute_output_infos[1],
-      p_image_info: ptr::null(),
-      p_texel_buffer_view: ptr::null(),
-    }];
+    let compute_output_infos = [
+      vk::DescriptorBufferInfo {
+        buffer: compute_output[0],
+        offset: 0,
+        range: size_of::<ComputeOutput>() as u64,
+      },
+      vk::DescriptorBufferInfo {
+        buffer: compute_output[1],
+        offset: 0,
+        range: size_of::<ComputeOutput>() as u64,
+      },
+    ];
+    let compute_output_write = [
+      vk::WriteDescriptorSet {
+        s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+        p_next: ptr::null(),
+        dst_set: self.instance_storage_set,
+        dst_binding: 1,
+        dst_array_element: 0,
+        descriptor_count: 1,
+        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+        p_buffer_info: &compute_output_infos[0],
+        p_image_info: ptr::null(),
+        p_texel_buffer_view: ptr::null(),
+      },
+      vk::WriteDescriptorSet {
+        s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+        p_next: ptr::null(),
+        dst_set: self.instance_storage_set,
+        dst_binding: 1,
+        dst_array_element: 0,
+        descriptor_count: 1,
+        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+        p_buffer_info: &compute_output_infos[1],
+        p_image_info: ptr::null(),
+        p_texel_buffer_view: ptr::null(),
+      },
+    ];
 
     unsafe {
-      device.update_descriptor_sets(&[texture_write, instance_write, compute_output_write[0], compute_output_write[1]], &[]);
+      device.update_descriptor_sets(
+        &[
+          texture_write,
+          instance_write,
+          compute_output_write[0],
+          compute_output_write[1],
+        ],
+        &[],
+      );
     }
   }
 

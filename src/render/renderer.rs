@@ -9,7 +9,8 @@ use crate::{
     objects::{
       allocations::{allocate_and_bind_memory, create_buffer},
       command_pools::{
-        GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool,
+        ComputeCommandBufferPool, GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool,
+        TransferCommandBufferPool,
       },
       create_image, create_image_view, create_pipeline_cache, DescriptorSets,
     },
@@ -95,11 +96,13 @@ pub struct Renderer {
   compute_pipeline: ComputePipeline,
 
   pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
+  pub compute_pools: [ComputeCommandBufferPool; FRAMES_IN_FLIGHT],
   constant_objects: ConstantAllocatedObjects,
 
   // temporary
   pub compute_output: [vk::Buffer; FRAMES_IN_FLIGHT],
   pub compute_output_memory: vk::DeviceMemory,
+  pub compute_offset: usize,
 }
 
 impl Renderer {
@@ -195,15 +198,18 @@ impl Renderer {
       objects
     };
 
-    let compute_output = [create_buffer(
-      &device,
-      size_of::<ComputeOutput>() as u64,
-      vk::BufferUsageFlags::STORAGE_BUFFER,
-    ), create_buffer(
-      &device,
-      size_of::<ComputeOutput>() as u64,
-      vk::BufferUsageFlags::STORAGE_BUFFER,
-    )];
+    let compute_output = [
+      create_buffer(
+        &device,
+        size_of::<ComputeOutput>() as u64,
+        vk::BufferUsageFlags::STORAGE_BUFFER,
+      ),
+      create_buffer(
+        &device,
+        size_of::<ComputeOutput>() as u64,
+        vk::BufferUsageFlags::STORAGE_BUFFER,
+      ),
+    ];
     let allocation = allocate_and_bind_memory(
       &device,
       &physical_device,
@@ -222,6 +228,10 @@ impl Renderer {
 
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
+      FRAMES_IN_FLIGHT
+    );
+    let compute_pools = populate_array_with_expression!(
+      ComputeCommandBufferPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
     );
 
@@ -253,10 +263,12 @@ impl Renderer {
       compute_pipeline,
 
       graphics_pools,
+      compute_pools,
       constant_objects,
 
       compute_output,
       compute_output_memory: allocation.memory,
+      compute_offset: allocation.offsets.buffer_offsets()[1] as usize,
     }
   }
 
@@ -278,6 +290,15 @@ impl Renderer {
       &self.pipelines,
       &self.constant_objects,
       player,
+    );
+  }
+
+  pub unsafe fn record_compute(&mut self, frame_i: usize) {
+    self.compute_pools[frame_i].record(
+      &self.device,
+      frame_i,
+      &self.compute_pipeline,
+      &self.descriptor_sets,
     );
   }
 
@@ -306,6 +327,9 @@ impl Renderer {
 
     self.constant_objects.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {
+      pool.destroy_self(&self.device);
+    }
+    for pool in self.compute_pools.iter_mut() {
       pool.destroy_self(&self.device);
     }
 

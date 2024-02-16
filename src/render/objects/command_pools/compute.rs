@@ -2,28 +2,21 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{
-  render::{
-    objects::{device::QueueFamilies, ComputePipeline, DescriptorSets},
-    FRAMES_IN_FLIGHT,
-  },
-  utility,
-};
+use crate::render::objects::{device::QueueFamilies, ComputePipeline, DescriptorSets};
 
-pub struct TransferCommandBufferPool {
+pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
-  pub buffers: [vk::CommandBuffer; FRAMES_IN_FLIGHT],
+  buffer: vk::CommandBuffer,
 }
 
-impl TransferCommandBufferPool {
+impl ComputeCommandBufferPool {
   pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index());
+    let pool = super::create_command_pool(device, flags, queue_families.get_compute_index());
 
-    let buffers = super::allocate_primary_command_buffers(device, pool, FRAMES_IN_FLIGHT as u32);
-    let buffers = utility::copy_iter_into_array!(buffers.iter(), FRAMES_IN_FLIGHT);
+    let buffer = super::allocate_primary_command_buffers(device, pool, 1)[0];
 
-    Self { pool, buffers }
+    Self { pool, buffer }
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) {
@@ -39,7 +32,7 @@ impl TransferCommandBufferPool {
     pipelines: &ComputePipeline,
     descriptor_sets: &DescriptorSets,
   ) {
-    let cb = self.buffers[index];
+    let cb = self.buffer;
 
     let command_buffer_begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,

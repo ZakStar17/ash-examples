@@ -7,7 +7,7 @@ use crate::utility::populate_array_with_expression;
 
 use super::{
   frame::Frame, objects::Surface, push_constants::SpritePushConstants, renderer::Renderer,
-  FRAMES_IN_FLIGHT,
+  ComputeOutput, FRAMES_IN_FLIGHT,
 };
 
 pub struct SyncRenderer {
@@ -90,12 +90,47 @@ impl SyncRenderer {
 
     // actual rendering
 
+    let data = ComputeOutput { collision: 0 };
+
     unsafe {
-      self.renderer.graphics_pools[cur_frame_i].reset(&self.renderer.device);
+      let mut mem_ptr = self
+        .renderer
+        .device
+        .map_memory(
+          self.renderer.compute_output_memory,
+          0,
+          vk::WHOLE_SIZE,
+          vk::MemoryMapFlags::empty(),
+        )
+        .expect("...") as *mut u8;
+
+      if cur_frame_i == 1 {
+        mem_ptr = mem_ptr.byte_add(self.renderer.compute_offset);
+      }
+
+      let old = (mem_ptr as *const ComputeOutput).as_ref().unwrap();
+      println!("{:?}", old);
+
+      std::ptr::copy_nonoverlapping(
+        ptr::addr_of!(data) as *mut u8,
+        mem_ptr,
+        std::mem::size_of::<ComputeOutput>(),
+      );
 
       self
         .renderer
+        .device
+        .unmap_memory(self.renderer.compute_output_memory);
+    }
+
+    unsafe {
+      self.renderer.graphics_pools[cur_frame_i].reset(&self.renderer.device);
+      self
+        .renderer
         .record_graphics(cur_frame_i, image_index as usize, player);
+
+      self.renderer.compute_pools[cur_frame_i].reset(&self.renderer.device);
+      self.renderer.record_compute(cur_frame_i);
     }
 
     let wait_stage = vk::PipelineStageFlags::TRANSFER;

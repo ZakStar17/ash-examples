@@ -101,6 +101,13 @@ impl QueueFamilies {
       None => self.graphics.index,
     }
   }
+
+  pub fn get_compute_index(&self) -> u32 {
+    match self.compute.as_ref() {
+      Some(family) => family.index,
+      None => self.graphics.index,
+    }
+  }
 }
 
 fn get_queue_create_info(
