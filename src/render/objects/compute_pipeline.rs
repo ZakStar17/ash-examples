@@ -2,7 +2,7 @@ use std::{mem::size_of, ptr};
 
 use ash::vk;
 
-use crate::render::{push_constants::ComputePushConstants, shaders};
+use crate::render::{compute_data::ComputePushConstants, shaders};
 
 use super::DescriptorSets;
 

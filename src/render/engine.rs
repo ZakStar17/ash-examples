@@ -52,8 +52,12 @@ impl RenderEngine {
     initial_window_size
   }
 
-  pub fn render_frame(&mut self, player: &SpritePushConstants) -> Result<(), ()> {
-    self.windowed.as_mut().unwrap().render_next_frame(player)
+  pub fn render_frame(&mut self, delta_time: f32, player: &SpritePushConstants) -> Result<(), ()> {
+    self
+      .windowed
+      .as_mut()
+      .unwrap()
+      .render_next_frame(delta_time, player)
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {
@@ -129,7 +133,11 @@ impl WindowedRender {
     )
   }
 
-  pub fn render_next_frame(&mut self, player: &SpritePushConstants) -> Result<(), ()> {
+  pub fn render_next_frame(
+    &mut self,
+    delta_time: f32,
+    player: &SpritePushConstants,
+  ) -> Result<(), ()> {
     let mut extent_changed = false;
 
     if self.extent_may_have_changed {
@@ -146,9 +154,13 @@ impl WindowedRender {
       }
     }
 
-    self
-      .sync
-      .render_next_frame(&self.surface, self.window_size, extent_changed, player)
+    self.sync.render_next_frame(
+      &self.surface,
+      self.window_size,
+      extent_changed,
+      delta_time,
+      player,
+    )
   }
 
   pub fn window_resized(&mut self, new_size: PhysicalSize<u32>) {

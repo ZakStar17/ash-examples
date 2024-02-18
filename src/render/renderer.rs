@@ -1,4 +1,4 @@
-use std::{mem::size_of, ops::BitOr, ptr};
+use std::{ops::BitOr, ptr};
 
 use ash::vk;
 use image::ImageError;
@@ -7,20 +7,21 @@ use winit::dpi::PhysicalSize;
 use crate::{
   render::{
     objects::{
-      allocations::{allocate_and_bind_memory, create_buffer},
+      allocations::allocate_and_bind_memory,
       command_pools::{
         ComputeCommandBufferPool, GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool,
         TransferCommandBufferPool,
       },
       create_image, create_image_view, create_pipeline_cache, DescriptorSets,
     },
-    ComputeOutput, RENDER_FORMAT, TEXTURE_PATH,
+    RENDER_FORMAT, TEXTURE_PATH,
   },
   utility::{self, populate_array_with_expression},
   RESOLUTION,
 };
 
 use super::{
+  compute_data::ComputeData,
   objects::{
     create_framebuffer, create_render_pass,
     device::{create_logical_device, PhysicalDevice, Queues},
@@ -99,10 +100,7 @@ pub struct Renderer {
   pub compute_pools: [ComputeCommandBufferPool; FRAMES_IN_FLIGHT],
   constant_objects: ConstantAllocatedObjects,
 
-  // temporary
-  pub compute_output: [vk::Buffer; FRAMES_IN_FLIGHT],
-  pub compute_output_memory: vk::DeviceMemory,
-  pub compute_offset: usize,
+  pub compute_data: ComputeData,
 }
 
 impl Renderer {
@@ -198,33 +196,9 @@ impl Renderer {
       objects
     };
 
-    let compute_output = [
-      create_buffer(
-        &device,
-        size_of::<ComputeOutput>() as u64,
-        vk::BufferUsageFlags::STORAGE_BUFFER,
-      ),
-      create_buffer(
-        &device,
-        size_of::<ComputeOutput>() as u64,
-        vk::BufferUsageFlags::STORAGE_BUFFER,
-      ),
-    ];
-    let allocation = allocate_and_bind_memory(
-      &device,
-      &physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE,
-      vk::MemoryPropertyFlags::HOST_CACHED,
-      &compute_output,
-      &[],
-    )
-    .unwrap();
-    descriptor_sets.write_sets(
-      &device,
-      constant_objects.texture_view,
-      constant_objects.instance,
-      compute_output,
-    );
+    let compute_data = ComputeData::new(&device, &physical_device);
+
+    descriptor_sets.write_sets(&device, constant_objects.texture_view, &compute_data);
 
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
@@ -266,9 +240,7 @@ impl Renderer {
       compute_pools,
       constant_objects,
 
-      compute_output,
-      compute_output_memory: allocation.memory,
-      compute_offset: allocation.offsets.buffer_offsets()[1] as usize,
+      compute_data,
     }
   }
 
@@ -280,6 +252,7 @@ impl Renderer {
   ) {
     self.graphics_pools[frame_i].record(
       &self.device,
+      &self.physical_device.queue_families,
       self.render_pass,
       self.render_targets[frame_i],
       self.framebuffers[frame_i],
@@ -289,17 +262,20 @@ impl Renderer {
       &self.descriptor_sets,
       &self.pipelines,
       &self.constant_objects,
+      self.compute_data.instance_graphics[frame_i],
+      self.compute_data.max_valid_projectile_count() as u32,
       player,
     );
   }
 
-  pub unsafe fn record_compute(&mut self, frame_i: usize, player: &SpritePushConstants) {
+  pub unsafe fn record_compute(&mut self, frame_i: usize) {
     self.compute_pools[frame_i].record(
       &self.device,
+      &self.physical_device.queue_families,
       frame_i,
       &self.compute_pipeline,
       &self.descriptor_sets,
-      player,
+      &self.compute_data,
     );
   }
 
@@ -322,9 +298,7 @@ impl Renderer {
   }
 
   pub unsafe fn destroy_self(&mut self) {
-    self.device.destroy_buffer(self.compute_output[0], None);
-    self.device.destroy_buffer(self.compute_output[1], None);
-    self.device.free_memory(self.compute_output_memory, None);
+    self.compute_data.destroy_self(&self.device);
 
     self.constant_objects.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {

@@ -107,7 +107,10 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
         }
 
         if engine_running {
-          if engine.render_frame(&player.sprite_data()).is_err() {
+          if engine
+            .render_frame(time_passed.as_secs_f32(), &player.sprite_data())
+            .is_err()
+          {
             log::warn!("Frame failed to render");
           }
         }

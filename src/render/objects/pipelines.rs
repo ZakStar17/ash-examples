@@ -6,10 +6,8 @@ use std::{
 use ash::vk;
 
 use crate::render::{
-  push_constants::SpritePushConstants,
-  shaders,
-  vertices::{vertex_input_state_create_info, InstanceVertex},
-  Vertex,
+  compute_data::Projectile, push_constants::SpritePushConstants, shaders,
+  vertices::vertex_input_state_create_info, Vertex,
 };
 
 use super::DescriptorSets;
@@ -87,7 +85,7 @@ impl Pipelines {
     let projectiles_shader_stages = projectiles_shader.get_pipeline_shader_creation_info();
 
     let player_vertex_input_state = vertex_input_state_create_info!(Vertex);
-    let projectiles_vertex_input_state = vertex_input_state_create_info!(Vertex, InstanceVertex);
+    let projectiles_vertex_input_state = vertex_input_state_create_info!(Vertex, Projectile);
 
     let input_assembly_state_ci = triangle_input_assembly_state();
 

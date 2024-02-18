@@ -7,7 +7,7 @@ use crate::utility::populate_array_with_expression;
 
 use super::{
   frame::Frame, objects::Surface, push_constants::SpritePushConstants, renderer::Renderer,
-  ComputeOutput, FRAMES_IN_FLIGHT,
+  FRAMES_IN_FLIGHT,
 };
 
 pub struct SyncRenderer {
@@ -41,6 +41,7 @@ impl SyncRenderer {
     surface: &Surface,
     window_size: PhysicalSize<u32>,
     extent_changed: bool,
+    delta_time: f32,
     player: &SpritePushConstants,
   ) -> Result<(), ()> {
     if extent_changed {
@@ -57,44 +58,13 @@ impl SyncRenderer {
 
     // compute
 
-    let data = ComputeOutput { collision: 0 };
-
-    unsafe {
-      let mut mem_ptr = self
-        .renderer
-        .device
-        .map_memory(
-          self.renderer.compute_output_memory,
-          0,
-          vk::WHOLE_SIZE,
-          vk::MemoryMapFlags::empty(),
-        )
-        .expect("...") as *mut u8;
-
-      if cur_frame_i == 1 {
-        mem_ptr = mem_ptr.byte_add(self.renderer.compute_offset);
-      }
-
-      let old = (mem_ptr as *const ComputeOutput).as_ref().unwrap();
-      if old.collision > 0 {
-        println!("colliding");
-      }
-
-      std::ptr::copy_nonoverlapping(
-        ptr::addr_of!(data) as *mut u8,
-        mem_ptr,
-        std::mem::size_of::<ComputeOutput>(),
-      );
-
-      self
-        .renderer
-        .device
-        .unmap_memory(self.renderer.compute_output_memory);
-    }
-
+    self
+      .renderer
+      .compute_data
+      .update(cur_frame_i, delta_time, player.position);
     unsafe {
       self.renderer.compute_pools[cur_frame_i].reset(&self.renderer.device);
-      self.renderer.record_compute(cur_frame_i, player);
+      self.renderer.record_compute(cur_frame_i);
     }
 
     let submit_info = vk::SubmitInfo {
@@ -166,7 +136,7 @@ impl SyncRenderer {
 
     let wait_semaphores = [cur_frame.compute_finished, cur_frame.image_available];
     let wait_stages = [
-      vk::PipelineStageFlags::COMPUTE_SHADER,
+      vk::PipelineStageFlags::TRANSFER,
       vk::PipelineStageFlags::TRANSFER,
     ];
     let submit_info = vk::SubmitInfo {

@@ -19,8 +19,3 @@ impl SpritePushConstants {
     }
   }
 }
-
-#[repr(C)]
-pub struct ComputePushConstants {
-  pub position: [f32; 2],
-}

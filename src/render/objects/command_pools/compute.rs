@@ -92,12 +92,12 @@ impl ComputeCommandBufferPool {
         pipelines.layout,
         vk::ShaderStageFlags::COMPUTE,
         0,
-        utility::any_as_u8_slice(&compute_data.push_constants),
+        utility::any_as_u8_slice(&compute_data.constants),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, pipelines.pipeline);
 
       // one invocation for each existing projectile + 1 to add new projectiles
-      let group_count: u32 = (compute_data.push_constants.cur_projectile_count + 1) / 8 + 1;
+      let group_count: u32 = (compute_data.constants.cur_projectile_count + 1) / 8 + 1;
       device.cmd_dispatch(cb, group_count, 1, 1);
     }
 
@@ -139,7 +139,6 @@ impl ComputeCommandBufferPool {
     let region = vk::BufferCopy {
       src_offset: 0,
       dst_offset: 0,
-      // maximum count of projectiles that can be valid
       size: (compute_data.max_valid_projectile_count() * size_of::<Projectile>()) as u64,
     };
     // instance graphics belongs to a different queue but its contents need not to be preserved

@@ -45,9 +45,3 @@ pub const OUT_OF_BOUNDS_AREA_COLOR: vk::ClearColorValue = vk::ClearColorValue {
 const RENDER_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 
 const TEXTURE_PATH: &'static str = "./sprites.png";
-
-#[repr(C)]
-#[derive(Debug)]
-struct ComputeOutput {
-  collision: u32,
-}

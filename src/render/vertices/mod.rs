@@ -1,4 +1,3 @@
-mod instance;
 mod vertex;
 
 use std::{
@@ -8,7 +7,6 @@ use std::{
 
 use ash::vk;
 
-pub use instance::InstanceVertex;
 pub use vertex::Vertex;
 
 pub struct PipelineVertexInputStateCreateInfo {
