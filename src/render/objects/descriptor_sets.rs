@@ -1,13 +1,8 @@
-use std::{
-  mem::{size_of, size_of_val},
-  ptr::{self},
-};
+use std::ptr::{self};
 
 use ash::vk;
 
-use crate::render::{compute_data::ComputeData, ComputeOutput, FRAMES_IN_FLIGHT};
-
-use super::constant_allocations::INSTANCE_TEMP;
+use crate::render::{compute_data::ComputeData, FRAMES_IN_FLIGHT};
 
 pub struct DescriptorSets {
   pub graphics_layout: vk::DescriptorSetLayout,
@@ -15,11 +10,60 @@ pub struct DescriptorSets {
 
   pool: vk::DescriptorPool,
 
-  pub compute: [vk::DescriptorSet; 2],
   pub texture_set: vk::DescriptorSet,
+  pub compute_sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl DescriptorSets {
+  const SET_COUNT: u32 = 3;
+
+  const SIZES: [vk::DescriptorPoolSize; 2] = [
+    vk::DescriptorPoolSize {
+      ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+      descriptor_count: 1,
+    },
+    vk::DescriptorPoolSize {
+      ty: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: ComputeData::COMPUTE_BUFFER_COUNT,
+    },
+  ];
+
+  fn graphics_layout_bindings(
+    texture_sampler: *const vk::Sampler,
+  ) -> [vk::DescriptorSetLayoutBinding; 1] {
+    [vk::DescriptorSetLayoutBinding {
+      binding: 0,
+      descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::FRAGMENT,
+      p_immutable_samplers: texture_sampler,
+    }]
+  }
+
+  const COMPUTE_LAYOUT_BINDINGS: [vk::DescriptorSetLayoutBinding; 3] = [
+    vk::DescriptorSetLayoutBinding {
+      binding: 0,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+    },
+    vk::DescriptorSetLayoutBinding {
+      binding: 1,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+    },
+    vk::DescriptorSetLayoutBinding {
+      binding: 2,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+    },
+  ];
+
   pub fn new(device: &ash::Device, texture_sampler: vk::Sampler) -> Self {
     let graphics_layout = Self::create_graphics_layout(device, texture_sampler);
     let compute_layout = Self::create_compute_layout(device);
@@ -45,30 +89,19 @@ impl DescriptorSets {
       compute_layout,
       pool,
       texture_set: descriptor_sets[0],
-      compute: [descriptor_sets[1], descriptor_sets[2]],
+      compute_sets: [descriptor_sets[1], descriptor_sets[2]],
     }
   }
 
   fn create_pool(device: &ash::Device) -> vk::DescriptorPool {
-    let sizes = [
-      vk::DescriptorPoolSize {
-        ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-        descriptor_count: 1,
-      },
-      vk::DescriptorPoolSize {
-        ty: vk::DescriptorType::STORAGE_BUFFER,
-        descriptor_count: 1 + 2,
-      },
-    ];
     let pool_create_info = vk::DescriptorPoolCreateInfo {
       s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
       p_next: ptr::null(),
-      pool_size_count: sizes.len() as u32,
-      p_pool_sizes: sizes.as_ptr(),
-      max_sets: 3,
+      pool_size_count: Self::SIZES.len() as u32,
+      p_pool_sizes: Self::SIZES.as_ptr(),
+      max_sets: Self::SET_COUNT,
       flags: vk::DescriptorPoolCreateFlags::empty(),
     };
-
     unsafe {
       device
         .create_descriptor_pool(&pool_create_info, None)
@@ -76,13 +109,25 @@ impl DescriptorSets {
     }
   }
 
-  // texture_set must not be in use
+  fn create_graphics_layout(
+    device: &ash::Device,
+    texture_sampler: vk::Sampler,
+  ) -> vk::DescriptorSetLayout {
+    let ptr = &texture_sampler;
+    let bindings = Self::graphics_layout_bindings(ptr);
+    create_layout(device, &bindings)
+  }
+
+  fn create_compute_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
+    create_layout(device, &Self::COMPUTE_LAYOUT_BINDINGS)
+  }
+
+  // write texture set and all compute data buffer sets
   pub fn write_sets(
     &mut self,
     device: &ash::Device,
     texture_view: vk::ImageView,
-    instance: vk::Buffer,
-    compute_data: &ComputeData
+    compute_data: &ComputeData,
   ) {
     let texture_info = vk::DescriptorImageInfo {
       sampler: vk::Sampler::null(), // indicated and set as constant in the layout
@@ -102,63 +147,91 @@ impl DescriptorSets {
       p_texel_buffer_view: ptr::null(),
     };
 
-    let instance_info = vk::DescriptorBufferInfo {
-      buffer: instance,
+    let shader_output_0 = vk::DescriptorBufferInfo {
+      buffer: compute_data.shader_output[0],
       offset: 0,
-      range: size_of_val(&INSTANCE_TEMP) as u64,
+      range: vk::WHOLE_SIZE,
     };
-    let instance_write = vk::WriteDescriptorSet {
+    let shader_output_1 = vk::DescriptorBufferInfo {
+      buffer: compute_data.shader_output[1],
+      offset: 0,
+      range: vk::WHOLE_SIZE,
+    };
+    // write for first set and read for second
+    let instance_compute_0 = vk::DescriptorBufferInfo {
+      buffer: compute_data.instance_compute[0],
+      offset: 0,
+      range: vk::WHOLE_SIZE,
+    };
+    // write for second and read for first
+    let instance_compute_1 = vk::DescriptorBufferInfo {
+      buffer: compute_data.instance_compute[1],
+      offset: 0,
+      range: vk::WHOLE_SIZE,
+    };
+
+    let base = vk::WriteDescriptorSet {
       s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
       p_next: ptr::null(),
-      dst_set: self.compute[0],
+      dst_set: vk::DescriptorSet::null(),
       dst_binding: 0,
       dst_array_element: 0,
       descriptor_count: 1,
       descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-      p_buffer_info: &instance_info,
+      p_buffer_info: ptr::null(),
       p_image_info: ptr::null(),
       p_texel_buffer_view: ptr::null(),
     };
-    let mut instance_write_2 = instance_write.clone();
-    instance_write_2.dst_set = self.compute[1];
-
-    // todo: clean this
-    let compute_output_infos = [
-      vk::DescriptorBufferInfo {
-        buffer: compute_output[0],
-        offset: 0,
-        range: size_of::<ComputeOutput>() as u64,
+    let first_set_writes = [
+      vk::WriteDescriptorSet {
+        dst_set: self.compute_sets[0],
+        p_buffer_info: &shader_output_0,
+        dst_binding: 0,
+        ..base
       },
-      vk::DescriptorBufferInfo {
-        buffer: compute_output[1],
-        offset: 0,
-        range: size_of::<ComputeOutput>() as u64,
+      vk::WriteDescriptorSet {
+        dst_set: self.compute_sets[0],
+        p_buffer_info: &instance_compute_1,
+        dst_binding: 1,
+        ..base
+      },
+      vk::WriteDescriptorSet {
+        dst_set: self.compute_sets[0],
+        p_buffer_info: &instance_compute_0,
+        dst_binding: 2,
+        ..base
       },
     ];
-    let compute_output_write = [
-      vk::WriteDescriptorSet {
-        s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-        p_next: ptr::null(),
-        dst_set: self.compute[0],
-        dst_binding: 1,
-        dst_array_element: 0,
-        descriptor_count: 1,
-        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        p_buffer_info: &compute_output_infos[0],
-        p_image_info: ptr::null(),
-        p_texel_buffer_view: ptr::null(),
+
+    let second_set_shader_output_write = vk::WriteDescriptorSet {
+      dst_set: self.compute_sets[1],
+      p_buffer_info: &shader_output_1,
+      dst_binding: 0,
+      ..base
+    };
+
+    let from_first_to_second_copy_base = vk::CopyDescriptorSet {
+      s_type: vk::StructureType::COPY_DESCRIPTOR_SET,
+      p_next: ptr::null(),
+      src_set: self.compute_sets[0],
+      src_binding: 0,
+      src_array_element: 0,
+      dst_set: self.compute_sets[1],
+      dst_binding: 0,
+      dst_array_element: 0,
+      descriptor_count: 0,
+    };
+    // second set has instance_compute buffers reverted
+    let copies = [
+      vk::CopyDescriptorSet {
+        src_binding: 1,
+        dst_binding: 2,
+        ..from_first_to_second_copy_base
       },
-      vk::WriteDescriptorSet {
-        s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-        p_next: ptr::null(),
-        dst_set: self.compute[1],
+      vk::CopyDescriptorSet {
+        src_binding: 2,
         dst_binding: 1,
-        dst_array_element: 0,
-        descriptor_count: 1,
-        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        p_buffer_info: &compute_output_infos[1],
-        p_image_info: ptr::null(),
-        p_texel_buffer_view: ptr::null(),
+        ..from_first_to_second_copy_base
       },
     ];
 
@@ -166,48 +239,14 @@ impl DescriptorSets {
       device.update_descriptor_sets(
         &[
           texture_write,
-          instance_write,
-          instance_write_2,
-          compute_output_write[0],
-          compute_output_write[1],
+          first_set_writes[0],
+          first_set_writes[1],
+          first_set_writes[2],
+          second_set_shader_output_write,
         ],
-        &[],
+        &copies,
       );
     }
-  }
-
-  fn create_graphics_layout(
-    device: &ash::Device,
-    texture_sampler: vk::Sampler,
-  ) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding {
-      binding: 0,
-      descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-      descriptor_count: 1,
-      stage_flags: vk::ShaderStageFlags::FRAGMENT,
-      p_immutable_samplers: &texture_sampler,
-    }];
-    create_layout(device, &bindings)
-  }
-
-  fn create_compute_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-    let bindings = [
-      vk::DescriptorSetLayoutBinding {
-        binding: 0,
-        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        descriptor_count: 1,
-        stage_flags: vk::ShaderStageFlags::COMPUTE,
-        p_immutable_samplers: ptr::null(),
-      },
-      vk::DescriptorSetLayoutBinding {
-        binding: 1,
-        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        descriptor_count: 1,
-        stage_flags: vk::ShaderStageFlags::COMPUTE,
-        p_immutable_samplers: ptr::null(),
-      },
-    ];
-    create_layout(device, &bindings)
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

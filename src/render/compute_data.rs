@@ -15,7 +15,7 @@ use super::{
   FRAMES_IN_FLIGHT,
 };
 
-const PUSH_CONSTANT_NEXT_PROJECTILES_COUNT: usize = 4;
+pub const PUSH_CONSTANT_NEXT_PROJECTILES_COUNT: usize = 4;
 
 // all data passed to the shader follows std430 layout rules
 // https://www.oreilly.com/library/view/opengl-programming-guide/9780132748445/app09lev1sec3.html
@@ -62,16 +62,16 @@ impl Projectile {
 }
 
 #[repr(C)]
-// structure and layout equal to what is defined in the shader
+#[derive(Debug, Default)]
 pub struct ComputePushConstants {
-  player_pos: [f32; 2], // size: 2
-  delta_time: f32,
+  pub player_pos: [f32; 2], // size: 2
+  pub delta_time: f32,
 
-  target_projectile_count: u32,
-  cur_projectile_count: u32, // size: 5
+  pub target_projectile_count: u32,
+  pub cur_projectile_count: u32, // size: 5
 
   _padding0: [u32; 3], // size: 8
-  next_projectiles: [Projectile; PUSH_CONSTANT_NEXT_PROJECTILES_COUNT],
+  pub next_projectiles: [Projectile; PUSH_CONSTANT_NEXT_PROJECTILES_COUNT],
 }
 
 // host accessible data after shader dispatch
@@ -82,16 +82,6 @@ pub struct ComputeOutput {
   new_projectile_count: u32,
 }
 
-impl ComputeOutput {
-  pub fn init() -> Self {
-    Self {
-      colliding: 0,
-      pc_next_projectiles_i: 0,
-      new_projectile_count: 0,
-    }
-  }
-}
-
 pub struct ComputeData {
   pub host_memory: vk::DeviceMemory,
   pub shader_output: [vk::Buffer; FRAMES_IN_FLIGHT],
@@ -99,15 +89,22 @@ pub struct ComputeData {
   pub device_memory: vk::DeviceMemory,
   pub instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT],
   pub instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
+
+  pub instance_size: u64,
+
+  pub push_constants: ComputePushConstants,
 }
 
 impl ComputeData {
+  pub const COMPUTE_BUFFER_COUNT: u32 = 4;
+
   pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Self {
     let shader_output = utility::populate_array_with_expression!(
       create_buffer(
         device,
         size_of::<ComputeOutput>() as u64,
-        vk::BufferUsageFlags::STORAGE_BUFFER,
+        // transfer dst is used in a buffer clear command
+        vk::BufferUsageFlags::STORAGE_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_DST),
       ),
       FRAMES_IN_FLIGHT
     );
@@ -121,18 +118,19 @@ impl ComputeData {
     )
     .unwrap();
 
+    let instance_size = (size_of::<Projectile>() * 4000) as u64;
     let instance_compute = utility::populate_array_with_expression!(
       create_buffer(
         device,
-        (size_of::<Projectile>() * 4000) as u64,
-        vk::BufferUsageFlags::VERTEX_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_SRC),
+        instance_size,
+        vk::BufferUsageFlags::STORAGE_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_SRC),
       ),
       FRAMES_IN_FLIGHT
     );
     let instance_graphics = utility::populate_array_with_expression!(
       create_buffer(
         device,
-        (size_of::<Projectile>() * 4000) as u64,
+        instance_size,
         vk::BufferUsageFlags::VERTEX_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_DST),
       ),
       FRAMES_IN_FLIGHT
@@ -151,7 +149,10 @@ impl ComputeData {
       vk::MemoryPropertyFlags::empty(),
       &device_buffers,
       &[],
-    ).unwrap();
+    )
+    .unwrap();
+
+    let push_constants = ComputePushConstants::default();
 
     Self {
       host_memory: host_alloc.memory,
@@ -160,7 +161,20 @@ impl ComputeData {
       device_memory: device_alloc.memory,
       instance_compute,
       instance_graphics,
+
+      instance_size,
+
+      push_constants,
     }
+  }
+
+  // maximum projectile count that can be valid after a shader invocation
+  pub fn max_valid_projectile_count(&self) -> usize {
+    (self.push_constants.target_projectile_count as usize)
+      .min(
+        self.push_constants.cur_projectile_count as usize
+          + PUSH_CONSTANT_NEXT_PROJECTILES_COUNT,
+      )
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

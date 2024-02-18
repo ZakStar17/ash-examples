@@ -1,7 +1,4 @@
-use std::{
-  ops::BitOr,
-  ptr::{self, addr_of},
-};
+use std::ptr::{self, addr_of};
 
 use ash::vk;
 
@@ -9,7 +6,7 @@ use crate::{
   render::{
     objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, Pipelines},
     push_constants::SpritePushConstants,
-    sprites::SQUARE_INDICES,
+    sprites::{PLAYER_VERTICES, SQUARE_INDICES},
     BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
   },
   utility,
@@ -42,6 +39,7 @@ impl GraphicsCommandBufferPool {
   pub unsafe fn record(
     &mut self,
     device: &ash::Device,
+    queue_families: &QueueFamilies,
 
     render_pass: vk::RenderPass,
     render_image: vk::Image,
@@ -54,6 +52,8 @@ impl GraphicsCommandBufferPool {
     descriptor_sets: &DescriptorSets,
     pipelines: &Pipelines,
     constant_allocated_objects: &ConstantAllocatedObjects,
+    instance_buffer: vk::Buffer,
+    instance_count: u32,
     player: &SpritePushConstants, // position of the object to be rendered
   ) {
     let cb = self.triangle;
@@ -78,22 +78,25 @@ impl GraphicsCommandBufferPool {
     };
 
     {
-      let swapchain_transfer_dst_layout = vk::BufferMemoryBarrier {
-        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      let acquire_graphics_buffer = vk::BufferMemoryBarrier {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER,
         p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags::NONE,
-        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        src_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership acquire
+        dst_access_mask: vk::AccessFlags::VERTEX_ATTRIBUTE_READ,
+        src_queue_family_index: queue_families.get_compute_index(),
+        dst_queue_family_index: queue_families.get_graphics_index(),
+        buffer: instance_buffer,
+        offset: 0,
+        size: vk::WHOLE_SIZE,
       };
       device.cmd_pipeline_barrier(
         cb,
         vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::VERTEX_INPUT,
         vk::DependencyFlags::empty(),
         &[],
+        &[acquire_graphics_buffer],
         &[],
-        &[swapchain_transfer_dst_layout],
       );
     }
 
@@ -126,10 +129,7 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_vertex_buffers(
         cb,
         0,
-        &[
-          constant_allocated_objects.vertex,
-          constant_allocated_objects.instance,
-        ],
+        &[constant_allocated_objects.vertex, instance_buffer],
         &[0, 0],
       );
       device.cmd_bind_index_buffer(
@@ -140,7 +140,14 @@ impl GraphicsCommandBufferPool {
       );
 
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.projectiles);
-      device.cmd_draw_indexed(cb, SQUARE_INDICES.len() as u32, 2, 0, 4, 0);
+      device.cmd_draw_indexed(
+        cb,
+        SQUARE_INDICES.len() as u32,
+        instance_count,
+        0,
+        PLAYER_VERTICES.len() as i32,
+        0,
+      );
 
       device.cmd_push_constants(
         cb,

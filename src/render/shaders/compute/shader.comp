@@ -38,6 +38,13 @@ layout(set = 0, binding = 2) restrict writeonly buffer DataOut {
 }
 data_out;
 
+Projectile invalid_projectile() {
+  float positive_inf = uintBitsToFloat(0x7F800000);
+
+  Projectile p;
+  p.pos = vec2(positive_inf, positive_inf);
+  return p;
+}
 
 bool out_of_bounds(Projectile p) {
   // no out of bounds for top of screen
@@ -64,11 +71,11 @@ void main() {
     if (next_i < PC_NEXT_PROJECTILES_SIZE) {
       uint j = 0;
       for (; j < wanted_new; j++) {
-        data_out.projectiles[i + j] = pc.next_projectiles[next_i];
-        
-        next_i += 1;
-        if (next_i >= PC_NEXT_PROJECTILES_SIZE) {
-          break;
+        if (next_i < PC_NEXT_PROJECTILES_SIZE) {
+          data_out.projectiles[i + j] = pc.next_projectiles[next_i];
+          next_i += 1;
+        } else {
+          data_out.projectiles[i + j] = invalid_projectile();
         }
       }
 
@@ -87,11 +94,11 @@ void main() {
 
   if (out_of_bounds(p_out)) {
     // Replace projectile with new one (in this case it is more like teleporting it to a new place)
-    // This can fail if there are no new projectiles in push constant data,
-    // but it is fine in this case as the projectile will be out of screen
     uint next_i = atomicAdd(cpu_out.pc_next_projectiles_i, 1);
     if (next_i < PC_NEXT_PROJECTILES_SIZE) {
       p_out = pc.next_projectiles[next_i];
+    } else {
+      p_out = invalid_projectile();
     }
   } else {
     // collision test
