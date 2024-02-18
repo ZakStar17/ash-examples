@@ -111,6 +111,7 @@ impl Renderer {
   ) -> Self {
     let physical_device = unsafe { PhysicalDevice::select(&instance, surface) };
     let (device, queues) = create_logical_device(&instance, &physical_device);
+    log::debug!("Queue handles:\n{:#?}", queues);
 
     let render_pass = create_render_pass(&device, RENDER_FORMAT);
     let render_targets = utility::populate_array_with_expression!(

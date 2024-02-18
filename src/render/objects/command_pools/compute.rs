@@ -114,6 +114,16 @@ impl ComputeCommandBufferPool {
         offset: 0,
         size: vk::WHOLE_SIZE,
       };
+      device.cmd_pipeline_barrier(
+        cb,
+        vk::PipelineStageFlags::COMPUTE_SHADER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[instate_compute_write],
+        &[],
+      );
+
       let shader_output = vk::BufferMemoryBarrier {
         s_type: vk::StructureType::BUFFER_MEMORY_BARRIER,
         p_next: ptr::null(),
@@ -128,10 +138,10 @@ impl ComputeCommandBufferPool {
       device.cmd_pipeline_barrier(
         cb,
         vk::PipelineStageFlags::COMPUTE_SHADER,
-        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::HOST,
         vk::DependencyFlags::empty(),
         &[],
-        &[instate_compute_write, shader_output],
+        &[shader_output],
         &[],
       );
     }

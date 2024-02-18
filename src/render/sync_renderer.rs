@@ -54,6 +54,11 @@ impl SyncRenderer {
 
     cur_frame.wait_finished(&self.renderer.device);
 
+    unsafe {    
+      self.renderer.device.device_wait_idle().unwrap();
+    }
+    //std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
+
     // current frame resources are now safe to use as they are not being used by the GPU
 
     // compute

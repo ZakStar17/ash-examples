@@ -99,18 +99,3 @@ macro_rules! populate_array_with_expression {
   }};
 }
 pub use populate_array_with_expression;
-
-// advances $iter by $size and copies the values into a array
-#[macro_export]
-macro_rules! copy_iter_into_array {
-  ($iter:expr, $size:expr) => {{
-    use std::mem::MaybeUninit;
-
-    let mut tmp: [MaybeUninit<_>; $size] = unsafe { MaybeUninit::uninit().assume_init() };
-    for i in 0..$size {
-      tmp[i] = MaybeUninit::new($iter.next().unwrap());
-    }
-    unsafe { std::mem::transmute::<_, [_; $size]>(tmp) }
-  }};
-}
-pub use copy_iter_into_array;

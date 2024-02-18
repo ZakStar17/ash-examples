@@ -6,6 +6,7 @@ layout(location = 1) in vec2 tex_coords;
 
 // instance
 layout(location = 2) in vec2 instance_pos;
+layout(location = 3) in vec2 _instance_vel;
 
 layout(location = 0) out vec2 out_tex_coords;
 

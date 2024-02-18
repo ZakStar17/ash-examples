@@ -65,22 +65,25 @@ void main() {
     // this is in order for no holes to exist where projectiles are undefined 
     // (as pc.next_projectiles has finite length)
 
-    uint wanted_new = pc.target_projectile_count - pc.cur_projectile_count;
+    uint to_add_count = min(pc.target_projectile_count - pc.cur_projectile_count, PC_NEXT_PROJECTILES_SIZE);
     // consume remaining next projectiles
-    uint next_i = atomicAdd(cpu_out.pc_next_projectiles_i, wanted_new);
+    uint next_i = atomicAdd(cpu_out.pc_next_projectiles_i, to_add_count);
     if (next_i < PC_NEXT_PROJECTILES_SIZE) {
-      uint j = 0;
-      for (; j < wanted_new; j++) {
-        if (next_i < PC_NEXT_PROJECTILES_SIZE) {
-          data_out.projectiles[i + j] = pc.next_projectiles[next_i];
-          next_i += 1;
-        } else {
-          data_out.projectiles[i + j] = invalid_projectile();
-        }
-      }
-
       // doesn't need to be atomic as this is the only invocation writing it
-      cpu_out.new_projectile_count = j;
+      cpu_out.new_projectile_count = PC_NEXT_PROJECTILES_SIZE - next_i;
+
+      uint j = 0;
+      // add valid
+      for (; next_i < PC_NEXT_PROJECTILES_SIZE; next_i++) {
+        data_out.projectiles[i + j] = pc.next_projectiles[next_i];
+        j += 1;
+      }
+      // set remaining projectiles to invalid
+      // these are still passed to the graphics shader as the command buffer doesn't know how many
+      // projectiles have been written
+      for (; j < to_add_count; j++) {
+        data_out.projectiles[i + j] = invalid_projectile();
+      }
     }
 
     return;
@@ -90,7 +93,7 @@ void main() {
 
   Projectile p_out;
   p_out.vel = p_in.vel + (p_in.vel * 0.1 * pc.delta_time);
-  p_out.pos += p_in.vel * pc.delta_time;
+  p_out.pos = p_in.pos + (p_in.vel * pc.delta_time);
 
   if (out_of_bounds(p_out)) {
     // Replace projectile with new one (in this case it is more like teleporting it to a new place)

@@ -54,7 +54,7 @@ impl Projectile {
         offset: offset_of!(Self, pos) as u32,
       },
       vk::VertexInputAttributeDescription {
-        location: offset,
+        location: offset + 1,
         binding,
         format: vk::Format::R32G32_SFLOAT,
         offset: offset_of!(Self, vel) as u32,
@@ -114,6 +114,7 @@ impl ComputeData {
       ),
       FRAMES_IN_FLIGHT
     );
+    log::debug!("Allocating memory for compute output buffers");
     let host_alloc = allocate_and_bind_memory(
       device,
       physical_device,
@@ -124,7 +125,7 @@ impl ComputeData {
     )
     .unwrap();
 
-    let shader_output_ptr_0 = unsafe {
+    let host_ptr = unsafe {
       device
         .map_memory(
           host_alloc.memory,
@@ -132,24 +133,21 @@ impl ComputeData {
           vk::WHOLE_SIZE,
           vk::MemoryMapFlags::empty(),
         )
-        .expect("...") as *mut ComputeOutput
+        .expect("...") as *mut u8
     };
-    let shader_output_ptr_1 = unsafe {
-      device
-        .map_memory(
-          host_alloc.memory,
-          0,
-          vk::WHOLE_SIZE,
-          vk::MemoryMapFlags::empty(),
-        )
-        .expect("...") as *mut ComputeOutput
-    };
-    let shader_output_data = unsafe {
+    let offsets = host_alloc.offsets.buffer_offsets();
+    let mut shader_output_data = unsafe {
       [
-        NonNull::new_unchecked(shader_output_ptr_0),
-        NonNull::new_unchecked(shader_output_ptr_1),
+        NonNull::new_unchecked(host_ptr.add(offsets[0] as usize) as *mut ComputeOutput),
+        NonNull::new_unchecked(host_ptr.add(offsets[1] as usize) as *mut ComputeOutput),
       ]
     };
+
+    // clear outputs for first shader update
+    unsafe {
+      *shader_output_data[0].as_mut() = ComputeOutput::default();
+      *shader_output_data[1].as_mut() = ComputeOutput::default();
+    }
 
     let instance_size = (size_of::<Projectile>() * 4000) as u64;
     let instance_compute = utility::populate_array_with_expression!(
@@ -168,19 +166,13 @@ impl ComputeData {
       ),
       FRAMES_IN_FLIGHT
     );
-    let device_buffers = utility::copy_iter_into_array!(
-      instance_compute
-        .clone()
-        .into_iter()
-        .chain(instance_graphics.clone().into_iter()),
-      FRAMES_IN_FLIGHT * 2
-    );
+    log::debug!("Allocating memory for instance buffers");
     let device_alloc = allocate_and_bind_memory(
       device,
       physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       vk::MemoryPropertyFlags::empty(),
-      &device_buffers,
+      &[instance_compute[0], instance_compute[1], instance_graphics[0], instance_graphics[1]],
       &[],
     )
     .unwrap();
@@ -224,6 +216,8 @@ impl ComputeData {
     self.constants.player_pos = player_position;
 
     let output: ComputeOutput = unsafe { self.shader_output_data[frame_i].as_ref().clone() };
+    println!("output {:#?}", output);
+
     debug_assert!(output.new_projectile_count as usize <= PUSH_CONSTANT_NEXT_PROJECTILES_COUNT);
 
     self.constants.cur_projectile_count += output.new_projectile_count;
@@ -236,6 +230,8 @@ impl ComputeData {
       };
       self.constants.next_projectiles[i] = new_proj;
     }
+
+    println!("constants {:#?}", self.constants);
 
     if output.colliding > 0 {
       // temp

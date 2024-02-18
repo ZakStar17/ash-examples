@@ -163,7 +163,7 @@ impl DescriptorSets {
       offset: 0,
       range: vk::WHOLE_SIZE,
     };
-    // write for second and read for first
+    // write for second set and read for first
     let instance_compute_1 = vk::DescriptorBufferInfo {
       buffer: compute_data.instance_compute[1],
       offset: 0,
@@ -219,7 +219,7 @@ impl DescriptorSets {
       dst_set: self.compute_sets[1],
       dst_binding: 0,
       dst_array_element: 0,
-      descriptor_count: 0,
+      descriptor_count: 1,
     };
     // second set has instance_compute buffers reverted
     let copies = [

@@ -118,6 +118,7 @@ impl WindowedRender {
     );
 
     let renderer = Renderer::new(instance, &surface, initial_size);
+
     let sync_renderer = SyncRenderer::new(renderer);
 
     (
