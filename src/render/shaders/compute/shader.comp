@@ -1,6 +1,8 @@
 #version 460
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
+const int PC_NEXT_PROJECTILES_SIZE = 4;
+
 struct Projectile {
   vec2 pos;
   vec2 vel;
@@ -13,30 +15,28 @@ layout(push_constant) uniform PushConstantData {
   uint target_projectile_count;
   uint cur_projectile_count;
 
-  // contains position and velocity of the next projectiles
-  Projectile next_projectiles[4];
+  // next projectiles to be added in order to reach target_count
+  // or replace the ones that are out of bounds
+  Projectile next_projectiles[PC_NEXT_PROJECTILES_SIZE];
 } pc;
 
 // data that will be read by the cpu in the next frame after the shader has run
-layout(set = 0, binding = 0) restrict buffer CPUStorage {
+layout(set = 0, binding = 0) restrict buffer CPUOut {
   uint colliding;
-
-  // index of the next projectile in pc.next_projectiles
-  // can be negative after the atomic operation
-  int pc_next_projectile_i;
-  int new_projectile_count;
+  uint pc_next_projectiles_i; // current pc.next_projectiles index for all invocations
+  uint new_projectile_count;
 }
-cpu_storage;
+cpu_out;
 
-layout(set = 0, binding = 1) restrict readonly buffer ProjectileIn {
+layout(set = 0, binding = 1) restrict readonly buffer DataIn {
   Projectile projectiles[];
 }
-in_data;
+data_in;
 
-layout(set = 0, binding = 2) restrict writeonly buffer ProjectileOut {
+layout(set = 0, binding = 2) restrict writeonly buffer DataOut {
   Projectile projectiles[];
 }
-out_data;
+data_out;
 
 
 bool out_of_bounds(Projectile p) {
@@ -58,19 +58,28 @@ void main() {
     // this is in order for no holes to exist where projectiles are undefined 
     // (as pc.next_projectiles has finite length)
 
-    int wanted_new = int(pc.target_projectile_count - pc.cur_projectile_count);
-    int max_next_projectile_i = atomicAdd(cpu_storage.pc_next_projectile_i, 0 - wanted_new);
-    for (int new_i = 0; new_i <= max_next_projectile_i; new_i++) {
-      out_data.projectiles[i + new_i] = pc.next_projectiles[new_i];
-    }
+    uint wanted_new = pc.target_projectile_count - pc.cur_projectile_count;
+    // consume remaining next projectiles
+    uint next_i = atomicAdd(cpu_out.pc_next_projectiles_i, wanted_new);
+    if (next_i < PC_NEXT_PROJECTILES_SIZE) {
+      uint j = 0;
+      for (; j < wanted_new; j++) {
+        data_out.projectiles[i + j] = pc.next_projectiles[next_i];
+        
+        next_i += 1;
+        if (next_i >= PC_NEXT_PROJECTILES_SIZE) {
+          break;
+        }
+      }
 
-    // doesn't need to be atomic as this is the only invocation writing it
-    cpu_storage.new_projectile_count = max_next_projectile_i - 1;
+      // doesn't need to be atomic as this is the only invocation writing it
+      cpu_out.new_projectile_count = j;
+    }
 
     return;
   }
 
-  Projectile p_in = in_data.projectiles[i];
+  Projectile p_in = data_in.projectiles[i];
 
   Projectile p_out;
   p_out.vel = p_in.vel + (p_in.vel * 0.1 * pc.delta_time);
@@ -80,16 +89,16 @@ void main() {
     // Replace projectile with new one (in this case it is more like teleporting it to a new place)
     // This can fail if there are no new projectiles in push constant data,
     // but it is fine in this case as the projectile will be out of screen
-    int next_i = atomicAdd(cpu_storage.pc_next_projectile_i, -1);
-    if (next_i >= 0) {
+    uint next_i = atomicAdd(cpu_out.pc_next_projectiles_i, 1);
+    if (next_i < PC_NEXT_PROJECTILES_SIZE) {
       p_out = pc.next_projectiles[next_i];
     }
   } else {
     // collision test
     if (distance(p_out.pos, pc.player_pos) < 0.05) {
-      atomicCompSwap(cpu_storage.colliding, 0, 1);
+      atomicCompSwap(cpu_out.colliding, 0, 1);
     }
   }
 
-  out_data.projectiles[i] = p_out;
+  data_out.projectiles[i] = p_out;
 }

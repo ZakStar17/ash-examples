@@ -5,7 +5,7 @@ use std::{
 
 use ash::vk;
 
-use crate::render::{ComputeOutput, FRAMES_IN_FLIGHT};
+use crate::render::{compute_data::ComputeData, ComputeOutput, FRAMES_IN_FLIGHT};
 
 use super::constant_allocations::INSTANCE_TEMP;
 
@@ -82,7 +82,7 @@ impl DescriptorSets {
     device: &ash::Device,
     texture_view: vk::ImageView,
     instance: vk::Buffer,
-    compute_output: [vk::Buffer; FRAMES_IN_FLIGHT],
+    compute_data: &ComputeData
   ) {
     let texture_info = vk::DescriptorImageInfo {
       sampler: vk::Sampler::null(), // indicated and set as constant in the layout

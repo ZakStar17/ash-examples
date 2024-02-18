@@ -77,6 +77,26 @@ impl GraphicsCommandBufferPool {
       layer_count: 1,
     };
 
+    {
+      let swapchain_transfer_dst_layout = vk::BufferMemoryBarrier {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags::NONE,
+        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      };
+      device.cmd_pipeline_barrier(
+        cb,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[],
+        &[],
+        &[swapchain_transfer_dst_layout],
+      );
+    }
+
     let clear_value = vk::ClearValue {
       color: BACKGROUND_COLOR,
     };
@@ -93,7 +113,6 @@ impl GraphicsCommandBufferPool {
       clear_value_count: 1,
       p_clear_values: addr_of!(clear_value),
     };
-
     device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
     {
       device.cmd_bind_descriptor_sets(
@@ -152,7 +171,7 @@ impl GraphicsCommandBufferPool {
       };
       device.cmd_pipeline_barrier(
         cb,
-        vk::PipelineStageFlags::TRANSFER.bitor(vk::PipelineStageFlags::COMPUTE_SHADER),
+        vk::PipelineStageFlags::TRANSFER,
         vk::PipelineStageFlags::TRANSFER,
         vk::DependencyFlags::empty(),
         &[],

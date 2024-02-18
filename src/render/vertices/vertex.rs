@@ -1,7 +1,6 @@
-use std::mem::size_of;
+use std::mem::{offset_of, size_of};
 
 use ash::vk;
-use memoffset::offset_of;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default)]

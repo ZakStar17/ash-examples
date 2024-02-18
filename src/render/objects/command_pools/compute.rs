@@ -2,7 +2,13 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{render::{objects::{device::QueueFamilies, ComputePipeline, DescriptorSets}, push_constants::{ComputePushConstants, SpritePushConstants}}, utility};
+use crate::{
+  render::{
+    objects::{device::QueueFamilies, ComputePipeline, DescriptorSets},
+    push_constants::{ComputePushConstants, SpritePushConstants},
+  },
+  utility,
+};
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
@@ -55,7 +61,7 @@ impl ComputeCommandBufferPool {
     );
 
     let compute_pc = ComputePushConstants {
-      position: player.position
+      position: player.position,
     };
 
     device.cmd_push_constants(
