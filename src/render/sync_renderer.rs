@@ -6,7 +6,7 @@ use winit::dpi::PhysicalSize;
 use crate::utility::populate_array_with_expression;
 
 use super::{
-  frame::Frame, objects::Surface, push_constants::SpritePushConstants, renderer::Renderer,
+  frame::Frame, initialization::Surface, push_constants::SpritePushConstants, renderer::Renderer,
   FRAMES_IN_FLIGHT,
 };
 

@@ -4,13 +4,12 @@ use ash::vk;
 
 use crate::{
   render::{
-    compute_data::{ ComputePushConstants, Projectile},
-    objects::{device::QueueFamilies, ComputePipeline},
+    compute_data::{ ComputePushConstants, Projectile}, initialization::QueueFamilies, pipelines::ComputePipelines
   },
   utility,
 };
 
-pub struct ComputeCommandBufferPool {
+pub struct ComputeCommandPool {
   pool: vk::CommandPool,
   pub buffer: vk::CommandBuffer,
 }
@@ -21,7 +20,7 @@ pub struct AddNewProjectiles {
 }
 
 pub struct ExecuteShader<'a> {
-  pub pipeline: &'a ComputePipeline,
+  pub pipeline: &'a ComputePipelines,
   pub descriptor_set: vk::DescriptorSet,
   pub push_data: ComputePushConstants,
 }
@@ -35,7 +34,7 @@ pub struct ComputeRecordBufferData<'a> {
   pub execute_shader: Option<ExecuteShader<'a>>,
 }
 
-impl ComputeCommandBufferPool {
+impl ComputeCommandPool {
   pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_compute_index());
@@ -151,7 +150,7 @@ impl ComputeCommandBufferPool {
         device.cmd_bind_pipeline(
           cb,
           vk::PipelineBindPoint::COMPUTE,
-          shader_data.pipeline.pipeline,
+          shader_data.pipeline.compute_instances,
         );
 
         let group_count = data.existing_projectiles_count / 8 + 1;

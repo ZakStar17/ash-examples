@@ -17,13 +17,13 @@ use ash::vk;
 
 use crate::{
   render::{
-    objects::device::vendor::Vendor, push_constants::SpritePushConstants,
-    REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+    constant_data::ConstantData, initialization::device::vendor::Vendor, push_constants::SpritePushConstants, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION
   },
   utility::{self, c_char_array_to_string, const_flag_bitor},
 };
 
-use super::{ConstantAllocatedObjects, Surface};
+use super::Surface;
+
 
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags =>
@@ -82,7 +82,7 @@ fn check_formats_support(instance: &ash::Instance, physical_device: vk::Physical
   let properties = unsafe {
     instance.get_physical_device_format_properties(
       physical_device,
-      ConstantAllocatedObjects::TEXTURE_FORMAT,
+      ConstantData::TEXTURE_FORMAT,
     )
   };
 

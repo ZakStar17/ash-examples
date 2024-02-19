@@ -7,14 +7,12 @@ use std::{
 use ash::vk;
 use rand::{rngs::ThreadRng, Rng};
 
-use crate::utility;
+use crate::{render::{allocations::allocate_and_bind_memory, common_object_creations::create_buffer}, utility};
 
 use super::{
-  objects::{
-    allocations::{allocate_and_bind_memory, create_buffer},
+  command_pools::compute::ComputeRecordBufferData, initialization::{
     device::PhysicalDevice,
-  },
-  FRAMES_IN_FLIGHT,
+  }, FRAMES_IN_FLIGHT
 };
 
 pub const PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT: usize = 4;
@@ -261,28 +259,29 @@ impl ComputeData {
       }
     }
 
+    todo!();
     // let output: ComputeOutput = unsafe { self.shader_output_data[frame_i].as_ref().clone() };
     // println!("output {:#?}", output);
 
-    debug_assert!(output.new_projectile_count as usize <= PUSH_CONSTANT_NEXT_PROJECTILES_COUNT);
+    // debug_assert!(output.new_projectile_count as usize <= PUSH_CONSTANT_NEXT_PROJECTILES_COUNT);
 
-    self.constants.cur_projectile_count += output.new_projectile_count;
+    // self.constants.cur_projectile_count += output.new_projectile_count;
 
-    let next_proj_i = output.pc_next_projectiles_i;
-    for i in 0..((next_proj_i as usize).min(PUSH_CONSTANT_NEXT_PROJECTILES_COUNT)) {
-      let new_proj = Projectile {
-        pos: [(self.random.gen::<f32>() - 0.5) * 2.0, -1.0],
-        vel: [0.0, 0.2],
-      };
-      self.constants.next_projectiles[i] = new_proj;
-    }
+    // let next_proj_i = output.pc_next_projectiles_i;
+    // for i in 0..((next_proj_i as usize).min(PUSH_CONSTANT_NEXT_PROJECTILES_COUNT)) {
+    //   let new_proj = Projectile {
+    //     pos: [(self.random.gen::<f32>() - 0.5) * 2.0, -1.0],
+    //     vel: [0.0, 0.2],
+    //   };
+    //   self.constants.next_projectiles[i] = new_proj;
+    // }
 
-    println!("constants {:#?}", self.constants);
+    // println!("constants {:#?}", self.constants);
 
-    if output.colliding > 0 {
-      // temp
-      println!("Colliding! {}", output.colliding);
-    }
+    // if output.colliding > 0 {
+    //   // temp
+    //   println!("Colliding! {}", output.colliding);
+    // }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

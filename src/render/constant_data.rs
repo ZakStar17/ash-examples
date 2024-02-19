@@ -6,20 +6,12 @@ use std::{
 
 use ash::vk;
 
-use crate::render::{
-  objects::{
-    allocations::{allocate_and_bind_memory, create_buffer},
-    create_image, create_image_view, create_semaphore, create_unsignaled_fence,
-  },
-  sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES},
-};
+use crate::render::{allocations::allocate_and_bind_memory, common_object_creations::{create_buffer, create_image, create_image_view}, sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES}};
 
-use super::{
-  command_pools::{TemporaryGraphicsCommandBufferPool, TransferCommandBufferPool},
-  device::{PhysicalDevice, Queues},
-};
+use super::{command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool}, common_object_creations::{create_semaphore, create_unsignaled_fence}, initialization::{PhysicalDevice, Queues}};
 
-pub struct ConstantAllocatedObjects {
+// doesn't change after initialization
+pub struct ConstantData {
   memory: vk::DeviceMemory,
   pub vertex: vk::Buffer,
   pub index: vk::Buffer,
@@ -27,15 +19,15 @@ pub struct ConstantAllocatedObjects {
   pub texture_view: vk::ImageView,
 }
 
-impl ConstantAllocatedObjects {
+impl ConstantData {
   pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 
   pub fn new(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
     queues: &Queues,
-    transfer_command_pool: &mut TransferCommandBufferPool,
-    graphics_command_pool: &mut TemporaryGraphicsCommandBufferPool,
+    transfer_command_pool: &mut TransferCommandPool,
+    graphics_command_pool: &mut TemporaryGraphicsCommandPool,
     texture_bytes: &[u8],
     texture_width: u32,
     texture_height: u32,
@@ -220,7 +212,7 @@ impl ConstantAllocatedObjects {
 
   unsafe fn record_buffer_copy(
     device: &ash::Device,
-    transfer_command_pool: &mut TransferCommandBufferPool,
+    transfer_command_pool: &mut TransferCommandPool,
     vertex_src: vk::Buffer,
     vertex_dst: vk::Buffer,
     vertex_size: u64,
@@ -268,8 +260,8 @@ impl ConstantAllocatedObjects {
   unsafe fn record_texture_load_and_transfer(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
-    transfer_command_pool: &mut TransferCommandBufferPool,
-    graphics_command_pool: &mut TemporaryGraphicsCommandBufferPool,
+    transfer_command_pool: &mut TransferCommandPool,
+    graphics_command_pool: &mut TemporaryGraphicsCommandPool,
     texture_src: vk::Buffer,
     texture_dst: vk::Image,
     texture_width: u32,
@@ -293,8 +285,8 @@ impl ConstantAllocatedObjects {
   unsafe fn submit_and_wait_copy_to_final_objects(
     device: &ash::Device,
     queues: &Queues,
-    transfer_command_pool: &mut TransferCommandBufferPool,
-    graphics_command_pool: &mut TemporaryGraphicsCommandBufferPool,
+    transfer_command_pool: &mut TransferCommandPool,
+    graphics_command_pool: &mut TemporaryGraphicsCommandPool,
   ) {
     let buffer_copy_finished = create_unsignaled_fence(device);
     let buffer_copy_submit_info = vk::SubmitInfo {

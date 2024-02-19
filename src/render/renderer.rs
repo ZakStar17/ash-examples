@@ -6,63 +6,20 @@ use winit::dpi::PhysicalSize;
 
 use crate::{
   render::{
-    objects::{
-      allocations::allocate_and_bind_memory,
-      command_pools::{
-        ComputeCommandBufferPool, GraphicsCommandBufferPool, TemporaryGraphicsCommandBufferPool,
-        TransferCommandBufferPool,
-      },
-      create_image, create_image_view, create_pipeline_cache, DescriptorSets,
-    },
-    RENDER_FORMAT, TEXTURE_PATH,
+    allocations::allocate_and_bind_memory, command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool}, common_object_creations::{create_image, create_image_view}, initialization::device::create_logical_device, long_lived::{create_framebuffer, create_render_pass}, RENDER_FORMAT, TEXTURE_PATH
   },
   utility::{self, populate_array_with_expression},
   RESOLUTION,
 };
 
 use super::{
-  compute_data::ComputeData,
-  objects::{
-    create_framebuffer, create_render_pass,
-    device::{create_logical_device, PhysicalDevice, Queues},
-    save_pipeline_cache, ComputePipeline, ConstantAllocatedObjects, Pipelines, Surface, Swapchains,
-  },
-  push_constants::SpritePushConstants,
-  FRAMES_IN_FLIGHT,
+  command_pools::{compute::ComputeCommandPool, GraphicsCommandPool}, compute_data::ComputeData, constant_data::ConstantData, descriptor_sets::DescriptorSets, initialization::{PhysicalDevice, Queues, Surface}, long_lived::Swapchains, pipelines::Pipelines, push_constants::SpritePushConstants, FRAMES_IN_FLIGHT
 };
 
 const RENDER_EXTENT: vk::Extent2D = vk::Extent2D {
   width: RESOLUTION[0],
   height: RESOLUTION[1],
 };
-
-fn create_sampler(device: &ash::Device) -> vk::Sampler {
-  let sampler_create_info = vk::SamplerCreateInfo {
-    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::SamplerCreateFlags::empty(),
-    mag_filter: vk::Filter::NEAREST,
-    min_filter: vk::Filter::NEAREST,
-    address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-    address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-    address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
-    anisotropy_enable: vk::FALSE,
-    max_anisotropy: 0.0,
-    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
-    unnormalized_coordinates: vk::TRUE,
-    compare_enable: vk::FALSE,
-    compare_op: vk::CompareOp::NEVER,
-    mipmap_mode: vk::SamplerMipmapMode::NEAREST,
-    mip_lod_bias: 0.0,
-    max_lod: 0.0,
-    min_lod: 0.0,
-  };
-  unsafe {
-    device
-      .create_sampler(&sampler_create_info, None)
-      .expect("Failed to create a sampler")
-  }
-}
 
 fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), ImageError> {
   let img = image::io::Reader::open(TEXTURE_PATH)?
@@ -90,17 +47,14 @@ pub struct Renderer {
   render_target_views: [vk::ImageView; FRAMES_IN_FLIGHT],
   framebuffers: [vk::Framebuffer; FRAMES_IN_FLIGHT],
 
-  texture_sampler: vk::Sampler,
   descriptor_sets: DescriptorSets,
-  pipeline_cache: vk::PipelineCache,
   pipelines: Pipelines,
-  compute_pipeline: ComputePipeline,
 
-  pub graphics_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
-  pub compute_pools: [ComputeCommandBufferPool; FRAMES_IN_FLIGHT],
-  constant_objects: ConstantAllocatedObjects,
-
-  pub compute_data: ComputeData,
+  pub graphics_pools: [GraphicsCommandPool; FRAMES_IN_FLIGHT],
+  pub compute_pools: [ComputeCommandPool; FRAMES_IN_FLIGHT],
+  
+  constant_data: ConstantData,
+  compute_data: ComputeData,
 }
 
 impl Renderer {
@@ -150,35 +104,26 @@ impl Renderer {
       temp
     };
 
-    let texture_sampler = create_sampler(&device);
-    let mut descriptor_sets = DescriptorSets::new(&device, texture_sampler);
+    let mut descriptor_sets = DescriptorSets::new(&device);
 
-    log::info!("Creating pipeline cache");
-    let (pipeline_cache, created_from_file) = create_pipeline_cache(&device, &physical_device);
-    if created_from_file {
-      log::info!("Cache successfully created from an existing cache file");
-    } else {
-      log::info!("Cache initialized as empty");
-    }
     let pipelines = Pipelines::new(
       &device,
-      pipeline_cache,
-      render_pass,
+      &physical_device,
       &descriptor_sets,
+      render_pass,
       RENDER_EXTENT,
     );
-    let compute_pipeline = ComputePipeline::new(&device, pipeline_cache, &descriptor_sets);
 
-    let constant_objects = {
+    let constant_data = {
       let mut transfer_pool =
-        TransferCommandBufferPool::create(&device, &physical_device.queue_families);
+        TransferCommandPool::create(&device, &physical_device.queue_families);
       let mut graphics_pool =
-        TemporaryGraphicsCommandBufferPool::create(&device, &physical_device.queue_families);
+        TemporaryGraphicsCommandPool::create(&device, &physical_device.queue_families);
 
       let (texture_width, texture_height, texture_bytes) =
         read_texture_bytes_as_rgba8().expect("Failed to read texture file");
 
-      let objects = ConstantAllocatedObjects::new(
+      let objects = ConstantData::new(
         &device,
         &physical_device,
         &queues,
@@ -199,14 +144,14 @@ impl Renderer {
 
     let compute_data = ComputeData::new(&device, &physical_device);
 
-    descriptor_sets.write_sets(&device, constant_objects.texture_view, &compute_data);
+    descriptor_sets.write_sets(&device, constant_data.texture_view, &compute_data);
 
     let graphics_pools = populate_array_with_expression!(
-      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
+      GraphicsCommandPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
     );
     let compute_pools = populate_array_with_expression!(
-      ComputeCommandBufferPool::create(&device, &physical_device.queue_families),
+      ComputeCommandPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
     );
 
@@ -231,16 +176,13 @@ impl Renderer {
       render_target_views,
       framebuffers,
 
-      texture_sampler,
       descriptor_sets,
-      pipeline_cache,
       pipelines,
-      compute_pipeline,
 
       graphics_pools,
       compute_pools,
-      constant_objects,
 
+      constant_data,
       compute_data,
     }
   }

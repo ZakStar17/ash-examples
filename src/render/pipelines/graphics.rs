@@ -6,11 +6,8 @@ use std::{
 use ash::vk;
 
 use crate::render::{
-  compute_data::Projectile, push_constants::SpritePushConstants, shaders,
-  vertices::vertex_input_state_create_info, Vertex,
+  compute_data::Projectile, descriptor_sets::DescriptorSets, push_constants::SpritePushConstants, shaders, vertices::vertex_input_state_create_info, Vertex
 };
-
-use super::DescriptorSets;
 
 fn create_layout(
   device: &ash::Device,
@@ -33,7 +30,7 @@ fn create_layout(
   }
 }
 
-pub struct Pipelines {
+pub struct GraphicsPipelines {
   // compatible with both player and projectiles
   pub layout: vk::PipelineLayout,
 
@@ -41,12 +38,12 @@ pub struct Pipelines {
   pub projectiles: vk::Pipeline,
 }
 
-impl Pipelines {
+impl GraphicsPipelines {
   pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
-    render_pass: vk::RenderPass,
     descriptor_sets: &DescriptorSets,
+    render_pass: vk::RenderPass,
     extent: vk::Extent2D,
   ) -> Self {
     let push_constant_range = vk::PushConstantRange {

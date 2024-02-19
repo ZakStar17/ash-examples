@@ -3,26 +3,8 @@ use std::ptr;
 
 use ash::vk;
 
-use super::device::PhysicalDevice;
+use super::initialization::PhysicalDevice;
 
-pub fn create_buffer(device: &ash::Device, size: u64, usage: vk::BufferUsageFlags) -> vk::Buffer {
-  assert!(size > 0);
-  let create_info = vk::BufferCreateInfo {
-    s_type: vk::StructureType::BUFFER_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::BufferCreateFlags::empty(),
-    size,
-    usage,
-    sharing_mode: vk::SharingMode::EXCLUSIVE,
-    queue_family_index_count: 0,
-    p_queue_family_indices: ptr::null(), // ignored when exclusive
-  };
-  unsafe {
-    device
-      .create_buffer(&create_info, None)
-      .expect("Failed to create buffer")
-  }
-}
 
 pub struct PackedAllocation {
   pub memory: vk::DeviceMemory,

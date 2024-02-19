@@ -2,16 +2,15 @@ use std::{mem::size_of, ptr};
 
 use ash::vk;
 
-use crate::render::{compute_data::ComputePushConstants, shaders};
+use crate::render::{compute_data::ComputePushConstants, descriptor_sets::DescriptorSets, shaders};
 
-use super::DescriptorSets;
 
-pub struct ComputePipeline {
+pub struct ComputePipelines {
   pub layout: vk::PipelineLayout,
-  pub pipeline: vk::Pipeline,
+  pub compute_instances: vk::Pipeline,
 }
 
-impl ComputePipeline {
+impl ComputePipelines {
   pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
@@ -48,7 +47,7 @@ impl ComputePipeline {
       base_pipeline_handle: vk::Pipeline::null(),
       base_pipeline_index: -1, // -1 for invalid
     };
-    let pipeline = unsafe {
+    let compute_instances = unsafe {
       device
         .create_compute_pipelines(cache, &[create_info], None)
         .expect("Failed to create compute pipelines")[0]
@@ -58,11 +57,11 @@ impl ComputePipeline {
       shader.destroy_self(device);
     }
 
-    Self { layout, pipeline }
+    Self { layout, compute_instances }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_pipeline(self.pipeline, None);
+    device.destroy_pipeline(self.compute_instances, None);
     device.destroy_pipeline_layout(self.layout, None);
   }
 }

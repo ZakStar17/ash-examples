@@ -4,8 +4,37 @@ use ash::vk;
 
 use crate::render::{compute_data::ComputeData, FRAMES_IN_FLIGHT};
 
+fn create_texture_sampler(device: &ash::Device) -> vk::Sampler {
+  let sampler_create_info = vk::SamplerCreateInfo {
+    s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::SamplerCreateFlags::empty(),
+    mag_filter: vk::Filter::NEAREST,
+    min_filter: vk::Filter::NEAREST,
+    address_mode_u: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_v: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    address_mode_w: vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    anisotropy_enable: vk::FALSE,
+    max_anisotropy: 0.0,
+    border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+    unnormalized_coordinates: vk::TRUE,
+    compare_enable: vk::FALSE,
+    compare_op: vk::CompareOp::NEVER,
+    mipmap_mode: vk::SamplerMipmapMode::NEAREST,
+    mip_lod_bias: 0.0,
+    max_lod: 0.0,
+    min_lod: 0.0,
+  };
+  unsafe {
+    device
+      .create_sampler(&sampler_create_info, None)
+      .expect("Failed to create a sampler")
+  }
+}
+
 pub struct DescriptorSets {
   pub graphics_layout: vk::DescriptorSetLayout,
+  texture_sampler: vk::Sampler,
   pub compute_layout: vk::DescriptorSetLayout,
 
   pool: vk::DescriptorPool,
@@ -64,7 +93,9 @@ impl DescriptorSets {
     },
   ];
 
-  pub fn new(device: &ash::Device, texture_sampler: vk::Sampler) -> Self {
+  pub fn new(device: &ash::Device) -> Self {
+    let texture_sampler = create_texture_sampler(device);
+
     let graphics_layout = Self::create_graphics_layout(device, texture_sampler);
     let compute_layout = Self::create_compute_layout(device);
 
@@ -85,6 +116,7 @@ impl DescriptorSets {
     };
 
     Self {
+      texture_sampler,
       graphics_layout,
       compute_layout,
       pool,
@@ -254,6 +286,7 @@ impl DescriptorSets {
 
     device.destroy_descriptor_set_layout(self.graphics_layout, None);
     device.destroy_descriptor_set_layout(self.compute_layout, None);
+    device.destroy_sampler(self.texture_sampler, None);
   }
 }
 

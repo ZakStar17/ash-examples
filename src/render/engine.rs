@@ -8,9 +8,9 @@ use winit::{
 use crate::{INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE};
 
 #[cfg(feature = "vl")]
-use super::objects::DebugUtils;
+use super::initialization::DebugUtils;
 use super::{
-  objects::{create_instance, get_entry, Surface},
+  initialization::{create_instance, get_entry, Surface},
   push_constants::SpritePushConstants,
   renderer::Renderer,
   sync_renderer::SyncRenderer,

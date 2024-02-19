@@ -3,12 +3,7 @@ use std::{ops::Deref, ptr};
 pub use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::PREFERRED_PRESENTATION_METHOD;
-
-use super::{
-  device::{PhysicalDevice, QueueFamilies},
-  Surface,
-};
+use crate::{render::initialization::{PhysicalDevice, QueueFamilies, Surface}, PREFERRED_PRESENTATION_METHOD};
 
 pub struct Swapchains {
   loader: ash::extensions::khr::Swapchain,

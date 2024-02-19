@@ -2,7 +2,7 @@ use std::{cmp::min, ops::Deref, pin::Pin, ptr};
 
 use ash::vk;
 
-use crate::render::objects::Surface;
+use crate::render::initialization::Surface;
 
 #[derive(Debug, Clone, Copy)]
 pub struct QueueFamily {

@@ -2,14 +2,14 @@ use std::ptr::{self};
 
 use ash::vk;
 
-use crate::render::objects::device::QueueFamilies;
+use crate::render::initialization::QueueFamilies;
 
-pub struct TemporaryGraphicsCommandBufferPool {
+pub struct TemporaryGraphicsCommandPool {
   pool: vk::CommandPool,
   pub acquire_texture: vk::CommandBuffer,
 }
 
-impl TemporaryGraphicsCommandBufferPool {
+impl TemporaryGraphicsCommandPool {
   pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.graphics.index);

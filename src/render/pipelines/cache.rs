@@ -10,7 +10,7 @@ use std::{
 
 use ash::vk;
 
-use super::device::PhysicalDevice;
+use crate::render::initialization::PhysicalDevice;
 
 // random number used to identify that the file type is correct
 // this is not that reliable but its better than not having it

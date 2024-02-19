@@ -2,7 +2,7 @@ use std::ops::{BitOr, Deref};
 
 use ash::vk;
 
-use crate::{render::objects::Surface, utility::c_char_array_to_string};
+use crate::{render::initialization::Surface, utility::c_char_array_to_string};
 
 use super::{get_extended_properties, select_physical_device};
 

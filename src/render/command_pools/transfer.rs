@@ -2,15 +2,15 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::render::objects::device::QueueFamilies;
+use crate::render::initialization::QueueFamilies;
 
-pub struct TransferCommandBufferPool {
+pub struct TransferCommandPool {
   pool: vk::CommandPool,
   pub copy_buffers: vk::CommandBuffer,
   pub load_texture: vk::CommandBuffer,
 }
 
-impl TransferCommandBufferPool {
+impl TransferCommandPool {
   pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index());

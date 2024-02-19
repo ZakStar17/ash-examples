@@ -4,20 +4,17 @@ use ash::vk;
 
 use crate::{
   render::{
-    objects::{device::QueueFamilies, ConstantAllocatedObjects, DescriptorSets, Pipelines},
-    push_constants::SpritePushConstants,
-    sprites::{PLAYER_VERTICES, SQUARE_INDICES},
-    BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
+    constant_data::ConstantData, descriptor_sets::DescriptorSets, initialization::QueueFamilies, pipelines::GraphicsPipelines, push_constants::SpritePushConstants, sprites::{PLAYER_VERTICES, SQUARE_INDICES}, BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR
   },
   utility,
 };
 
-pub struct GraphicsCommandBufferPool {
+pub struct GraphicsCommandPool {
   pool: vk::CommandPool,
   pub triangle: vk::CommandBuffer,
 }
 
-impl GraphicsCommandBufferPool {
+impl GraphicsCommandPool {
   pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.graphics.index);
@@ -50,8 +47,8 @@ impl GraphicsCommandBufferPool {
     swapchain_extent: vk::Extent2D,
 
     descriptor_sets: &DescriptorSets,
-    pipelines: &Pipelines,
-    constant_allocated_objects: &ConstantAllocatedObjects,
+    pipelines: &GraphicsPipelines,
+    constant_data: &ConstantData,
     instance_buffer: vk::Buffer,
     instance_count: u32,
     player: &SpritePushConstants, // position of the object to be rendered
@@ -129,12 +126,12 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_vertex_buffers(
         cb,
         0,
-        &[constant_allocated_objects.vertex, instance_buffer],
+        &[constant_data.vertex, instance_buffer],
         &[0, 0],
       );
       device.cmd_bind_index_buffer(
         cb,
-        constant_allocated_objects.index,
+        constant_data.index,
         0,
         vk::IndexType::UINT16,
       );
