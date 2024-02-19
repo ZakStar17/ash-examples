@@ -2,12 +2,16 @@ use std::ptr;
 
 use ash::vk;
 
+use super::common_object_creations::create_signaled_fence;
+
 // contains synchronization objects for one frame
 pub struct Frame {
-  pub compute_finished: vk::Semaphore,
+  pub instance_buffer_ready: vk::Semaphore,
+  pub compute_finished: vk::Fence,
+
   pub image_available: vk::Semaphore,
   pub presentable: vk::Semaphore,
-  pub finished: vk::Fence,
+  pub graphics_finished: vk::Fence,
 }
 
 impl Frame {
@@ -24,46 +28,44 @@ impl Frame {
         .expect("Failed to create Semaphore")
     };
 
-    let compute_finished = create_semaphore();
+    let instance_buffer_ready = create_semaphore();
+    let compute_finished = create_signaled_fence(device);
+
     let image_available = create_semaphore();
     let presentable = create_semaphore();
+    let graphics_finished = create_signaled_fence(device);
 
-    let fence_create_info = vk::FenceCreateInfo {
-      s_type: vk::StructureType::FENCE_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::FenceCreateFlags::SIGNALED,
-    };
-
-    let finished = unsafe {
-      device
-        .create_fence(&fence_create_info, None)
-        .expect("Failed to create Fence Object!")
-    };
     Self {
+      instance_buffer_ready,
       compute_finished,
+
       image_available,
       presentable,
-      finished,
+      graphics_finished,
     }
   }
 
-  pub fn wait_finished(&self, device: &ash::Device) {
+  pub fn wait_all(&self, device: &ash::Device) {
     unsafe {
       device
-        .wait_for_fences(&[self.finished], true, u64::MAX)
+        .wait_for_fences(
+          &[self.compute_finished, self.graphics_finished],
+          true,
+          u64::MAX,
+        )
         .expect("Failed to wait for fences");
-
       device
-        .reset_fences(&[self.finished])
+        .reset_fences(&[self.compute_finished, self.graphics_finished])
         .expect("Failed to reset fence");
     }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_semaphore(self.compute_finished, None);
+    device.destroy_fence(self.compute_finished, None);
+    device.destroy_semaphore(self.instance_buffer_ready, None);
+
     device.destroy_semaphore(self.image_available, None);
     device.destroy_semaphore(self.presentable, None);
-
-    device.destroy_fence(self.finished, None);
+    device.destroy_fence(self.graphics_finished, None);
   }
 }

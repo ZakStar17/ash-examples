@@ -1,4 +1,4 @@
-use std::{ops::BitOr, ptr};
+use std::ops::BitOr;
 
 use ash::vk;
 use image::ImageError;
@@ -18,7 +18,10 @@ use crate::{
 };
 
 use super::{
-  command_pools::{compute::ComputeCommandPool, GraphicsCommandPool},
+  command_pools::{
+    compute::{ComputeCommandPool, ComputeRecordBufferData},
+    GraphicsCommandPool,
+  },
   compute_data::ComputeData,
   constant_data::ConstantData,
   descriptor_sets::DescriptorSets,
@@ -67,7 +70,7 @@ pub struct Renderer {
   pub compute_pools: [ComputeCommandPool; FRAMES_IN_FLIGHT],
 
   constant_data: ConstantData,
-  compute_data: ComputeData,
+  pub compute_data: ComputeData,
 }
 
 impl Renderer {
@@ -203,6 +206,7 @@ impl Renderer {
     &mut self,
     frame_i: usize,
     image_i: usize,
+    bullet_instance_count: u32,
     player: &SpritePushConstants,
   ) {
     self.graphics_pools[frame_i].record(
@@ -215,23 +219,22 @@ impl Renderer {
       self.swapchains.get_images()[image_i],
       self.swapchains.get_extent(),
       &self.descriptor_sets,
-      &self.pipelines,
-      &self.constant_objects,
+      &self.pipelines.graphics,
+      &self.constant_data,
       self.compute_data.instance_graphics[frame_i],
-      self.compute_data.max_valid_projectile_count() as u32,
+      bullet_instance_count,
       player,
     );
   }
 
-  pub unsafe fn record_compute(&mut self, frame_i: usize) {
+  pub unsafe fn record_compute(&mut self, frame_i: usize, data: ComputeRecordBufferData) {
     self.compute_pools[frame_i].record(
       &self.device,
       &self.physical_device.queue_families,
-      frame_i,
-      &self.compute_pipeline,
-      &self.descriptor_sets,
-      &self.compute_data,
-    );
+      &self.pipelines.compute,
+      self.descriptor_sets.compute_sets[frame_i],
+      data,
+    )
   }
 
   pub unsafe fn recreate_swapchain(&mut self, surface: &Surface, window_size: PhysicalSize<u32>) {
@@ -254,8 +257,8 @@ impl Renderer {
 
   pub unsafe fn destroy_self(&mut self) {
     self.compute_data.destroy_self(&self.device);
+    self.constant_data.destroy_self(&self.device);
 
-    self.constant_objects.destroy_self(&self.device);
     for pool in self.graphics_pools.iter_mut() {
       pool.destroy_self(&self.device);
     }
@@ -263,20 +266,10 @@ impl Renderer {
       pool.destroy_self(&self.device);
     }
 
-    log::info!("Saving pipeline cache");
-    if let Err(err) = save_pipeline_cache(&self.device, &self.physical_device, self.pipeline_cache)
-    {
-      log::error!("Failed to save pipeline cache: {:?}", err);
-    }
     self
-      .device
-      .destroy_pipeline_cache(self.pipeline_cache, None);
-
-    self.pipelines.destroy_self(&self.device);
-    self.compute_pipeline.destroy_self(&self.device);
-
+      .pipelines
+      .destroy_self(&self.device, &self.physical_device);
     self.descriptor_sets.destroy_self(&self.device);
-    self.device.destroy_sampler(self.texture_sampler, None);
 
     for &framebuffer in self.framebuffers.iter() {
       self.device.destroy_framebuffer(framebuffer, None);

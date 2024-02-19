@@ -21,19 +21,17 @@ pub struct AddNewProjectiles {
   pub count: usize,
 }
 
-pub struct ExecuteShader<'a> {
-  pub pipeline: &'a ComputePipelines,
-  pub descriptor_set: vk::DescriptorSet,
+pub struct ExecuteShader {
   pub push_data: ComputePushConstants,
 }
 
-pub struct ComputeRecordBufferData<'a> {
+pub struct ComputeRecordBufferData {
   pub output: vk::Buffer,
   pub instance_write: vk::Buffer,
   pub instance_graphics: vk::Buffer,
   pub existing_projectiles_count: usize,
   pub add_projectiles: Option<AddNewProjectiles>,
-  pub execute_shader: Option<ExecuteShader<'a>>,
+  pub execute_shader: Option<ExecuteShader>,
 }
 
 impl ComputeCommandPool {
@@ -56,6 +54,8 @@ impl ComputeCommandPool {
     &mut self,
     device: &ash::Device,
     queue_families: &QueueFamilies,
+    pipelines: &ComputePipelines,
+    descriptor_set: vk::DescriptorSet,
     data: ComputeRecordBufferData,
   ) {
     let cb = self.buffer;
@@ -88,7 +88,7 @@ impl ComputeCommandPool {
     let existing_projectiles_size =
       (size_of::<Projectile>() * data.existing_projectiles_count) as u64;
 
-    if let Some(add_new) = data.add_projectiles {
+    if let Some(add_new) = data.add_projectiles.as_ref() {
       let flush_new_projectiles = vk::BufferMemoryBarrier {
         src_access_mask: vk::AccessFlags::HOST_WRITE,
         dst_access_mask: vk::AccessFlags::TRANSFER_READ,
@@ -137,14 +137,14 @@ impl ComputeCommandPool {
         device.cmd_bind_descriptor_sets(
           cb,
           vk::PipelineBindPoint::COMPUTE,
-          shader_data.pipeline.layout,
+          pipelines.layout,
           0,
-          &[shader_data.descriptor_set],
+          &[descriptor_set],
           &[],
         );
         device.cmd_push_constants(
           cb,
-          shader_data.pipeline.layout,
+          pipelines.layout,
           vk::ShaderStageFlags::COMPUTE,
           0,
           utility::any_as_u8_slice(&shader_data.push_data),
@@ -152,7 +152,7 @@ impl ComputeCommandPool {
         device.cmd_bind_pipeline(
           cb,
           vk::PipelineBindPoint::COMPUTE,
-          shader_data.pipeline.compute_instances,
+          pipelines.compute_instances,
         );
 
         let group_count = data.existing_projectiles_count / 8 + 1;
@@ -214,7 +214,7 @@ impl ComputeCommandPool {
     }
 
     {
-      let region = if let Some(add_new) = data.add_projectiles {
+      let region = if let Some(add_new) = data.add_projectiles.as_ref() {
         let new_projectiles_size = (size_of::<Projectile>() * add_new.count) as u64;
 
         {

@@ -52,5 +52,6 @@ impl Pipelines {
     if let Err(err) = cache::save_pipeline_cache(device, physical_device, self.cache) {
       log::error!("Failed to save pipeline cache: {:?}", err);
     }
+    device.destroy_pipeline_cache(self.cache, None);
   }
 }

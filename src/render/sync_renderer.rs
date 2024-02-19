@@ -20,6 +20,8 @@ pub struct SyncRenderer {
   last_frame_recreated_swapchain: bool,
   // will have the new window size
   recreate_swapchain_next_frame: bool,
+
+  first_frame: bool,
 }
 
 impl SyncRenderer {
@@ -33,6 +35,8 @@ impl SyncRenderer {
 
       last_frame_recreated_swapchain: false,
       recreate_swapchain_next_frame: false,
+
+      first_frame: true,
     }
   }
 
@@ -52,24 +56,26 @@ impl SyncRenderer {
     let cur_frame: &Frame = &self.frames[cur_frame_i];
     self.last_frame_i = cur_frame_i;
 
-    cur_frame.wait_finished(&self.renderer.device);
-
-    unsafe {
-      self.renderer.device.device_wait_idle().unwrap();
-    }
+    //unsafe {
+    //  self.renderer.device.device_wait_idle().unwrap();
+    //}
     //std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
 
-    // current frame resources are now safe to use as they are not being used by the GPU
+    cur_frame.wait_all(&self.renderer.device);
 
     // compute
 
-    self
-      .renderer
-      .compute_data
-      .update(cur_frame_i, delta_time, player.position);
+    let (compute_record_data, bullet_instance_count) = self.renderer.compute_data.update(
+      cur_frame_i,
+      !self.first_frame,
+      delta_time,
+      player.position,
+    );
     unsafe {
       self.renderer.compute_pools[cur_frame_i].reset(&self.renderer.device);
-      self.renderer.record_compute(cur_frame_i);
+      self
+        .renderer
+        .record_compute(cur_frame_i, compute_record_data);
     }
 
     let submit_info = vk::SubmitInfo {
@@ -81,7 +87,7 @@ impl SyncRenderer {
       command_buffer_count: 1,
       p_command_buffers: &self.renderer.compute_pools[cur_frame_i].buffer,
       signal_semaphore_count: 1,
-      p_signal_semaphores: &cur_frame.compute_finished,
+      p_signal_semaphores: &cur_frame.instance_buffer_ready,
     };
     unsafe {
       self
@@ -90,10 +96,12 @@ impl SyncRenderer {
         .queue_submit(
           self.renderer.queues.compute,
           &[submit_info],
-          vk::Fence::null(),
+          cur_frame.compute_finished,
         )
         .expect("Failed to submit to queue");
     }
+
+    self.first_frame = false;
 
     // graphics
 
@@ -134,12 +142,15 @@ impl SyncRenderer {
 
     unsafe {
       self.renderer.graphics_pools[cur_frame_i].reset(&self.renderer.device);
-      self
-        .renderer
-        .record_graphics(cur_frame_i, image_index as usize, player);
+      self.renderer.record_graphics(
+        cur_frame_i,
+        image_index as usize,
+        bullet_instance_count as u32,
+        player,
+      );
     }
 
-    let wait_semaphores = [cur_frame.compute_finished, cur_frame.image_available];
+    let wait_semaphores = [cur_frame.instance_buffer_ready, cur_frame.image_available];
     let wait_stages = [
       vk::PipelineStageFlags::TRANSFER,
       vk::PipelineStageFlags::TRANSFER,
@@ -162,7 +173,7 @@ impl SyncRenderer {
         .queue_submit(
           self.renderer.queues.graphics,
           &[submit_info],
-          cur_frame.finished,
+          cur_frame.graphics_finished,
         )
         .expect("Failed to submit to queue");
     }

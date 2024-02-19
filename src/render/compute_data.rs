@@ -13,7 +13,8 @@ use crate::{
 };
 
 use super::{
-  command_pools::compute::ComputeRecordBufferData, initialization::device::PhysicalDevice,
+  command_pools::compute::{AddNewProjectiles, ComputeRecordBufferData, ExecuteShader},
+  initialization::device::PhysicalDevice,
   FRAMES_IN_FLIGHT,
 };
 
@@ -83,30 +84,26 @@ pub struct ComputeOutput {
   pc_projectile_replacements_i: u32,
 }
 
-pub struct OutputBuffer {
+pub struct MappedHostBuffer<T> {
   pub buffer: vk::Buffer,
-  pub data_ptr: NonNull<ComputeOutput>,
-}
-
-pub struct NewProjectilesBuffer {
-  pub buffer: vk::Buffer,
-  pub data_ptr: NonNull<[Projectile; MAX_NEW_PROJECTILES_PER_FRAME]>,
+  pub data_ptr: NonNull<T>,
 }
 
 pub struct ComputeData {
-  random: ThreadRng,
-
   pub host_memory: vk::DeviceMemory,
-  pub output: [OutputBuffer; FRAMES_IN_FLIGHT],
-  pub new_projectiles: [NewProjectilesBuffer; FRAMES_IN_FLIGHT],
+  pub output: [MappedHostBuffer<ComputeOutput>; FRAMES_IN_FLIGHT],
+  pub new_projectiles:
+    [MappedHostBuffer<[Projectile; MAX_NEW_PROJECTILES_PER_FRAME]>; FRAMES_IN_FLIGHT],
 
   pub device_memory: vk::DeviceMemory,
   pub instance_capacity: u64,
   pub instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT],
   pub instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
 
-  pub push_data: ComputePushConstants,
-  target_projectile_count: usize,
+  target_bullet_count: usize,
+  cur_bullet_count: usize,
+  rng: ThreadRng,
+  projectile_replacements_cache: [[Projectile; PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT]; 2],
 }
 
 impl ComputeData {
@@ -159,13 +156,13 @@ impl ComputeData {
     };
 
     let offsets = host_alloc.offsets.buffer_offsets();
-    let mut shader_output_ptrs = unsafe {
+    let shader_output_ptrs = unsafe {
       [
         NonNull::new_unchecked(host_ptr.add(offsets[0] as usize) as *mut ComputeOutput),
         NonNull::new_unchecked(host_ptr.add(offsets[1] as usize) as *mut ComputeOutput),
       ]
     };
-    let mut new_projectiles_ptrs = unsafe {
+    let new_projectiles_ptrs = unsafe {
       [
         NonNull::new_unchecked(
           host_ptr.add(offsets[2] as usize) as *mut [Projectile; MAX_NEW_PROJECTILES_PER_FRAME]
@@ -176,19 +173,15 @@ impl ComputeData {
       ]
     };
 
-    // clear outputs for first shader update
-    unsafe {
-      *shader_output_ptrs[0].as_mut() = ComputeOutput::default();
-      *shader_output_ptrs[1].as_mut() = ComputeOutput::default();
-    }
-
     let initial_capacity = 4000;
     let instance_size = (size_of::<Projectile>() * initial_capacity) as u64;
     let instance_compute = utility::populate_array_with_expression!(
       create_buffer(
         device,
         instance_size,
-        vk::BufferUsageFlags::STORAGE_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_SRC),
+        vk::BufferUsageFlags::STORAGE_BUFFER
+          .bitor(vk::BufferUsageFlags::TRANSFER_DST)
+          .bitor(vk::BufferUsageFlags::TRANSFER_SRC),
       ),
       FRAMES_IN_FLIGHT
     );
@@ -216,32 +209,34 @@ impl ComputeData {
     )
     .unwrap();
 
-    let mut push_data = ComputePushConstants::default();
-    let mut random = rand::thread_rng();
+    let mut rng = rand::thread_rng();
+    let mut projectile_replacements_cache =
+      [[Projectile::default(); PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT]; 2];
     for i in 0..PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT {
-      push_data.projectile_replacements[i] = Self::random_projectile(&random);
+      projectile_replacements_cache[0][i] = Self::random_projectile(&mut rng);
+    }
+    for i in 0..PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT {
+      projectile_replacements_cache[1][i] = Self::random_projectile(&mut rng);
     }
 
     Self {
-      random,
-
       host_memory: host_alloc.memory,
       output: [
-        OutputBuffer {
+        MappedHostBuffer {
           buffer: shader_output[0],
           data_ptr: shader_output_ptrs[0],
         },
-        OutputBuffer {
+        MappedHostBuffer {
           buffer: shader_output[1],
           data_ptr: shader_output_ptrs[1],
         },
       ],
       new_projectiles: [
-        NewProjectilesBuffer {
+        MappedHostBuffer {
           buffer: new_projectiles[0],
           data_ptr: new_projectiles_ptrs[0],
         },
-        NewProjectilesBuffer {
+        MappedHostBuffer {
           buffer: new_projectiles[1],
           data_ptr: new_projectiles_ptrs[1],
         },
@@ -252,70 +247,87 @@ impl ComputeData {
       instance_graphics,
 
       instance_capacity: initial_capacity as u64,
-      target_projectile_count: 12,
-
-      push_data,
+      target_bullet_count: 3000,
+      cur_bullet_count: 0,
+      rng,
+      projectile_replacements_cache,
     }
   }
 
-  fn cur_proj_count(&self) -> usize {
-    self.push_data.projectile_count as usize
-  }
-
-  fn random_projectile(rng: &ThreadRng) -> Projectile {
+  fn random_projectile(rng: &mut ThreadRng) -> Projectile {
     Projectile {
-      pos: [(rng.gen::<f32>() - 0.5) * 2.0, -1.0],
-      vel: [0.0, 0.1],
+      pos: [(rng.gen::<f32>() - 0.5) * 2.0, -1.2],
+      vel: [0.0, 0.5 + (rng.gen::<f32>() / 10.0)],
     }
   }
 
   pub fn update(
     &mut self,
     frame_i: usize,
+    shader_completed_last_frame: bool,
     delta_time: f32,
     player_position: [f32; 2],
-  ) -> ComputeRecordBufferData {
-    self.push_data.delta_time = delta_time;
-    self.push_data.player_pos = player_position;
+  ) -> (ComputeRecordBufferData, usize) {
+    if shader_completed_last_frame {
+      let output = unsafe { self.output[frame_i].data_ptr.as_ref().clone() };
 
-    let adding_new_projectiles = self.cur_proj_count() < self.target_projectile_count;
-    if self.cur_proj_count() < self.target_projectile_count {
-      let cur_new_proj_ref = unsafe { self.new_projectiles[frame_i].data_ptr.as_mut() };
-      for i in 0..((self.target_projectile_count - self.cur_proj_count())
-        .min(MAX_NEW_PROJECTILES_PER_FRAME))
-      {
-        cur_new_proj_ref[i] = Self::random_projectile(&self.random);
+      for i in 0..(output.pc_projectile_replacements_i as usize).min(PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT) {
+        self.projectile_replacements_cache[frame_i][i] = Self::random_projectile(&mut self.rng);
       }
     }
 
-    todo!();
-    // let output: ComputeOutput = unsafe { self.shader_output_data[frame_i].as_ref().clone() };
-    // println!("output {:#?}", output);
+    let before_adding_count = self.cur_bullet_count;
+    let mut total_count = self.cur_bullet_count;
 
-    // debug_assert!(output.new_projectile_count as usize <= PUSH_CONSTANT_NEXT_PROJECTILES_COUNT);
+    let execute_shader = if before_adding_count > 0 {
+      Some(ExecuteShader {
+        push_data: ComputePushConstants {
+          player_pos: player_position,
+          delta_time,
+          projectile_count: before_adding_count as u32, // before adding more projectiles
+          projectile_replacements: self.projectile_replacements_cache[frame_i],
+        },
+      })
+    } else {
+      None
+    };
 
-    // self.constants.cur_projectile_count += output.new_projectile_count;
+    let add_projectiles = if self.target_bullet_count > before_adding_count {
+      let cur_new_proj_ref = unsafe { self.new_projectiles[frame_i].data_ptr.as_mut() };
+      let new_bullet_count =
+        (self.target_bullet_count - before_adding_count).min(MAX_NEW_PROJECTILES_PER_FRAME);
+      for i in 0..new_bullet_count {
+        cur_new_proj_ref[i] = Self::random_projectile(&mut self.rng);
+      }
 
-    // let next_proj_i = output.pc_next_projectiles_i;
-    // for i in 0..((next_proj_i as usize).min(PUSH_CONSTANT_NEXT_PROJECTILES_COUNT)) {
-    //   let new_proj = Projectile {
-    //     pos: [(self.random.gen::<f32>() - 0.5) * 2.0, -1.0],
-    //     vel: [0.0, 0.2],
-    //   };
-    //   self.constants.next_projectiles[i] = new_proj;
-    // }
+      self.cur_bullet_count += new_bullet_count;
+      total_count += new_bullet_count;
 
-    // println!("constants {:#?}", self.constants);
+      Some(AddNewProjectiles {
+        buffer: self.new_projectiles[frame_i].buffer,
+        count: new_bullet_count,
+      })
+    } else {
+      None
+    };
 
-    // if output.colliding > 0 {
-    //   // temp
-    //   println!("Colliding! {}", output.colliding);
-    // }
+    (
+      ComputeRecordBufferData {
+        output: self.output[frame_i].buffer,
+        instance_write: self.instance_compute[frame_i],
+        instance_graphics: self.instance_graphics[frame_i],
+        existing_projectiles_count: before_adding_count,
+        add_projectiles,
+        execute_shader,
+      },
+      total_count,
+    )
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
     for i in 0..FRAMES_IN_FLIGHT {
-      device.destroy_buffer(self.shader_output[i], None);
+      device.destroy_buffer(self.output[i].buffer, None);
+      device.destroy_buffer(self.new_projectiles[i].buffer, None);
       device.destroy_buffer(self.instance_compute[i], None);
       device.destroy_buffer(self.instance_graphics[i], None);
     }

@@ -119,3 +119,16 @@ pub fn create_unsignaled_fence(device: &ash::Device) -> vk::Fence {
       .expect("Failed to create fence")
   }
 }
+
+pub fn create_signaled_fence(device: &ash::Device) -> vk::Fence {
+  let create_info = vk::FenceCreateInfo {
+    s_type: vk::StructureType::FENCE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::FenceCreateFlags::SIGNALED,
+  };
+  unsafe {
+    device
+      .create_fence(&create_info, None)
+      .expect("Failed to create fence")
+  }
+}

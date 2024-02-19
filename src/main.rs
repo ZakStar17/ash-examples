@@ -120,7 +120,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
 
         frame_count += 1;
         if frame_count > 6 {
-          target.exit();
+          //target.exit();
         }
       }
       Event::WindowEvent { event, .. } => match event {
