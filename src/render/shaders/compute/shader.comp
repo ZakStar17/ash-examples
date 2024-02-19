@@ -42,13 +42,12 @@ Projectile invalid_projectile() {
   float positive_inf = uintBitsToFloat(0x7F800000);
 
   Projectile p;
-  p.pos = vec2(positive_inf, positive_inf);
+  p.pos = vec2(0.8, 0.8);
   return p;
 }
 
 bool out_of_bounds(Projectile p) {
-  // no out of bounds for top of screen
-  return p.pos[0] < -1.1 || p.pos[0] > 1.1 || p.pos[1] > 1.1;
+  return p.pos[1] > 1.1;
 }
 
 void main() {
@@ -92,8 +91,9 @@ void main() {
   Projectile p_in = data_in.projectiles[i];
 
   Projectile p_out;
-  p_out.vel = p_in.vel + (p_in.vel * 0.1 * pc.delta_time);
-  p_out.pos = p_in.pos + (p_in.vel * pc.delta_time);
+  // p_out.vel = p_in.vel + (p_in.vel * 0.1 * pc.delta_time);
+  // p_out.pos = p_in.pos + (p_in.vel * pc.delta_time);
+  p_out.pos = vec2(p_in.pos[0], p_in.pos[1]);
 
   if (out_of_bounds(p_out)) {
     // Replace projectile with new one (in this case it is more like teleporting it to a new place)

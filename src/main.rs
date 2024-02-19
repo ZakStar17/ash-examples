@@ -30,7 +30,7 @@ pub const RESOLUTION: [u32; 2] = [800, 800];
 // FIFO_KHR is required to be supported and corresponds as to enabling VSync in games
 // IMMEDIATE will be chosen over RELAXED_KHR if the latter is not supported
 // otherwise, presentation mode will fallback to FIFO_KHR
-pub const PREFERRED_PRESENTATION_METHOD: vk::PresentModeKHR = vk::PresentModeKHR::IMMEDIATE;
+pub const PREFERRED_PRESENTATION_METHOD: vk::PresentModeKHR = vk::PresentModeKHR::FIFO;
 
 // This application doesn't use dynamic pipeline size, so resizing is expensive
 // If a small resize happens (for example while resizing with the mouse) this usually means that
@@ -58,6 +58,8 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
 
   let mut last_update_instant = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
+
+  let mut frame_count = 0;
   event_loop
     .run(move |event, target| match event {
       Event::Suspended => {
@@ -106,6 +108,7 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           return;
         }
 
+        println!("\n\nRENDERING FRAME: {}", frame_count);
         if engine_running {
           if engine
             .render_frame(time_passed.as_secs_f32(), &player.sprite_data())
@@ -113,6 +116,11 @@ pub fn main_loop(event_loop: EventLoop<()>, mut engine: RenderEngine) {
           {
             log::warn!("Frame failed to render");
           }
+        }
+
+        frame_count += 1;
+        if frame_count > 6 {
+          target.exit();
         }
       }
       Event::WindowEvent { event, .. } => match event {

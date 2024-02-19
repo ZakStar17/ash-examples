@@ -148,12 +148,12 @@ impl DescriptorSets {
     };
 
     let shader_output_0 = vk::DescriptorBufferInfo {
-      buffer: compute_data.shader_output[0],
+      buffer: compute_data.output[0].buffer,
       offset: 0,
       range: vk::WHOLE_SIZE,
     };
     let shader_output_1 = vk::DescriptorBufferInfo {
-      buffer: compute_data.shader_output[1],
+      buffer: compute_data.output[1].buffer,
       offset: 0,
       range: vk::WHOLE_SIZE,
     };
