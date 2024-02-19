@@ -4,7 +4,9 @@ use ash::vk;
 
 use crate::{
   render::{
-    compute_data::{ ComputePushConstants, Projectile}, initialization::QueueFamilies, pipelines::ComputePipelines
+    compute_data::{ComputePushConstants, Projectile},
+    initialization::QueueFamilies,
+    pipelines::ComputePipelines,
   },
   utility,
 };

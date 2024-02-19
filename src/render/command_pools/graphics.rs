@@ -4,7 +4,13 @@ use ash::vk;
 
 use crate::{
   render::{
-    constant_data::ConstantData, descriptor_sets::DescriptorSets, initialization::QueueFamilies, pipelines::GraphicsPipelines, push_constants::SpritePushConstants, sprites::{PLAYER_VERTICES, SQUARE_INDICES}, BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR
+    constant_data::ConstantData,
+    descriptor_sets::DescriptorSets,
+    initialization::QueueFamilies,
+    pipelines::GraphicsPipelines,
+    push_constants::SpritePushConstants,
+    sprites::{PLAYER_VERTICES, SQUARE_INDICES},
+    BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
   },
   utility,
 };
@@ -123,18 +129,8 @@ impl GraphicsCommandPool {
         &[descriptor_sets.texture_set],
         &[],
       );
-      device.cmd_bind_vertex_buffers(
-        cb,
-        0,
-        &[constant_data.vertex, instance_buffer],
-        &[0, 0],
-      );
-      device.cmd_bind_index_buffer(
-        cb,
-        constant_data.index,
-        0,
-        vk::IndexType::UINT16,
-      );
+      device.cmd_bind_vertex_buffers(cb, 0, &[constant_data.vertex, instance_buffer], &[0, 0]);
+      device.cmd_bind_index_buffer(cb, constant_data.index, 0, vk::IndexType::UINT16);
 
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.projectiles);
       device.cmd_draw_indexed(

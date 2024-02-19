@@ -6,14 +6,27 @@ use winit::dpi::PhysicalSize;
 
 use crate::{
   render::{
-    allocations::allocate_and_bind_memory, command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool}, common_object_creations::{create_image, create_image_view}, initialization::device::create_logical_device, long_lived::{create_framebuffer, create_render_pass}, RENDER_FORMAT, TEXTURE_PATH
+    allocations::allocate_and_bind_memory,
+    command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool},
+    common_object_creations::{create_image, create_image_view},
+    initialization::device::create_logical_device,
+    long_lived::{create_framebuffer, create_render_pass},
+    RENDER_FORMAT, TEXTURE_PATH,
   },
   utility::{self, populate_array_with_expression},
   RESOLUTION,
 };
 
 use super::{
-  command_pools::{compute::ComputeCommandPool, GraphicsCommandPool}, compute_data::ComputeData, constant_data::ConstantData, descriptor_sets::DescriptorSets, initialization::{PhysicalDevice, Queues, Surface}, long_lived::Swapchains, pipelines::Pipelines, push_constants::SpritePushConstants, FRAMES_IN_FLIGHT
+  command_pools::{compute::ComputeCommandPool, GraphicsCommandPool},
+  compute_data::ComputeData,
+  constant_data::ConstantData,
+  descriptor_sets::DescriptorSets,
+  initialization::{PhysicalDevice, Queues, Surface},
+  long_lived::Swapchains,
+  pipelines::Pipelines,
+  push_constants::SpritePushConstants,
+  FRAMES_IN_FLIGHT,
 };
 
 const RENDER_EXTENT: vk::Extent2D = vk::Extent2D {
@@ -52,7 +65,7 @@ pub struct Renderer {
 
   pub graphics_pools: [GraphicsCommandPool; FRAMES_IN_FLIGHT],
   pub compute_pools: [ComputeCommandPool; FRAMES_IN_FLIGHT],
-  
+
   constant_data: ConstantData,
   compute_data: ComputeData,
 }
@@ -115,8 +128,7 @@ impl Renderer {
     );
 
     let constant_data = {
-      let mut transfer_pool =
-        TransferCommandPool::create(&device, &physical_device.queue_families);
+      let mut transfer_pool = TransferCommandPool::create(&device, &physical_device.queue_families);
       let mut graphics_pool =
         TemporaryGraphicsCommandPool::create(&device, &physical_device.queue_families);
 

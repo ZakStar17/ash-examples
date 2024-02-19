@@ -11,7 +11,6 @@ pub use graphics::GraphicsCommandPool;
 pub use temporary_graphics::TemporaryGraphicsCommandPool;
 pub use transfer::TransferCommandPool;
 
-
 pub fn create_command_pool(
   device: &ash::Device,
   flags: vk::CommandPoolCreateFlags,

@@ -4,7 +4,6 @@ use ash::vk;
 
 use crate::render::{compute_data::ComputePushConstants, descriptor_sets::DescriptorSets, shaders};
 
-
 pub struct ComputePipelines {
   pub layout: vk::PipelineLayout,
   pub compute_instances: vk::Pipeline,
@@ -57,7 +56,10 @@ impl ComputePipelines {
       shader.destroy_self(device);
     }
 
-    Self { layout, compute_instances }
+    Self {
+      layout,
+      compute_instances,
+    }
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

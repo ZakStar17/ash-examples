@@ -6,7 +6,8 @@ use std::{
 use ash::vk;
 
 use crate::render::{
-  compute_data::Projectile, descriptor_sets::DescriptorSets, push_constants::SpritePushConstants, shaders, vertices::vertex_input_state_create_info, Vertex
+  compute_data::Projectile, descriptor_sets::DescriptorSets, push_constants::SpritePushConstants,
+  shaders, vertices::vertex_input_state_create_info, Vertex,
 };
 
 fn create_layout(

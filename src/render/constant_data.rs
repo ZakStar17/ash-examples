@@ -6,9 +6,17 @@ use std::{
 
 use ash::vk;
 
-use crate::render::{allocations::allocate_and_bind_memory, common_object_creations::{create_buffer, create_image, create_image_view}, sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES}};
+use crate::render::{
+  allocations::allocate_and_bind_memory,
+  common_object_creations::{create_buffer, create_image, create_image_view},
+  sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES},
+};
 
-use super::{command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool}, common_object_creations::{create_semaphore, create_unsignaled_fence}, initialization::{PhysicalDevice, Queues}};
+use super::{
+  command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool},
+  common_object_creations::{create_semaphore, create_unsignaled_fence},
+  initialization::{PhysicalDevice, Queues},
+};
 
 // doesn't change after initialization
 pub struct ConstantData {

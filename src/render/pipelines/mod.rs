@@ -1,7 +1,6 @@
-
+mod cache;
 mod compute;
 mod graphics;
-mod cache;
 
 use ash::vk::{self, PipelineCache};
 
@@ -12,23 +11,36 @@ use super::{descriptor_sets::DescriptorSets, initialization::PhysicalDevice};
 pub struct Pipelines {
   pub compute: ComputePipelines,
   pub graphics: GraphicsPipelines,
-  cache: PipelineCache
+  cache: PipelineCache,
 }
 
 impl Pipelines {
-  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice, descriptor_sets: &DescriptorSets, render_pass: vk::RenderPass, extent: vk::Extent2D) -> Self {
+  pub fn new(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    descriptor_sets: &DescriptorSets,
+    render_pass: vk::RenderPass,
+    extent: vk::Extent2D,
+  ) -> Self {
     log::info!("Creating pipeline cache");
-    let (pipeline_cache, created_from_file) = cache::create_pipeline_cache(&device, &physical_device);
+    let (pipeline_cache, created_from_file) =
+      cache::create_pipeline_cache(&device, &physical_device);
     if created_from_file {
       log::info!("Cache successfully created from an existing cache file");
     } else {
       log::info!("Cache initialized as empty");
     }
-  
+
     Self {
-      graphics: GraphicsPipelines::new(device, pipeline_cache, descriptor_sets, render_pass, extent),
+      graphics: GraphicsPipelines::new(
+        device,
+        pipeline_cache,
+        descriptor_sets,
+        render_pass,
+        extent,
+      ),
       compute: ComputePipelines::new(device, pipeline_cache, descriptor_sets),
-      cache: pipeline_cache
+      cache: pipeline_cache,
     }
   }
 
@@ -37,8 +49,7 @@ impl Pipelines {
     self.compute.destroy_self(device);
 
     log::info!("Saving pipeline cache");
-    if let Err(err) = cache::save_pipeline_cache(device, physical_device, self.cache)
-    {
+    if let Err(err) = cache::save_pipeline_cache(device, physical_device, self.cache) {
       log::error!("Failed to save pipeline cache: {:?}", err);
     }
   }

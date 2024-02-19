@@ -5,7 +5,6 @@ use ash::vk;
 
 use super::initialization::PhysicalDevice;
 
-
 pub struct PackedAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_size: u64,
