@@ -51,3 +51,21 @@ fn allocate_primary_command_buffers(
       .expect("Failed to allocate command buffers")
   }
 }
+
+fn dependency_info(
+  memory: &[vk::MemoryBarrier2],
+  buffer: &[vk::BufferMemoryBarrier2],
+  image: &[vk::ImageMemoryBarrier2],
+) -> vk::DependencyInfo {
+  vk::DependencyInfo {
+    s_type: vk::StructureType::DEPENDENCY_INFO,
+    p_next: ptr::null(),
+    dependency_flags: vk::DependencyFlags::empty(),
+    memory_barrier_count: memory.len() as u32,
+    p_memory_barriers: memory.as_ptr(),
+    buffer_memory_barrier_count: buffer.len() as u32,
+    p_buffer_memory_barriers: buffer.as_ptr(),
+    image_memory_barrier_count: image.len() as u32,
+    p_image_memory_barriers: image.as_ptr(),
+  }
+}

@@ -84,11 +84,13 @@ pub struct ComputeOutput {
   pc_projectile_replacements_i: u32,
 }
 
+#[derive(Debug)]
 pub struct MappedHostBuffer<T> {
   pub buffer: vk::Buffer,
   pub data_ptr: NonNull<T>,
 }
 
+#[derive(Debug)]
 pub struct ComputeData {
   pub host_memory: vk::DeviceMemory,
   pub output: [MappedHostBuffer<ComputeOutput>; FRAMES_IN_FLIGHT],
@@ -271,7 +273,9 @@ impl ComputeData {
     if shader_completed_last_frame {
       let output = unsafe { self.output[frame_i].data_ptr.as_ref().clone() };
 
-      for i in 0..(output.pc_projectile_replacements_i as usize).min(PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT) {
+      for i in 0..(output.pc_projectile_replacements_i as usize)
+        .min(PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT)
+      {
         self.projectile_replacements_cache[frame_i][i] = Self::random_projectile(&mut self.rng);
       }
     }
@@ -305,7 +309,8 @@ impl ComputeData {
 
       Some(AddNewProjectiles {
         buffer: self.new_projectiles[frame_i].buffer,
-        count: new_bullet_count,
+        buffer_size: (size_of::<Projectile>() * new_bullet_count) as u64,
+        bullet_count: new_bullet_count,
       })
     } else {
       None
@@ -314,6 +319,7 @@ impl ComputeData {
     (
       ComputeRecordBufferData {
         output: self.output[frame_i].buffer,
+        instance_read: self.instance_compute[(frame_i + 1) % FRAMES_IN_FLIGHT],
         instance_write: self.instance_compute[frame_i],
         instance_graphics: self.instance_graphics[frame_i],
         existing_projectiles_count: before_adding_count,
