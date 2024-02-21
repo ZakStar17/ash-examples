@@ -26,12 +26,12 @@ layout(set = 0, binding = 0) restrict buffer CPUOut {
 }
 cpu_out;
 
-layout(set = 0, binding = 1) restrict readonly buffer DataIn {
+layout(set = 1, binding = 0) restrict readonly buffer DataIn {
   Projectile projectiles[];
 }
 data_in;
 
-layout(set = 0, binding = 2) restrict writeonly buffer DataOut {
+layout(set = 1, binding = 1) restrict writeonly buffer DataOut {
   Projectile projectiles[];
 }
 data_out;

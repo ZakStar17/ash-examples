@@ -22,12 +22,16 @@ impl ComputePipelines {
       offset: 0,
       size: size_of::<ComputePushConstants>() as u32,
     };
+    let set_layouts = [
+      descriptor_sets.storage1_layout,
+      descriptor_sets.storage2_layout,
+    ];
     let layout_create_info = vk::PipelineLayoutCreateInfo {
       s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
       p_next: ptr::null(),
       flags: vk::PipelineLayoutCreateFlags::empty(),
-      set_layout_count: 1,
-      p_set_layouts: &descriptor_sets.compute_layout,
+      set_layout_count: set_layouts.len() as u32,
+      p_set_layouts: set_layouts.as_ptr(),
       push_constant_range_count: 1,
       p_push_constant_ranges: &push_constant_range,
     };

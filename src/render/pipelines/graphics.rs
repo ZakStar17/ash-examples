@@ -54,7 +54,7 @@ impl GraphicsPipelines {
     };
     let layout = create_layout(
       device,
-      &[descriptor_sets.graphics_layout],
+      &[descriptor_sets.texture1_layout],
       &[push_constant_range],
     );
 

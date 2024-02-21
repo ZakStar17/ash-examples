@@ -99,7 +99,8 @@ pub struct ComputeData {
 
   pub device_memory: vk::DeviceMemory,
   pub instance_capacity: u64,
-  pub instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT],
+  // each frame can have at most two buffers being written simultaneously
+  pub instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT + 1],
   pub instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
 
   target_bullet_count: usize,
@@ -109,11 +110,9 @@ pub struct ComputeData {
 }
 
 impl ComputeData {
-  pub const COMPUTE_BUFFER_COUNT: u32 = 4;
-
   pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Self {
     let new_projectiles_size = size_of::<Projectile>() * MAX_NEW_PROJECTILES_PER_FRAME;
-    let shader_output = utility::populate_array_with_expression!(
+    let shader_output = utility::repeat_in_array!(
       create_buffer(
         device,
         size_of::<ComputeOutput>() as u64,
@@ -122,7 +121,7 @@ impl ComputeData {
       ),
       FRAMES_IN_FLIGHT
     );
-    let new_projectiles = utility::populate_array_with_expression!(
+    let new_projectiles = utility::repeat_in_array!(
       create_buffer(
         device,
         new_projectiles_size as u64,
@@ -177,7 +176,7 @@ impl ComputeData {
 
     let initial_capacity = 4000;
     let instance_size = (size_of::<Projectile>() * initial_capacity) as u64;
-    let instance_compute = utility::populate_array_with_expression!(
+    let instance_compute = utility::repeat_in_array!(
       create_buffer(
         device,
         instance_size,
@@ -185,9 +184,9 @@ impl ComputeData {
           .bitor(vk::BufferUsageFlags::TRANSFER_DST)
           .bitor(vk::BufferUsageFlags::TRANSFER_SRC),
       ),
-      FRAMES_IN_FLIGHT
+      FRAMES_IN_FLIGHT + 1
     );
-    let instance_graphics = utility::populate_array_with_expression!(
+    let instance_graphics = utility::repeat_in_array!(
       create_buffer(
         device,
         instance_size,
@@ -204,6 +203,7 @@ impl ComputeData {
       &[
         instance_compute[0],
         instance_compute[1],
+        instance_compute[2],
         instance_graphics[0],
         instance_graphics[1],
       ],
@@ -266,6 +266,7 @@ impl ComputeData {
   pub fn update(
     &mut self,
     frame_i: usize,
+    frame_i2: usize,
     shader_completed_last_frame: bool,
     delta_time: f32,
     player_position: [f32; 2],
@@ -288,7 +289,7 @@ impl ComputeData {
         push_data: ComputePushConstants {
           player_pos: player_position,
           delta_time,
-          projectile_count: before_adding_count as u32, // before adding more projectiles
+          projectile_count: before_adding_count as u32,
           projectile_replacements: self.projectile_replacements_cache[frame_i],
         },
       })
@@ -319,8 +320,8 @@ impl ComputeData {
     (
       ComputeRecordBufferData {
         output: self.output[frame_i].buffer,
-        instance_read: self.instance_compute[(frame_i + 1) % FRAMES_IN_FLIGHT],
-        instance_write: self.instance_compute[frame_i],
+        instance_read: self.instance_compute[frame_i2],
+        instance_write: self.instance_compute[(frame_i2 + 1) % (FRAMES_IN_FLIGHT + 1)],
         instance_graphics: self.instance_graphics[frame_i],
         existing_projectiles_count: before_adding_count,
         add_projectiles,
@@ -334,8 +335,10 @@ impl ComputeData {
     for i in 0..FRAMES_IN_FLIGHT {
       device.destroy_buffer(self.output[i].buffer, None);
       device.destroy_buffer(self.new_projectiles[i].buffer, None);
-      device.destroy_buffer(self.instance_compute[i], None);
       device.destroy_buffer(self.instance_graphics[i], None);
+    }
+    for i in 0..(FRAMES_IN_FLIGHT + 1) {
+      device.destroy_buffer(self.instance_compute[i], None);
     }
     device.free_memory(self.host_memory, None);
     device.free_memory(self.device_memory, None);

@@ -86,9 +86,9 @@ macro_rules! cstr {
 }
 pub use cstr;
 
-// populate_array_with_expression!(a + b, 3) transforms into [a + b, a + b, a + b]
+// repeat_in_array!(a + b, 3) transforms into [a + b, a + b, a + b]
 #[macro_export]
-macro_rules! populate_array_with_expression {
+macro_rules! repeat_in_array {
   ($ex:expr, $arr_size:expr) => {{
     use std::mem::MaybeUninit;
     let mut tmp: [MaybeUninit<_>; $arr_size] = unsafe { MaybeUninit::uninit().assume_init() };
@@ -98,4 +98,24 @@ macro_rules! populate_array_with_expression {
     unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) }
   }};
 }
-pub use populate_array_with_expression;
+pub use repeat_in_array;
+
+// copies multiple arrays into a new array
+#[macro_export]
+macro_rules! conc_arrays {
+  ($size:expr, $($slice:expr),+) => {
+    {
+      use std::mem::MaybeUninit;
+      let mut tmp: [MaybeUninit<_>; $size] = unsafe { MaybeUninit::uninit().assume_init() };
+      let mut i = 0;
+      $(
+        for item in $slice {
+          tmp[i] = MaybeUninit::new(item);
+          i += 1;
+        }
+      )+
+      unsafe { std::mem::transmute::<_, [_; $size]>(tmp) }
+    }
+  };
+}
+pub use conc_arrays;

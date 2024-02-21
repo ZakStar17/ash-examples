@@ -62,11 +62,13 @@ impl ComputeCommandPool {
     device: &ash::Device,
     queue_families: &QueueFamilies,
     pipelines: &ComputePipelines,
-    descriptor_set: vk::DescriptorSet,
+    output: vk::DescriptorSet,
+    instance: vk::DescriptorSet,
     data: ComputeRecordBufferData,
   ) {
     let cb = self.buffer;
 
+    println!("from {:?} to {:?}", data.instance_read, data.instance_write);
     // println!("Recording {:#?}", data);
 
     let command_buffer_begin_info = vk::CommandBufferBeginInfo {
@@ -118,16 +120,13 @@ impl ComputeCommandPool {
         buffer: data.instance_read,
         ..base_barrier
       };
-      device.cmd_pipeline_barrier2(
-        cb,
-        &dependency_info(&[], &[eh], &[]),
-      );
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[eh], &[]));
       device.cmd_bind_descriptor_sets(
         cb,
         vk::PipelineBindPoint::COMPUTE,
         pipelines.layout,
         0,
-        &[descriptor_set],
+        &[output, instance],
         &[],
       );
       device.cmd_push_constants(
@@ -146,15 +145,17 @@ impl ComputeCommandPool {
       let group_count = data.existing_projectiles_count / 8 + 1;
       device.cmd_dispatch(cb, group_count as u32, 1, 1);
 
-      // let write_flush = vk::BufferMemoryBarrier2 {
-      //   src_access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
-      //   dst_access_mask: vk::AccessFlags2::TRANSFER_READ.bitor(vk::AccessFlags2::SHADER_STORAGE_READ),
-      //   src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-      //   dst_stage_mask: vk::PipelineStageFlags2::COPY.bitor(vk::PipelineStageFlags2::COMPUTE_SHADER),
-      //   buffer: data.instance_write,
-      //   size: existing_projectiles_size,
-      //   ..base_barrier
-      // };
+      let write_flush = vk::BufferMemoryBarrier2 {
+        src_access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_READ
+          .bitor(vk::AccessFlags2::SHADER_STORAGE_READ),
+        src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+        dst_stage_mask: vk::PipelineStageFlags2::COPY
+          .bitor(vk::PipelineStageFlags2::COMPUTE_SHADER),
+        buffer: data.instance_write,
+        // size: existing_projectiles_size,
+        ..base_barrier
+      };
       let output_flush = vk::BufferMemoryBarrier2 {
         src_access_mask: vk::AccessFlags2::SHADER_STORAGE_WRITE,
         dst_access_mask: vk::AccessFlags2::HOST_READ,
@@ -163,7 +164,7 @@ impl ComputeCommandPool {
         buffer: data.output,
         ..base_barrier
       };
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[output_flush], &[]));
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[output_flush, write_flush], &[]));
     }
 
     if let Some(add_new) = data.add_projectiles.as_ref() {

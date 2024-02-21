@@ -3,7 +3,7 @@ use std::ptr;
 use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::utility::populate_array_with_expression;
+use crate::utility::repeat_in_array;
 
 use super::{
   frame::Frame, initialization::Surface, push_constants::SpritePushConstants, renderer::Renderer,
@@ -14,6 +14,7 @@ pub struct SyncRenderer {
   pub renderer: Renderer,
   frames: [Frame; FRAMES_IN_FLIGHT],
   last_frame_i: usize,
+  last_frame_i2: usize,
 
   // last frame swapchain was recreated and so current frame resources are marked as old
   // having more than two frames in flight could require having more than one old set of resources
@@ -26,12 +27,13 @@ pub struct SyncRenderer {
 
 impl SyncRenderer {
   pub fn new(renderer: Renderer) -> Self {
-    let frames = populate_array_with_expression!(Frame::new(&renderer.device), FRAMES_IN_FLIGHT);
+    let frames = repeat_in_array!(Frame::new(&renderer.device), FRAMES_IN_FLIGHT);
 
     Self {
       renderer,
       frames,
       last_frame_i: 0,
+      last_frame_i2: 0,
 
       last_frame_recreated_swapchain: false,
       recreate_swapchain_next_frame: false,
@@ -53,8 +55,10 @@ impl SyncRenderer {
     }
 
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
+    let cur_frame_i2 = (self.last_frame_i2 + 1) % (FRAMES_IN_FLIGHT + 1);
     let cur_frame: &Frame = &self.frames[cur_frame_i];
     self.last_frame_i = cur_frame_i;
+    self.last_frame_i2 = cur_frame_i2;
 
     //unsafe {
     //  self.renderer.device.device_wait_idle().unwrap();
@@ -63,10 +67,13 @@ impl SyncRenderer {
 
     cur_frame.wait_all(&self.renderer.device);
 
+    println!("{} {}", cur_frame_i, cur_frame_i2);
+
     // compute
 
     let (compute_record_data, bullet_instance_count) = self.renderer.compute_data.update(
       cur_frame_i,
+      cur_frame_i2,
       !self.first_frame,
       delta_time,
       player.position,
@@ -75,7 +82,7 @@ impl SyncRenderer {
       self.renderer.compute_pools[cur_frame_i].reset(&self.renderer.device);
       self
         .renderer
-        .record_compute(cur_frame_i, compute_record_data);
+        .record_compute(cur_frame_i, cur_frame_i2, compute_record_data);
     }
 
     let submit_info = vk::SubmitInfo {

@@ -13,7 +13,7 @@ use crate::{
     long_lived::{create_framebuffer, create_render_pass},
     RENDER_FORMAT, TEXTURE_PATH,
   },
-  utility::{self, populate_array_with_expression},
+  utility::{self},
   RESOLUTION,
 };
 
@@ -84,7 +84,7 @@ impl Renderer {
     log::debug!("Queue handles:\n{:#?}", queues);
 
     let render_pass = create_render_pass(&device, RENDER_FORMAT);
-    let render_targets = utility::populate_array_with_expression!(
+    let render_targets = utility::repeat_in_array!(
       create_image(
         &device,
         RESOLUTION[0],
@@ -162,11 +162,11 @@ impl Renderer {
 
     descriptor_sets.write_sets(&device, constant_data.texture_view, &compute_data);
 
-    let graphics_pools = populate_array_with_expression!(
+    let graphics_pools = utility::repeat_in_array!(
       GraphicsCommandPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
     );
-    let compute_pools = populate_array_with_expression!(
+    let compute_pools = utility::repeat_in_array!(
       ComputeCommandPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
     );
@@ -228,12 +228,18 @@ impl Renderer {
     );
   }
 
-  pub unsafe fn record_compute(&mut self, frame_i: usize, data: ComputeRecordBufferData) {
+  pub unsafe fn record_compute(
+    &mut self,
+    frame_i: usize,
+    frame_i2: usize,
+    data: ComputeRecordBufferData,
+  ) {
     self.compute_pools[frame_i].record(
       &self.device,
       &self.physical_device.queue_families,
       &self.pipelines.compute,
-      self.descriptor_sets.compute_sets[frame_i],
+      self.descriptor_sets.compute_output_sets[frame_i],
+      self.descriptor_sets.instance_sets[frame_i2],
       data,
     )
   }
