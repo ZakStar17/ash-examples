@@ -198,7 +198,6 @@ fn main() {
     {
       debug_utils.destroy_self();
     }
-
     instance.destroy_instance(None);
   }
 }
