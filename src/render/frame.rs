@@ -45,17 +45,13 @@ impl Frame {
     }
   }
 
-  pub fn wait_all(&self, device: &ash::Device) {
+  pub fn wait_graphics(&self, device: &ash::Device) {
     unsafe {
       device
-        .wait_for_fences(
-          &[self.compute_finished, self.graphics_finished],
-          true,
-          u64::MAX,
-        )
+        .wait_for_fences(&[self.graphics_finished], true, u64::MAX)
         .expect("Failed to wait for fences");
       device
-        .reset_fences(&[self.compute_finished, self.graphics_finished])
+        .reset_fences(&[self.graphics_finished])
         .expect("Failed to reset fence");
     }
   }

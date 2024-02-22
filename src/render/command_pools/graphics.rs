@@ -15,6 +15,8 @@ use crate::{
   utility,
 };
 
+use super::dependency_info;
+
 pub struct GraphicsCommandPool {
   pool: vk::CommandPool,
   pub triangle: vk::CommandBuffer,
@@ -81,26 +83,20 @@ impl GraphicsCommandPool {
     };
 
     {
-      let acquire_graphics_buffer = vk::BufferMemoryBarrier {
-        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER,
+      let acquire_instance = vk::BufferMemoryBarrier2 {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
         p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership acquire
-        dst_access_mask: vk::AccessFlags::VERTEX_ATTRIBUTE_READ,
+        src_access_mask: vk::AccessFlags2::NONE, // ownership acquire
+        dst_access_mask: vk::AccessFlags2::VERTEX_ATTRIBUTE_READ,
+        src_stage_mask: vk::PipelineStageFlags2::COPY, // from semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::VERTEX_INPUT,
         src_queue_family_index: queue_families.get_compute_index(),
         dst_queue_family_index: queue_families.get_graphics_index(),
         buffer: instance_buffer,
         offset: 0,
         size: vk::WHOLE_SIZE,
       };
-      device.cmd_pipeline_barrier(
-        cb,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::VERTEX_INPUT,
-        vk::DependencyFlags::empty(),
-        &[],
-        &[acquire_graphics_buffer],
-        &[],
-      );
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[acquire_instance], &[]));
     }
 
     let clear_value = vk::ClearValue {
@@ -155,13 +151,15 @@ impl GraphicsCommandPool {
     }
     device.cmd_end_render_pass(cb);
 
-    // change swapchain image layout to transfer dst
+    // prepare and clear swapchain image
     {
-      let swapchain_transfer_dst_layout = vk::ImageMemoryBarrier {
-        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      let swapchain_transfer_dst_layout = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
         p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags::NONE,
-        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        src_access_mask: vk::AccessFlags2::NONE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT, // image_available semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
         old_layout: vk::ImageLayout::UNDEFINED,
         new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -169,42 +167,28 @@ impl GraphicsCommandPool {
         image: swapchain_image,
         subresource_range,
       };
-      device.cmd_pipeline_barrier(
+      device.cmd_pipeline_barrier2(
         cb,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::DependencyFlags::empty(),
-        &[],
-        &[],
-        &[swapchain_transfer_dst_layout],
+        &dependency_info(&[], &[], &[swapchain_transfer_dst_layout]),
       );
-    }
 
-    device.cmd_clear_color_image(
-      cb,
-      swapchain_image,
-      vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      &OUT_OF_BOUNDS_AREA_COLOR,
-      &[subresource_range],
-    );
+      device.cmd_clear_color_image(
+        cb,
+        swapchain_image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &OUT_OF_BOUNDS_AREA_COLOR,
+        &[subresource_range],
+      );
 
-    {
-      // transfer barrier
-      let barrier = vk::MemoryBarrier {
-        s_type: vk::StructureType::MEMORY_BARRIER,
+      let flush_clear = vk::MemoryBarrier2 {
+        s_type: vk::StructureType::MEMORY_BARRIER_2,
         p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-        dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        src_stage_mask: vk::PipelineStageFlags2::CLEAR,
+        dst_stage_mask: vk::PipelineStageFlags2::BLIT,
       };
-      device.cmd_pipeline_barrier(
-        cb,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::DependencyFlags::empty(),
-        &[barrier],
-        &[],
-        &[],
-      );
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[flush_clear], &[], &[]));
     }
 
     {
@@ -281,13 +265,14 @@ impl GraphicsCommandPool {
       );
     }
 
-    // change swapchain image layout to presentation
     {
-      let swapchain_presentation_layout = vk::ImageMemoryBarrier {
-        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      let swapchain_presentation_layout = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
         p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-        dst_access_mask: vk::AccessFlags::NONE,
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::NONE,
+        src_stage_mask: vk::PipelineStageFlags2::BLIT,
+        dst_stage_mask: vk::PipelineStageFlags2::BLIT, // presentable semaphore
         old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -295,14 +280,9 @@ impl GraphicsCommandPool {
         image: swapchain_image,
         subresource_range,
       };
-      device.cmd_pipeline_barrier(
+      device.cmd_pipeline_barrier2(
         cb,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::DependencyFlags::empty(),
-        &[],
-        &[],
-        &[swapchain_presentation_layout],
+        &dependency_info(&[], &[], &[swapchain_presentation_layout]),
       );
     }
 

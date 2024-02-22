@@ -20,8 +20,11 @@ pub fn create_logical_device(
     .collect();
 
   let features = vk::PhysicalDeviceFeatures::default();
+  let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
+  features12.timeline_semaphore = vk::TRUE;
   let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
   features13.synchronization2 = vk::TRUE; // enables pipeline barriers to wait for nothing or signal nothing
+  features12.p_next = addr_of!(features13) as *mut c_void;
 
   // pp_enabled_layer_names are deprecated however they are still required in struct initialization
   #[allow(deprecated)]
@@ -30,7 +33,7 @@ pub fn create_logical_device(
     p_queue_create_infos: queue_create_infos.as_ptr(),
     queue_create_info_count: queue_create_infos.len() as u32,
     p_enabled_features: &features,
-    p_next: addr_of!(features13) as *const c_void,
+    p_next: addr_of!(features12) as *const c_void,
     pp_enabled_layer_names: ptr::null(), // deprecated
     enabled_layer_count: 0,              // deprecated
     pp_enabled_extension_names: device_extensions_pointers.as_ptr(),

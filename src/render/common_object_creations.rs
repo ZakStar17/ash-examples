@@ -1,4 +1,7 @@
-use std::ptr;
+use std::{
+  os::raw::c_void,
+  ptr::{self, addr_of},
+};
 
 use ash::vk;
 
@@ -103,6 +106,25 @@ pub fn create_semaphore(device: &ash::Device) -> vk::Semaphore {
   unsafe {
     device
       .create_semaphore(&semaphore_create_info, None)
+      .expect("Failed to create semaphore")
+  }
+}
+
+pub fn create_timeline_semaphore(device: &ash::Device, initial_value: u64) -> vk::Semaphore {
+  let typ = vk::SemaphoreTypeCreateInfo {
+    s_type: vk::StructureType::SEMAPHORE_TYPE_CREATE_INFO,
+    p_next: ptr::null(),
+    semaphore_type: vk::SemaphoreType::TIMELINE,
+    initial_value,
+  };
+  let create_info = vk::SemaphoreCreateInfo {
+    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+    p_next: addr_of!(typ) as *const c_void,
+    flags: vk::SemaphoreCreateFlags::empty(),
+  };
+  unsafe {
+    device
+      .create_semaphore(&create_info, None)
       .expect("Failed to create semaphore")
   }
 }

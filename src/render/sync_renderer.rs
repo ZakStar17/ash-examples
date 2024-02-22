@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{ops::BitOr, ptr};
 
 use ash::vk;
 use winit::dpi::PhysicalSize;
@@ -6,14 +6,14 @@ use winit::dpi::PhysicalSize;
 use crate::utility::populate_array_with_expression;
 
 use super::{
-  frame::Frame, initialization::Surface, push_constants::SpritePushConstants, renderer::Renderer,
-  FRAMES_IN_FLIGHT,
+  common_object_creations::create_timeline_semaphore, frame::Frame, initialization::Surface, push_constants::SpritePushConstants, renderer::Renderer, ENABLE_FRAME_DEBUGGING, FRAMES_IN_FLIGHT
 };
 
 pub struct SyncRenderer {
   pub renderer: Renderer,
   frames: [Frame; FRAMES_IN_FLIGHT],
   last_frame_i: usize,
+  timelines: [u64; 2],
 
   // last frame swapchain was recreated and so current frame resources are marked as old
   // having more than two frames in flight could require having more than one old set of resources
@@ -22,21 +22,30 @@ pub struct SyncRenderer {
   recreate_swapchain_next_frame: bool,
 
   first_frame: bool,
+
+  test: [vk::Semaphore; 2],
 }
 
 impl SyncRenderer {
   pub fn new(renderer: Renderer) -> Self {
     let frames = populate_array_with_expression!(Frame::new(&renderer.device), FRAMES_IN_FLIGHT);
+    let test = [
+      create_timeline_semaphore(&renderer.device, 0),
+      create_timeline_semaphore(&renderer.device, 2),
+    ];
 
     Self {
       renderer,
       frames,
-      last_frame_i: 0,
+      last_frame_i: 1,
+      timelines: [0, 2],
 
       last_frame_recreated_swapchain: false,
       recreate_swapchain_next_frame: false,
 
       first_frame: true,
+
+      test,
     }
   }
 
@@ -52,18 +61,72 @@ impl SyncRenderer {
       self.recreate_swapchain_next_frame = true;
     }
 
+    let last_frame_i = self.last_frame_i;
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     let cur_frame: &Frame = &self.frames[cur_frame_i];
+    let cur_test = self.test[cur_frame_i];
+    let other_test = self.test[self.last_frame_i];
     self.last_frame_i = cur_frame_i;
 
-    //unsafe {
-    //  self.renderer.device.device_wait_idle().unwrap();
-    //}
-    //std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
+    if ENABLE_FRAME_DEBUGGING {
+      println!("timeline: {:?}, frame i: {}", self.timelines, cur_frame_i);
+      let status = |val, is_cur| if val % 2 == 0 { 
+        let time_val = if is_cur {
+          self.timelines[cur_frame_i]
+        } else {
+          self.timelines[last_frame_i]
+        };
+        if val == time_val {
+          "ALL"
+        } else {
+          "NOTHING"
+        }
+       } else { "COMPUTE" };
 
-    cur_frame.wait_all(&self.renderer.device);
+      unsafe {
+        let old = self
+          .renderer
+          .device
+          .get_semaphore_counter_value(other_test)
+          .unwrap();
+        let cur = self
+          .renderer
+          .device
+          .get_semaphore_counter_value(cur_test)
+          .unwrap();
+        println!(
+          "BEFORE FENCE: Current: {} ({}), last: {} ({})",
+          cur,
+          status(cur, true),
+          old,
+          status(old, false)
+        );
+      }
 
-    // compute
+      cur_frame.wait_graphics(&self.renderer.device);
+
+      unsafe {
+        let old = self
+          .renderer
+          .device
+          .get_semaphore_counter_value(other_test)
+          .unwrap();
+        let cur = self
+          .renderer
+          .device
+          .get_semaphore_counter_value(cur_test)
+          .unwrap();
+        println!(
+          "AFTER  FENCE: Current: {} ({}), last: {} ({})",
+          cur,
+          status(cur, true),
+          old,
+          status(old, false)
+        );
+      }
+    } else {
+      cur_frame.wait_graphics(&self.renderer.device);
+    }
 
     let (compute_record_data, bullet_instance_count) = self.renderer.compute_data.update(
       cur_frame_i,
@@ -78,27 +141,54 @@ impl SyncRenderer {
         .record_compute(cur_frame_i, compute_record_data);
     }
 
-    let submit_info = vk::SubmitInfo {
-      s_type: vk::StructureType::SUBMIT_INFO,
+    let wait_semaphores = [vk::SemaphoreSubmitInfo {
+      s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
       p_next: ptr::null(),
-      wait_semaphore_count: 0,
-      p_wait_semaphores: ptr::null(),
-      p_wait_dst_stage_mask: ptr::null(),
-      command_buffer_count: 1,
-      p_command_buffers: &self.renderer.compute_pools[cur_frame_i].buffer,
-      signal_semaphore_count: 1,
-      p_signal_semaphores: &cur_frame.instance_buffer_ready,
+      semaphore: other_test,
+      value: self.timelines[last_frame_i] - 1,
+      // wait any compute / copy that may be writing to the compute instance buffers
+      // (in order for data to be synchronized without data races, only one of can execute at a time)
+      stage_mask: vk::PipelineStageFlags2::COPY.bitor(vk::PipelineStageFlags2::COMPUTE_SHADER),
+      device_index: 0,
+    }];
+
+    self.timelines[cur_frame_i] += 1;
+    let signal_semaphores = [vk::SemaphoreSubmitInfo {
+      s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+      p_next: ptr::null(),
+      semaphore: cur_test,
+      value: self.timelines[cur_frame_i],
+      stage_mask: vk::PipelineStageFlags2::COPY.bitor(vk::PipelineStageFlags2::COMPUTE_SHADER),
+      device_index: 0,
+    }];
+
+    let command_buffer_infos = [vk::CommandBufferSubmitInfo {
+      s_type: vk::StructureType::COMMAND_BUFFER_SUBMIT_INFO,
+      p_next: ptr::null(),
+      command_buffer: self.renderer.compute_pools[cur_frame_i].buffer,
+      device_mask: 0,
+    }];
+    let submit_info = vk::SubmitInfo2 {
+      s_type: vk::StructureType::SUBMIT_INFO_2,
+      p_next: ptr::null(),
+      flags: vk::SubmitFlags::empty(),
+      wait_semaphore_info_count: wait_semaphores.len() as u32,
+      p_wait_semaphore_infos: wait_semaphores.as_ptr(),
+      signal_semaphore_info_count: signal_semaphores.len() as u32,
+      p_signal_semaphore_infos: signal_semaphores.as_ptr(),
+      command_buffer_info_count: command_buffer_infos.len() as u32,
+      p_command_buffer_infos: command_buffer_infos.as_ptr(),
     };
     unsafe {
       self
         .renderer
         .device
-        .queue_submit(
+        .queue_submit2(
           self.renderer.queues.compute,
           &[submit_info],
-          cur_frame.compute_finished,
+          vk::Fence::null(),
         )
-        .expect("Failed to submit to queue");
+        .unwrap();
     }
 
     self.first_frame = false;
@@ -150,32 +240,72 @@ impl SyncRenderer {
       );
     }
 
-    let wait_semaphores = [cur_frame.instance_buffer_ready, cur_frame.image_available];
-    let wait_stages = [
-      vk::PipelineStageFlags::TRANSFER,
-      vk::PipelineStageFlags::TRANSFER,
+    let wait_semaphores = [
+      vk::SemaphoreSubmitInfo {
+        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+        p_next: ptr::null(),
+        semaphore: cur_test,
+        value: self.timelines[cur_frame_i],
+        stage_mask: vk::PipelineStageFlags2::COPY,
+        device_index: 0,
+      },
+      vk::SemaphoreSubmitInfo {
+        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+        p_next: ptr::null(),
+        semaphore: cur_frame.image_available,
+        value: 0,
+        stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+        device_index: 0,
+      },
     ];
-    let submit_info = vk::SubmitInfo {
-      s_type: vk::StructureType::SUBMIT_INFO,
+
+    self.timelines[cur_frame_i] += 1;
+    let signal_semaphores = [
+      vk::SemaphoreSubmitInfo {
+        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+        p_next: ptr::null(),
+        semaphore: cur_test,
+        value: self.timelines[cur_frame_i],
+        stage_mask: vk::PipelineStageFlags2::TRANSFER,
+        device_index: 0,
+      },
+      vk::SemaphoreSubmitInfo {
+        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+        p_next: ptr::null(),
+        semaphore: cur_frame.presentable,
+        value: 0,
+        stage_mask: vk::PipelineStageFlags2::BLIT,
+        device_index: 0,
+      },
+    ];
+
+    let command_buffer_infos = [vk::CommandBufferSubmitInfo {
+      s_type: vk::StructureType::COMMAND_BUFFER_SUBMIT_INFO,
       p_next: ptr::null(),
-      wait_semaphore_count: wait_semaphores.len() as u32,
-      p_wait_semaphores: wait_semaphores.as_ptr(),
-      p_wait_dst_stage_mask: wait_stages.as_ptr(),
-      command_buffer_count: 1,
-      p_command_buffers: &self.renderer.graphics_pools[cur_frame_i].triangle,
-      signal_semaphore_count: 1,
-      p_signal_semaphores: &cur_frame.presentable,
+      command_buffer: self.renderer.graphics_pools[cur_frame_i].triangle,
+      device_mask: 0,
+    }];
+    let submit_info = vk::SubmitInfo2 {
+      s_type: vk::StructureType::SUBMIT_INFO_2,
+      p_next: ptr::null(),
+      flags: vk::SubmitFlags::empty(),
+      wait_semaphore_info_count: wait_semaphores.len() as u32,
+      p_wait_semaphore_infos: wait_semaphores.as_ptr(),
+      signal_semaphore_info_count: signal_semaphores.len() as u32,
+      p_signal_semaphore_infos: signal_semaphores.as_ptr(),
+      command_buffer_info_count: command_buffer_infos.len() as u32,
+      p_command_buffer_infos: command_buffer_infos.as_ptr(),
     };
     unsafe {
       self
         .renderer
         .device
-        .queue_submit(
+        .queue_submit2(
           self.renderer.queues.graphics,
           &[submit_info],
           cur_frame.graphics_finished,
         )
-        .expect("Failed to submit to queue");
+        .unwrap();
     }
 
     unsafe {
@@ -213,6 +343,9 @@ impl SyncRenderer {
     for frame in self.frames.iter_mut() {
       frame.destroy_self(&self.renderer.device);
     }
+
+    self.renderer.device.destroy_semaphore(self.test[0], None);
+    self.renderer.device.destroy_semaphore(self.test[1], None);
 
     self.renderer.destroy_self();
   }

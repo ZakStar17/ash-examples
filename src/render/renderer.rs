@@ -91,7 +91,9 @@ impl Renderer {
         RESOLUTION[1],
         RENDER_FORMAT,
         vk::ImageTiling::OPTIMAL,
-        vk::ImageUsageFlags::COLOR_ATTACHMENT.bitor(vk::ImageUsageFlags::TRANSFER_SRC)
+        vk::ImageUsageFlags::COLOR_ATTACHMENT
+          .bitor(vk::ImageUsageFlags::TRANSFER_SRC)
+          .bitor(vk::ImageUsageFlags::TRANSFER_DST)
       ),
       2
     );
@@ -158,7 +160,6 @@ impl Renderer {
     };
 
     let compute_data = ComputeData::new(&device, &physical_device);
-    println!("{:#?}", compute_data);
 
     descriptor_sets.write_sets(&device, constant_data.texture_view, &compute_data);
 

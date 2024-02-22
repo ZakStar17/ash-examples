@@ -175,7 +175,7 @@ impl ComputeData {
       ]
     };
 
-    let initial_capacity = 4000;
+    let initial_capacity = 40000;
     let instance_size = (size_of::<Projectile>() * initial_capacity) as u64;
     let instance_compute = utility::populate_array_with_expression!(
       create_buffer(
@@ -249,7 +249,7 @@ impl ComputeData {
       instance_graphics,
 
       instance_capacity: initial_capacity as u64,
-      target_bullet_count: 3000,
+      target_bullet_count: 40000,
       cur_bullet_count: 0,
       rng,
       projectile_replacements_cache,
@@ -258,8 +258,8 @@ impl ComputeData {
 
   fn random_projectile(rng: &mut ThreadRng) -> Projectile {
     Projectile {
-      pos: [(rng.gen::<f32>() - 0.5) * 2.0, -1.2],
-      vel: [0.0, 0.5 + (rng.gen::<f32>() / 10.0)],
+      pos: [(rng.gen::<f32>() - 0.5) * 2.2, -1.2],
+      vel: [0.0, 0.1 + (rng.gen::<f32>() / 2.0)],
     }
   }
 
