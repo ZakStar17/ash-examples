@@ -128,7 +128,7 @@ impl GraphicsCommandPool {
       device.cmd_bind_vertex_buffers(cb, 0, &[constant_data.vertex, instance_buffer], &[0, 0]);
       device.cmd_bind_index_buffer(cb, constant_data.index, 0, vk::IndexType::UINT16);
 
-      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.projectiles);
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.bullets);
       device.cmd_draw_indexed(
         cb,
         SQUARE_INDICES.len() as u32,

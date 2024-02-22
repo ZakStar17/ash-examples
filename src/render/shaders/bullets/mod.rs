@@ -6,8 +6,8 @@ use crate::utility::cstr;
 
 use super::load_shader;
 
-const VERT_SHADER_PATH: &'static str = "./shaders/projectiles/vert.spv";
-const FRAG_SHADER_PATH: &'static str = "./shaders/projectiles/frag.spv";
+const VERT_SHADER_PATH: &'static str = "./shaders/bullets/vert.spv";
+const FRAG_SHADER_PATH: &'static str = "./shaders/bullets/frag.spv";
 
 const MAIN_FN_NAME: &'static CStr = cstr!("main");
 

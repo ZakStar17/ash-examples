@@ -4,7 +4,7 @@ use ash::vk;
 
 pub mod compute;
 pub mod player;
-pub mod projectiles;
+pub mod bullets;
 
 pub fn load_shader(device: &ash::Device, shader_path: &Path) -> vk::ShaderModule {
   let code = read_shader_code(shader_path);

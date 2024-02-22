@@ -41,12 +41,12 @@ impl ConstantData {
     texture_height: u32,
   ) -> Self {
     let player_vertices = PLAYER_VERTICES;
-    let projectile_vertices = PROJECTILE_VERTICES;
+    let bullet_vertices = PROJECTILE_VERTICES;
     let indices = SQUARE_INDICES;
 
     let player_vertex_size = size_of_val(&player_vertices);
-    let projectile_vertex_size = size_of_val(&projectile_vertices);
-    let vertex_size = (player_vertex_size + projectile_vertex_size) as u64;
+    let bullet_vertex_size = size_of_val(&bullet_vertices);
+    let vertex_size = (player_vertex_size + bullet_vertex_size) as u64;
     let index_size = size_of_val(&indices) as u64;
 
     // each pixel should contain RGBA components (4 bytes)
@@ -125,9 +125,9 @@ impl ConstantData {
         player_vertex_size as usize,
       );
       copy_nonoverlapping(
-        projectile_vertices.as_ptr() as *const u8,
+        bullet_vertices.as_ptr() as *const u8,
         vertex_write_ptr.byte_add(player_vertex_size),
-        projectile_vertex_size as usize,
+        bullet_vertex_size as usize,
       );
 
       copy_nonoverlapping(

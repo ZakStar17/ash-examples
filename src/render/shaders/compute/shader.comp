@@ -1,9 +1,9 @@
 #version 460
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-const int BULLET_REPLACEMENTS_COUNT = 4;
+const int BULLET_REPLACEMENTS_COUNT = 8;
 
-struct Projectile {
+struct Bullet {
   vec2 pos;
   vec2 vel;
 };
@@ -12,61 +12,61 @@ layout(push_constant) uniform PushConstantData {
   vec2 player_pos;
   float delta_time;  // time since last shader run in seconds
 
-  uint projectile_count;
+  uint bullet_count;
 
-  // next projectiles to be added in order to reach target_count
+  // next bullets to be added in order to reach target_count
   // or replace the ones that are out of bounds
-  Projectile bullet_replacements[BULLET_REPLACEMENTS_COUNT];
+  Bullet bullet_replacements[BULLET_REPLACEMENTS_COUNT];
 } pc;
 
 // data that will be read by the cpu in the next frame after the shader has run
 layout(set = 0, binding = 0) restrict buffer CPUOut {
   uint colliding;
-  uint pc_projectile_replacements_i;
+  uint pc_bullet_replacements_i;
 }
 cpu_out;
 
 layout(set = 0, binding = 1) restrict readonly buffer DataIn {
-  Projectile projectiles[];
+  Bullet bullets[];
 }
 data_in;
 
 layout(set = 0, binding = 2) restrict writeonly buffer DataOut {
-  Projectile projectiles[];
+  Bullet bullets[];
 }
 data_out;
 
-bool out_of_bounds(Projectile p) {
+bool out_of_bounds(Bullet p) {
   return p.pos[1] > 1.1;
 }
 
-Projectile invalid_projectile() {
+Bullet invalid_bullet() {
   float positive_inf = uintBitsToFloat(0x7F800000);
 
-  Projectile p;
+  Bullet p;
   p.pos = vec2(positive_inf, positive_inf);
   return p;
 }
 
 void main() {
   uint i = gl_GlobalInvocationID.x;
-  if (i >= pc.projectile_count) {
+  if (i >= pc.bullet_count) {
     return;
   }
 
-  Projectile p_in = data_in.projectiles[i];
+  Bullet p_in = data_in.bullets[i];
 
-  Projectile p_out;
+  Bullet p_out;
   p_out.vel = p_in.vel + (p_in.vel * 0.1 * pc.delta_time);
   p_out.pos = p_in.pos + (p_in.vel * pc.delta_time);
 
   if (out_of_bounds(p_out)) {
-    // Replace projectile with new one (in this case it is more like teleporting it to a new place)
-    uint next_i = atomicAdd(cpu_out.pc_projectile_replacements_i, 1);
+    // Replace bullet with new one (in this case it is more like teleporting it to a new place)
+    uint next_i = atomicAdd(cpu_out.pc_bullet_replacements_i, 1);
     if (next_i < BULLET_REPLACEMENTS_COUNT) {
       p_out = pc.bullet_replacements[next_i];
     } else {
-      p_out = invalid_projectile();
+      p_out = invalid_bullet();
     }
   } else {
     // collision test
@@ -75,5 +75,5 @@ void main() {
     }
   }
 
-  data_out.projectiles[i] = p_out;
+  data_out.bullets[i] = p_out;
 }

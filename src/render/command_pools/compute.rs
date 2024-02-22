@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    compute_data::{ComputePushConstants, Projectile},
+    compute_data::{ComputePushConstants, Bullet},
     initialization::QueueFamilies,
     pipelines::ComputePipelines,
   },
@@ -19,7 +19,7 @@ pub struct ComputeCommandPool {
 }
 
 #[derive(Debug)]
-pub struct AddNewProjectiles {
+pub struct AddNewBullets {
   pub buffer: vk::Buffer,
   pub buffer_size: u64,
   pub bullet_count: usize,
@@ -36,8 +36,8 @@ pub struct ComputeRecordBufferData {
   pub instance_read: vk::Buffer,
   pub instance_write: vk::Buffer,
   pub instance_graphics: vk::Buffer,
-  pub existing_projectiles_count: usize,
-  pub add_projectiles: Option<AddNewProjectiles>,
+  pub existing_bullets_count: usize,
+  pub add_bullets: Option<AddNewBullets>,
   pub execute_shader: Option<ExecuteShader>,
 }
 
@@ -91,8 +91,8 @@ impl ComputeCommandPool {
       size: vk::WHOLE_SIZE,
     };
 
-    let existing_projectiles_size =
-      (size_of::<Projectile>() * data.existing_projectiles_count) as u64;
+    let existing_bullets_size =
+      (size_of::<Bullet>() * data.existing_bullets_count) as u64;
 
     if let Some(shader_data) = data.execute_shader.as_ref() {
       // clear output buffer
@@ -129,7 +129,7 @@ impl ComputeCommandPool {
         pipelines.compute_instances,
       );
 
-      let group_count = data.existing_projectiles_count / 8 + 1;
+      let group_count = data.existing_bullets_count / 8 + 1;
       device.cmd_dispatch(cb, group_count as u32, 1, 1);
 
       // make shader results visible to subsequent operations
@@ -158,7 +158,7 @@ impl ComputeCommandPool {
       );
     }
 
-    if let Some(add_new) = data.add_projectiles.as_ref() {
+    if let Some(add_new) = data.add_bullets.as_ref() {
       let flush_host = vk::BufferMemoryBarrier2 {
         src_access_mask: vk::AccessFlags2::HOST_WRITE,
         dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
@@ -172,7 +172,7 @@ impl ComputeCommandPool {
 
       let new_bullets_region = vk::BufferCopy {
         src_offset: 0,
-        dst_offset: existing_projectiles_size,
+        dst_offset: existing_bullets_size,
         size: add_new.buffer_size,
       };
       device.cmd_copy_buffer(
@@ -195,11 +195,11 @@ impl ComputeCommandPool {
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[barrier], &[], &[]));
     }
 
-    if existing_projectiles_size > 0 {
+    if existing_bullets_size > 0 {
       let graphics_region = vk::BufferCopy {
         src_offset: 0,
         dst_offset: 0,
-        size: existing_projectiles_size,
+        size: existing_bullets_size,
       };
       device.cmd_copy_buffer(
         cb,

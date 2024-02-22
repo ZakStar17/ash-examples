@@ -6,7 +6,7 @@ use std::{
 use ash::vk;
 
 use crate::render::{
-  compute_data::Projectile, descriptor_sets::DescriptorSets, push_constants::SpritePushConstants,
+  compute_data::Bullet, descriptor_sets::DescriptorSets, push_constants::SpritePushConstants,
   shaders, vertices::vertex_input_state_create_info, Vertex,
 };
 
@@ -32,11 +32,11 @@ fn create_layout(
 }
 
 pub struct GraphicsPipelines {
-  // compatible with both player and projectiles
+  // compatible with both player and bullets
   pub layout: vk::PipelineLayout,
 
   pub player: vk::Pipeline,
-  pub projectiles: vk::Pipeline,
+  pub bullets: vk::Pipeline,
 }
 
 impl GraphicsPipelines {
@@ -58,12 +58,12 @@ impl GraphicsPipelines {
       &[push_constant_range],
     );
 
-    let (player, projectiles) = Self::create_pipelines(device, layout, cache, render_pass, extent);
+    let (player, bullets) = Self::create_pipelines(device, layout, cache, render_pass, extent);
 
     Self {
       layout,
       player,
-      projectiles,
+      bullets,
     }
   }
 
@@ -77,13 +77,13 @@ impl GraphicsPipelines {
     extent: vk::Extent2D,
   ) -> (vk::Pipeline, vk::Pipeline) {
     let mut player_shader = shaders::player::Shader::load(device);
-    let mut projectiles_shader = shaders::projectiles::Shader::load(device);
+    let mut bullets_shader = shaders::bullets::Shader::load(device);
 
     let player_shader_stages = player_shader.get_pipeline_shader_creation_info();
-    let projectiles_shader_stages = projectiles_shader.get_pipeline_shader_creation_info();
+    let bullets_shader_stages = bullets_shader.get_pipeline_shader_creation_info();
 
     let player_vertex_input_state = vertex_input_state_create_info!(Vertex);
-    let projectiles_vertex_input_state = vertex_input_state_create_info!(Vertex, Projectile);
+    let bullets_vertex_input_state = vertex_input_state_create_info!(Vertex, Bullet);
 
     let input_assembly_state_ci = triangle_input_assembly_state();
 
@@ -161,22 +161,22 @@ impl GraphicsPipelines {
       base_pipeline_index: -1, // -1 for null
     };
 
-    let mut projectiles_create_info = player_create_info.clone();
-    projectiles_create_info.flags = vk::PipelineCreateFlags::empty();
-    projectiles_create_info.stage_count = projectiles_shader_stages.len() as u32;
-    projectiles_create_info.p_stages = projectiles_shader_stages.as_ptr();
-    projectiles_create_info.p_vertex_input_state = projectiles_vertex_input_state.get();
-    projectiles_create_info.base_pipeline_index = 0;
+    let mut bullets_create_info = player_create_info.clone();
+    bullets_create_info.flags = vk::PipelineCreateFlags::empty();
+    bullets_create_info.stage_count = bullets_shader_stages.len() as u32;
+    bullets_create_info.p_stages = bullets_shader_stages.as_ptr();
+    bullets_create_info.p_vertex_input_state = bullets_vertex_input_state.get();
+    bullets_create_info.base_pipeline_index = 0;
 
     let pipelines = unsafe {
       device
-        .create_graphics_pipelines(cache, &[player_create_info, projectiles_create_info], None)
+        .create_graphics_pipelines(cache, &[player_create_info, bullets_create_info], None)
         .expect("Failed to create graphics pipelines")
     };
 
     unsafe {
       player_shader.destroy_self(device);
-      projectiles_shader.destroy_self(device);
+      bullets_shader.destroy_self(device);
     }
 
     (pipelines[0], pipelines[1])
@@ -184,7 +184,7 @@ impl GraphicsPipelines {
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
     device.destroy_pipeline(self.player, None);
-    device.destroy_pipeline(self.projectiles, None);
+    device.destroy_pipeline(self.bullets, None);
 
     device.destroy_pipeline_layout(self.layout, None);
   }
