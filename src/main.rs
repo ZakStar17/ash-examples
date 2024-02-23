@@ -196,11 +196,9 @@ fn main() {
 
     #[cfg(feature = "vl")]
     {
-      log::debug!("Destroying debug utils messenger");
       debug_utils.destroy_self();
     }
 
-    log::debug!("Destroying Instance");
     instance.destroy_instance(None);
   }
 }
