@@ -24,7 +24,7 @@ use super::{
   },
   compute_data::ComputeData,
   constant_data::ConstantData,
-  descriptor_sets::DescriptorSets,
+  descriptor_sets::{BufferWriteDescriptorSet, DescriptorPool, ImageWriteDescriptorSet},
   initialization::{PhysicalDevice, Queues, Surface},
   long_lived::Swapchains,
   pipelines::Pipelines,
@@ -63,7 +63,7 @@ pub struct Renderer {
   render_target_views: [vk::ImageView; FRAMES_IN_FLIGHT],
   framebuffers: [vk::Framebuffer; FRAMES_IN_FLIGHT],
 
-  descriptor_sets: DescriptorSets,
+  descriptor_pool: DescriptorPool,
   pipelines: Pipelines,
 
   pub graphics_pools: [GraphicsCommandPool; FRAMES_IN_FLIGHT],
@@ -122,17 +122,17 @@ impl Renderer {
       temp
     };
 
-    let mut descriptor_sets = DescriptorSets::new(&device);
+    let mut descriptor_pool = DescriptorPool::new(&device);
 
     let pipelines = Pipelines::new(
       &device,
       &physical_device,
-      &descriptor_sets,
+      &descriptor_pool,
       render_pass,
       RENDER_EXTENT,
     );
 
-    let constant_data = {
+    let (constant_data, constant_data_descriptor_write) = {
       let mut transfer_pool = TransferCommandPool::create(&device, &physical_device.queue_families);
       let mut graphics_pool =
         TemporaryGraphicsCommandPool::create(&device, &physical_device.queue_families);
@@ -144,6 +144,7 @@ impl Renderer {
         &device,
         &physical_device,
         &queues,
+        &mut descriptor_pool,
         &mut transfer_pool,
         &mut graphics_pool,
         &texture_bytes,
@@ -159,9 +160,17 @@ impl Renderer {
       objects
     };
 
-    let compute_data = ComputeData::new(&device, &physical_device);
+    let compute_data = ComputeData::new(&device, &physical_device, &mut descriptor_pool);
 
-    descriptor_sets.write_sets(&device, constant_data.texture_view, &compute_data);
+    let (compute_data_descriptor_writes, compute_data_descriptor_copies) =
+      compute_data.get_set_writes();
+
+    Self::write_initial_descriptor_sets(
+      &device,
+      &compute_data_descriptor_writes,
+      &[constant_data_descriptor_write],
+      &compute_data_descriptor_copies,
+    );
 
     let graphics_pools = populate_array_with_expression!(
       GraphicsCommandPool::create(&device, &physical_device.queue_families),
@@ -193,7 +202,7 @@ impl Renderer {
       render_target_views,
       framebuffers,
 
-      descriptor_sets,
+      descriptor_pool,
       pipelines,
 
       graphics_pools,
@@ -201,6 +210,24 @@ impl Renderer {
 
       constant_data,
       compute_data,
+    }
+  }
+
+  fn write_initial_descriptor_sets(
+    device: &ash::Device,
+    buffer_writes: &[BufferWriteDescriptorSet],
+    image_writes: &[ImageWriteDescriptorSet],
+    copies: &[vk::CopyDescriptorSet],
+  ) {
+    // buffer_writes and texture_writes should not move until update descriptors is called
+    let writes: Vec<vk::WriteDescriptorSet> = buffer_writes
+      .iter()
+      .map(|write| write.contextualize())
+      .chain(image_writes.iter().map(|write| write.contextualize()))
+      .collect();
+
+    unsafe {
+      device.update_descriptor_sets(&writes, copies);
     }
   }
 
@@ -220,7 +247,6 @@ impl Renderer {
       RENDER_EXTENT,
       self.swapchains.get_images()[image_i],
       self.swapchains.get_extent(),
-      &self.descriptor_sets,
       &self.pipelines.graphics,
       &self.constant_data,
       self.compute_data.instance_graphics[frame_i],
@@ -234,7 +260,7 @@ impl Renderer {
       &self.device,
       &self.physical_device.queue_families,
       &self.pipelines.compute,
-      self.descriptor_sets.compute_sets[frame_i],
+      self.compute_data.descriptor_sets[frame_i],
       data,
     )
   }
@@ -271,7 +297,7 @@ impl Renderer {
     self
       .pipelines
       .destroy_self(&self.device, &self.physical_device);
-    self.descriptor_sets.destroy_self(&self.device);
+    self.descriptor_pool.destroy_self(&self.device);
 
     for &framebuffer in self.framebuffers.iter() {
       self.device.destroy_framebuffer(framebuffer, None);

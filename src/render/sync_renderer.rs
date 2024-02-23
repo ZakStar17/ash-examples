@@ -6,7 +6,9 @@ use winit::dpi::PhysicalSize;
 use crate::utility::populate_array_with_expression;
 
 use super::{
-  common_object_creations::create_timeline_semaphore, frame::Frame, initialization::Surface, push_constants::SpritePushConstants, renderer::Renderer, ENABLE_FRAME_DEBUGGING, FRAMES_IN_FLIGHT
+  common_object_creations::create_timeline_semaphore, frame::Frame, initialization::Surface,
+  push_constants::SpritePushConstants, renderer::Renderer, ENABLE_FRAME_DEBUGGING,
+  FRAMES_IN_FLIGHT,
 };
 
 pub struct SyncRenderer {
@@ -70,18 +72,22 @@ impl SyncRenderer {
 
     if ENABLE_FRAME_DEBUGGING {
       println!("timeline: {:?}, frame i: {}", self.timelines, cur_frame_i);
-      let status = |val, is_cur| if val % 2 == 0 { 
-        let time_val = if is_cur {
-          self.timelines[cur_frame_i]
+      let status = |val, is_cur| {
+        if val % 2 == 0 {
+          let time_val = if is_cur {
+            self.timelines[cur_frame_i]
+          } else {
+            self.timelines[last_frame_i]
+          };
+          if val == time_val {
+            "ALL"
+          } else {
+            "NOTHING"
+          }
         } else {
-          self.timelines[last_frame_i]
-        };
-        if val == time_val {
-          "ALL"
-        } else {
-          "NOTHING"
+          "COMPUTE"
         }
-       } else { "COMPUTE" };
+      };
 
       unsafe {
         let old = self

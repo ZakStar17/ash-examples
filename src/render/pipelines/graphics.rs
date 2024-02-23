@@ -6,7 +6,7 @@ use std::{
 use ash::vk;
 
 use crate::render::{
-  compute_data::Bullet, descriptor_sets::DescriptorSets, push_constants::SpritePushConstants,
+  compute_data::Bullet, descriptor_sets::DescriptorPool, push_constants::SpritePushConstants,
   shaders, vertices::vertex_input_state_create_info, Vertex,
 };
 
@@ -43,7 +43,7 @@ impl GraphicsPipelines {
   pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
-    descriptor_sets: &DescriptorSets,
+    descriptor_pool: &DescriptorPool,
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
   ) -> Self {
@@ -54,7 +54,7 @@ impl GraphicsPipelines {
     };
     let layout = create_layout(
       device,
-      &[descriptor_sets.graphics_layout],
+      &[descriptor_pool.texture_layout],
       &[push_constant_range],
     );
 

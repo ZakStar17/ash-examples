@@ -5,7 +5,6 @@ use ash::vk;
 use crate::{
   render::{
     constant_data::ConstantData,
-    descriptor_sets::DescriptorSets,
     initialization::QueueFamilies,
     pipelines::GraphicsPipelines,
     push_constants::SpritePushConstants,
@@ -54,11 +53,12 @@ impl GraphicsCommandPool {
     swapchain_image: vk::Image,
     swapchain_extent: vk::Extent2D,
 
-    descriptor_sets: &DescriptorSets,
     pipelines: &GraphicsPipelines,
+
     constant_data: &ConstantData,
     instance_buffer: vk::Buffer,
     instance_count: u32,
+
     player: &SpritePushConstants, // position of the object to be rendered
   ) {
     let cb = self.triangle;
@@ -122,7 +122,7 @@ impl GraphicsCommandPool {
         vk::PipelineBindPoint::GRAPHICS,
         pipelines.layout,
         0,
-        &[descriptor_sets.texture_set],
+        &[constant_data.texture_set],
         &[],
       );
       device.cmd_bind_vertex_buffers(cb, 0, &[constant_data.vertex, instance_buffer], &[0, 0]);

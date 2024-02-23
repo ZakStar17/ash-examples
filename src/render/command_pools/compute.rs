@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    compute_data::{ComputePushConstants, Bullet},
+    compute_data::{Bullet, ComputePushConstants},
     initialization::QueueFamilies,
     pipelines::ComputePipelines,
   },
@@ -91,8 +91,7 @@ impl ComputeCommandPool {
       size: vk::WHOLE_SIZE,
     };
 
-    let existing_bullets_size =
-      (size_of::<Bullet>() * data.existing_bullets_count) as u64;
+    let existing_bullets_size = (size_of::<Bullet>() * data.existing_bullets_count) as u64;
 
     if let Some(shader_data) = data.execute_shader.as_ref() {
       // clear output buffer

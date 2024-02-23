@@ -6,7 +6,7 @@ use ash::vk::{self, PipelineCache};
 
 pub use self::{compute::ComputePipelines, graphics::GraphicsPipelines};
 
-use super::{descriptor_sets::DescriptorSets, initialization::PhysicalDevice};
+use super::{descriptor_sets::DescriptorPool, initialization::PhysicalDevice};
 
 pub struct Pipelines {
   pub compute: ComputePipelines,
@@ -18,7 +18,7 @@ impl Pipelines {
   pub fn new(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
-    descriptor_sets: &DescriptorSets,
+    descriptor_pool: &DescriptorPool,
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
   ) -> Self {
@@ -35,11 +35,11 @@ impl Pipelines {
       graphics: GraphicsPipelines::new(
         device,
         pipeline_cache,
-        descriptor_sets,
+        descriptor_pool,
         render_pass,
         extent,
       ),
-      compute: ComputePipelines::new(device, pipeline_cache, descriptor_sets),
+      compute: ComputePipelines::new(device, pipeline_cache, descriptor_pool),
       cache: pipeline_cache,
     }
   }

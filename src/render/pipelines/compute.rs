@@ -2,7 +2,7 @@ use std::{mem::size_of, ptr};
 
 use ash::vk;
 
-use crate::render::{compute_data::ComputePushConstants, descriptor_sets::DescriptorSets, shaders};
+use crate::render::{compute_data::ComputePushConstants, descriptor_sets::DescriptorPool, shaders};
 
 pub struct ComputePipelines {
   pub layout: vk::PipelineLayout,
@@ -13,7 +13,7 @@ impl ComputePipelines {
   pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
-    descriptor_sets: &DescriptorSets,
+    descriptor_pool: &DescriptorPool,
   ) -> Self {
     let mut shader = shaders::compute::Shader::load(device);
 
@@ -27,7 +27,7 @@ impl ComputePipelines {
       p_next: ptr::null(),
       flags: vk::PipelineLayoutCreateFlags::empty(),
       set_layout_count: 1,
-      p_set_layouts: &descriptor_sets.compute_layout,
+      p_set_layouts: &descriptor_pool.compute_layout,
       push_constant_range_count: 1,
       p_push_constant_ranges: &push_constant_range,
     };

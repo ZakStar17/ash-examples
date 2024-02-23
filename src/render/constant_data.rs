@@ -9,12 +9,14 @@ use ash::vk;
 use crate::render::{
   allocations::allocate_and_bind_memory,
   common_object_creations::{create_buffer, create_image, create_image_view},
+  descriptor_sets::texture_write_descriptor_set,
   sprites::{PLAYER_VERTICES, PROJECTILE_VERTICES, SQUARE_INDICES},
 };
 
 use super::{
   command_pools::{TemporaryGraphicsCommandPool, TransferCommandPool},
   common_object_creations::{create_semaphore, create_unsignaled_fence},
+  descriptor_sets::{DescriptorPool, ImageWriteDescriptorSet},
   initialization::{PhysicalDevice, Queues},
 };
 
@@ -23,8 +25,10 @@ pub struct ConstantData {
   memory: vk::DeviceMemory,
   pub vertex: vk::Buffer,
   pub index: vk::Buffer,
+
   pub texture: vk::Image,
   pub texture_view: vk::ImageView,
+  pub texture_set: vk::DescriptorSet,
 }
 
 impl ConstantData {
@@ -34,12 +38,13 @@ impl ConstantData {
     device: &ash::Device,
     physical_device: &PhysicalDevice,
     queues: &Queues,
+    descriptor_pool: &mut DescriptorPool,
     transfer_command_pool: &mut TransferCommandPool,
     graphics_command_pool: &mut TemporaryGraphicsCommandPool,
     texture_bytes: &[u8],
     texture_width: u32,
     texture_height: u32,
-  ) -> Self {
+  ) -> (Self, ImageWriteDescriptorSet) {
     let player_vertices = PLAYER_VERTICES;
     let bullet_vertices = PROJECTILE_VERTICES;
     let indices = SQUARE_INDICES;
@@ -209,13 +214,21 @@ impl ConstantData {
 
     let texture_view = create_image_view(device, texture_dst, Self::TEXTURE_FORMAT);
 
-    Self {
-      memory: dst_allocation.memory,
-      vertex: vertex_dst,
-      index: index_dst,
-      texture: texture_dst,
-      texture_view,
-    }
+    let texture_set = descriptor_pool
+      .allocate_sets(device, &[descriptor_pool.texture_layout])
+      .unwrap()[0];
+
+    (
+      Self {
+        memory: dst_allocation.memory,
+        vertex: vertex_dst,
+        index: index_dst,
+        texture: texture_dst,
+        texture_view,
+        texture_set,
+      },
+      texture_write_descriptor_set(texture_set, texture_view, 0),
+    )
   }
 
   unsafe fn record_buffer_copy(

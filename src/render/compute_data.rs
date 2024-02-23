@@ -1,7 +1,7 @@
 use std::{
   mem::{offset_of, size_of},
   ops::BitOr,
-  ptr::NonNull,
+  ptr::{self, NonNull},
 };
 
 use ash::vk;
@@ -14,6 +14,7 @@ use crate::{
 
 use super::{
   command_pools::compute::{AddNewBullets, ComputeRecordBufferData, ExecuteShader},
+  descriptor_sets::{storage_buffer_descriptor_set, BufferWriteDescriptorSet, DescriptorPool},
   initialization::device::PhysicalDevice,
   FRAMES_IN_FLIGHT,
 };
@@ -94,13 +95,14 @@ pub struct MappedHostBuffer<T> {
 pub struct ComputeData {
   pub host_memory: vk::DeviceMemory,
   pub output: [MappedHostBuffer<ComputeOutput>; FRAMES_IN_FLIGHT],
-  pub new_bullets:
-    [MappedHostBuffer<[Bullet; MAX_NEW_PROJECTILES_PER_FRAME]>; FRAMES_IN_FLIGHT],
+  pub new_bullets: [MappedHostBuffer<[Bullet; MAX_NEW_PROJECTILES_PER_FRAME]>; FRAMES_IN_FLIGHT],
 
   pub device_memory: vk::DeviceMemory,
   pub instance_capacity: u64,
   pub instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT],
   pub instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
+
+  pub descriptor_sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
 
   target_bullet_count: usize,
   cur_bullet_count: usize,
@@ -109,9 +111,13 @@ pub struct ComputeData {
 }
 
 impl ComputeData {
-  pub const COMPUTE_BUFFER_COUNT: u32 = 4;
+  pub const STORAGE_BUFFERS_IN_SETS: u32 = 4;
 
-  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Self {
+  pub fn new(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    descriptor_pool: &mut DescriptorPool,
+  ) -> Self {
     let new_bullets_size = size_of::<Bullet>() * MAX_NEW_PROJECTILES_PER_FRAME;
     let shader_output = utility::populate_array_with_expression!(
       create_buffer(
@@ -211,6 +217,13 @@ impl ComputeData {
     )
     .unwrap();
 
+    let layouts = [
+      descriptor_pool.compute_layout,
+      descriptor_pool.compute_layout,
+    ];
+    let descriptor_sets = descriptor_pool.allocate_sets(device, &layouts).unwrap();
+    let descriptor_sets = [descriptor_sets[0], descriptor_sets[1]];
+
     let mut rng = rand::thread_rng();
     let mut bullet_replacements_cache =
       [[Bullet::default(); PUSH_CONSTANT_PROJECTILE_REPLACEMENTS_COUNT]; 2];
@@ -247,6 +260,8 @@ impl ComputeData {
       device_memory: device_alloc.memory,
       instance_compute,
       instance_graphics,
+
+      descriptor_sets,
 
       instance_capacity: initial_capacity as u64,
       target_bullet_count: 40000,
@@ -328,6 +343,74 @@ impl ComputeData {
       },
       total_count,
     )
+  }
+
+  pub fn get_set_writes(&self) -> ([BufferWriteDescriptorSet; 4], [vk::CopyDescriptorSet; 2]) {
+    let writes = [
+      storage_buffer_descriptor_set(
+        self.descriptor_sets[0],
+        0,
+        vk::DescriptorBufferInfo {
+          buffer: self.output[0].buffer,
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      storage_buffer_descriptor_set(
+        self.descriptor_sets[0],
+        1,
+        vk::DescriptorBufferInfo {
+          buffer: self.instance_compute[1],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      storage_buffer_descriptor_set(
+        self.descriptor_sets[0],
+        2,
+        vk::DescriptorBufferInfo {
+          buffer: self.instance_compute[0],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      storage_buffer_descriptor_set(
+        self.descriptor_sets[1],
+        0,
+        vk::DescriptorBufferInfo {
+          buffer: self.output[1].buffer,
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+    ];
+
+    let from_first_to_second_copy_base = vk::CopyDescriptorSet {
+      s_type: vk::StructureType::COPY_DESCRIPTOR_SET,
+      p_next: ptr::null(),
+      src_set: self.descriptor_sets[0],
+      src_binding: 0,
+      src_array_element: 0,
+      dst_set: self.descriptor_sets[1],
+      dst_binding: 0,
+      dst_array_element: 0,
+      descriptor_count: 1,
+    };
+    // second set has instance_compute buffers reverted
+    let copies = [
+      vk::CopyDescriptorSet {
+        src_binding: 1,
+        dst_binding: 2,
+        ..from_first_to_second_copy_base
+      },
+      vk::CopyDescriptorSet {
+        src_binding: 2,
+        dst_binding: 1,
+        ..from_first_to_second_copy_base
+      },
+    ];
+
+    (writes, copies)
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
