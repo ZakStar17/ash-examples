@@ -157,7 +157,7 @@ impl ComputeCommandPool {
       );
     }
 
-    if let Some(add_new) = data.add_bullets.as_ref() {
+    let total_bullet_size = if let Some(add_new) = data.add_bullets.as_ref() {
       let flush_host = vk::BufferMemoryBarrier2 {
         src_access_mask: vk::AccessFlags2::HOST_WRITE,
         dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
@@ -192,21 +192,23 @@ impl ComputeCommandPool {
           .bitor(vk::PipelineStageFlags2::COPY),
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[barrier], &[], &[]));
-    }
 
-    if existing_bullets_size > 0 {
-      let graphics_region = vk::BufferCopy {
-        src_offset: 0,
-        dst_offset: 0,
-        size: existing_bullets_size,
-      };
-      device.cmd_copy_buffer(
-        cb,
-        data.instance_write,
-        data.instance_graphics,
-        &[graphics_region],
-      );
-    }
+      existing_bullets_size + add_new.buffer_size
+    } else {
+      existing_bullets_size
+    };
+
+    let graphics_region = vk::BufferCopy {
+      src_offset: 0,
+      dst_offset: 0,
+      size: total_bullet_size,
+    };
+    device.cmd_copy_buffer(
+      cb,
+      data.instance_write,
+      data.instance_graphics,
+      &[graphics_region],
+    );
 
     {
       let release_graphics = vk::BufferMemoryBarrier2 {
