@@ -9,13 +9,6 @@ mod validation_layers;
 use ash::vk;
 use std::ffi::CStr;
 
-// transmute literals to static CStr
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
-
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
@@ -32,7 +25,7 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
-pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Instance creation");
+pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Instance Creation");
 pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 fn main() {
