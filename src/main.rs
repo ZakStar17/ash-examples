@@ -12,13 +12,6 @@ use std::ffi::CStr;
 
 use crate::device::{create_logical_device, PhysicalDevice};
 
-// transmute literals to static CStr
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
-
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
