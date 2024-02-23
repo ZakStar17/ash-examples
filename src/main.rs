@@ -12,7 +12,7 @@ use std::ffi::CStr;
 
 use crate::device::{create_logical_device, PhysicalDevice};
 
-// simple macro to transmute literals to static CStr
+// transmute literals to static CStr
 macro_rules! cstr {
   ( $s:literal ) => {{
     unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
@@ -30,9 +30,8 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 ];
 
 // Vulkan API version required to run the program
-// In your case you may request a optimal version of the API in order to use specific features
-// but fallback to an older version if the target is not supported by the driver or any physical
-// device
+// Some features or API calls may have to be substituted with older ones if the device or 
+// driver doesn't support them
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
@@ -54,7 +53,7 @@ fn main() {
   let physical_device = unsafe { PhysicalDevice::select(&instance) };
 
   let (logical_device, _queues) =
-    create_logical_device(&instance, &physical_device);
+  create_logical_device(&instance, &physical_device);
 
   println!("Successfully created the logical device!");
 
@@ -72,7 +71,6 @@ fn main() {
     {
       debug_utils.destroy_self();
     }
-
     instance.destroy_instance(None);
   }
 }
