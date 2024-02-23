@@ -1,7 +1,6 @@
+mod device;
 mod entry;
 mod instance;
-mod logical_device;
-mod physical_device;
 mod utility;
 
 // validation layers module will only exist if validation layers are enabled
@@ -11,7 +10,7 @@ mod validation_layers;
 use ash::vk;
 use std::ffi::CStr;
 
-use crate::physical_device::select_physical_device;
+use crate::device::{create_logical_device, PhysicalDevice};
 
 // simple macro to transmute literals to static CStr
 macro_rules! cstr {
@@ -37,7 +36,7 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
-pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Instance creation");
+pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Device Creation");
 pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
@@ -52,14 +51,14 @@ fn main() {
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry);
 
-  let (physical_device, queue_family_indices) = unsafe { select_physical_device(&instance) };
+  let physical_device = unsafe { PhysicalDevice::select(&instance) };
 
   let (logical_device, _queues) =
-    logical_device::create_logical_device(&instance, &physical_device, &queue_family_indices);
+    create_logical_device(&instance, &physical_device);
 
   println!("Successfully created the logical device!");
 
-  // Cleanup
+  log::debug!("Destroying objects");
   unsafe {
     // wait until all operations have finished and the device is safe to destroy
     logical_device
@@ -67,16 +66,13 @@ fn main() {
       .expect("Failed to wait for the device to become idle");
 
     // destroying a logical device also implicitly destroys all associated queues
-    log::debug!("Destroying logical device");
     logical_device.destroy_device(None);
 
     #[cfg(feature = "vl")]
     {
-      log::debug!("Destroying debug utils messenger");
       debug_utils.destroy_self();
     }
 
-    log::debug!("Destroying Instance");
     instance.destroy_instance(None);
   }
 }
