@@ -65,24 +65,6 @@ impl QueueFamilies {
       transfer,
     })
   }
-
-  pub fn get_graphics_index(&self) -> u32 {
-    self.graphics.index
-  }
-
-  pub fn get_transfer_index(&self) -> u32 {
-    match self.transfer.as_ref() {
-      Some(family) => family.index,
-      None => self.graphics.index,
-    }
-  }
-
-  pub fn get_compute_index(&self) -> u32 {
-    match self.compute.as_ref() {
-      Some(family) => family.index,
-      None => self.graphics.index,
-    }
-  }
 }
 
 fn queue_create_info(
@@ -131,7 +113,7 @@ impl Queues {
 
     // add graphics queues, these substitute for missing families
     create_infos.push(queue_create_info(
-      queue_families.get_graphics_index(),
+      queue_families.graphics.index,
       min(
         queue_families.graphics.queue_count,
         1 + [queue_families.compute, queue_families.transfer]

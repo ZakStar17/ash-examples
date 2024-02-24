@@ -1,4 +1,4 @@
-use std::ops::{BitOr, Deref};
+use std::ops::Deref;
 
 use ash::vk;
 
@@ -10,18 +10,15 @@ use super::QueueFamilies;
 
 // Saves physical device additional information in order to not query it multiple times
 pub struct PhysicalDevice {
-  vk_device: vk::PhysicalDevice,
+  inner: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
-  properties: vk::PhysicalDeviceProperties,
-  mem_properties: vk::PhysicalDeviceMemoryProperties,
-  max_memory_allocation_size: vk::DeviceSize,
 }
 
 impl Deref for PhysicalDevice {
   type Target = vk::PhysicalDevice;
 
   fn deref(&self) -> &Self::Target {
-    &self.vk_device
+    &self.inner
   }
 }
 
@@ -30,7 +27,7 @@ impl PhysicalDevice {
     let (physical_device, queue_families) =
       select_physical_device(instance).expect("No supported physical device available");
 
-    let (properties, properties11) = get_extended_properties(instance, physical_device);
+    let (properties, _properties11) = get_extended_properties(instance, physical_device);
     let mem_properties = instance.get_physical_device_memory_properties(physical_device);
     let queue_family_properties =
       instance.get_physical_device_queue_family_properties(physical_device);
@@ -43,60 +40,9 @@ impl PhysicalDevice {
     print_device_memory_debug_info(&mem_properties);
 
     PhysicalDevice {
-      vk_device: physical_device,
-      properties,
-      mem_properties,
+      inner: physical_device,
       queue_families,
-      max_memory_allocation_size: properties11.max_memory_allocation_size,
     }
-  }
-
-  pub fn get_properties(&self) -> &vk::PhysicalDeviceProperties {
-    &self.properties
-  }
-
-  pub fn find_memory_type(
-    &self,
-    required_memory_type_bits: u32,
-    required_properties: vk::MemoryPropertyFlags,
-  ) -> Result<u32, ()> {
-    for (i, memory_type) in self.mem_properties.memory_types.iter().enumerate() {
-      let valid_type = required_memory_type_bits & (1 << i) > 0;
-      if valid_type && memory_type.property_flags.contains(required_properties) {
-        return Ok(i as u32);
-      }
-    }
-
-    Err(())
-  }
-
-  // Tries to find optimal memory type. If it fails, tries to find a memory type with only
-  // required flags
-  pub fn find_optimal_memory_type(
-    &self,
-    required_memory_type_bits: u32,
-    required_properties: vk::MemoryPropertyFlags,
-    optional_properties: vk::MemoryPropertyFlags,
-  ) -> Result<u32, ()> {
-    self
-      .find_memory_type(
-        required_memory_type_bits,
-        required_properties.bitor(optional_properties),
-      )
-      .or_else(|()| self.find_memory_type(required_memory_type_bits, required_properties))
-  }
-
-  pub fn get_memory_type(&self, type_i: u32) -> vk::MemoryType {
-    self.mem_properties.memory_types[type_i as usize]
-  }
-
-  pub fn get_memory_type_heap(&self, type_i: u32) -> vk::MemoryHeap {
-    let mem_type = self.get_memory_type(type_i);
-    self.mem_properties.memory_heaps[mem_type.heap_index as usize]
-  }
-
-  pub fn get_max_memory_allocation_size(&self) -> vk::DeviceSize {
-    self.max_memory_allocation_size
   }
 }
 

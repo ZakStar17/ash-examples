@@ -25,7 +25,7 @@ pub fn create_logical_device(
   features12.timeline_semaphore = vk::TRUE;
   let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
   features13.synchronization2 = vk::TRUE;
-  
+
   features12.p_next = addr_of!(features13) as *mut c_void;
   features13.p_next = ptr::null_mut();
 

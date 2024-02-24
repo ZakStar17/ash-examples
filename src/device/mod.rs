@@ -3,9 +3,9 @@ mod physical_device;
 mod queues;
 mod vendor;
 
+pub use logical_device::create_logical_device;
 pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
-pub use logical_device::create_logical_device;
 
 use self::vendor::Vendor;
 use std::{
