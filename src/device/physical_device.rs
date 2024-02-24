@@ -1,4 +1,4 @@
-use std::ops::{BitOr, Deref};
+use std::ops::Deref;
 
 use ash::vk;
 
@@ -10,7 +10,7 @@ use super::QueueFamilies;
 
 // Saves physical device additional information in order to not query it multiple times
 pub struct PhysicalDevice {
-  vk_device: vk::PhysicalDevice,
+  inner: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
   max_memory_allocation_size: vk::DeviceSize,
@@ -20,7 +20,7 @@ impl Deref for PhysicalDevice {
   type Target = vk::PhysicalDevice;
 
   fn deref(&self) -> &Self::Target {
-    &self.vk_device
+    &self.inner
   }
 }
 
@@ -29,7 +29,7 @@ impl PhysicalDevice {
     let (physical_device, queue_families) =
       select_physical_device(instance).expect("No supported physical device available");
 
-    let (properties, properties11) = get_extended_properties(instance, physical_device);
+    let (properties, _properties11) = get_extended_properties(instance, physical_device);
     let mem_properties = instance.get_physical_device_memory_properties(physical_device);
     let queue_family_properties =
       instance.get_physical_device_queue_family_properties(physical_device);
@@ -45,7 +45,6 @@ impl PhysicalDevice {
       vk_device: physical_device,
       mem_properties,
       queue_families,
-      max_memory_allocation_size: properties11.max_memory_allocation_size,
     }
   }
 
