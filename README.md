@@ -1,7 +1,7 @@
 # Device creation
 
 This example is a direct continuation of
-[Instance creation](https://github.com/ZakStar17/ash-by-example/tree/main/src/bin/instance).
+[Instance creation](https://github.com/ZakStar17/ash-by-example/tree/main/instance).
 It covers physical device selection, logical device creation and queue retrieval.
 
 The added files are `logical_device.rs` and `physical_device.rs` as well as their code in `main.rs`.
