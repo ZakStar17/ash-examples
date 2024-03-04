@@ -19,8 +19,9 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 ];
 
 // Vulkan API version required to run the program
-// Some features or API calls may have to be substituted with older ones if the device or
-// driver doesn't support them
+// You may have to use an older API version if you want to support devices that do not yet support
+// the recent versions. You can see in the documentation what is the minimum supported version
+// for each extension, feature or API call.
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
@@ -33,9 +34,9 @@ fn main() {
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
   #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) = instance::create_instance(&entry);
+  let (instance, mut debug_utils) = instance::create_instance(&entry).expect("Failed to create an instance");
   #[cfg(not(feature = "vl"))]
-  let instance = instance::create_instance(&entry);
+  let instance = instance::create_instance(&entry).expect("Failed to create an instance");
 
   println!("Successfully created an Instance!");
 
