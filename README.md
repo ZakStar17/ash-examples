@@ -2,13 +2,13 @@
 
 This example covers creating an instance, with or without validation layers enabled.
 
-An instance stores Vulkan application state and enables making API calls that are not related to any specific device. 
+An instance stores Vulkan application state and can be used to make API calls that are not related to any specific device. 
 
 When creating an instance, some additional information can be passed:
 
- - A `vk::ApplicationInfo`: It can be used by some implementations to classify the behavior of the application.
- - A list of global extensions: These enable non device specific functionality that works at the same level as the rest of the API. This can include new objects or commands however, once enabled, these function in the same way as the core API.
- - A list of layers: These enable functionality outside of the Vulkan specification, and execute in between the application API call and the actual command. They usually don't directly affect the code API, and instead add logging, tracing and validation functionality that can be easily toggled (for example to only be present in debug builds). Some layers also allow the application to enable some extensions that are not natively supported, but can instead be emulated by the layer.
+ - A `vk::ApplicationInfo`: Some implementations may use this to classify the application.
+ - A list of global extensions: Some functionality is included in the API header, however it may not be supported. A list of extensions is used to enable part of this functionality, and the ones passed here enable the global extensions, that are not device specific.
+ - A list of layers: These enable functionality outside of the Vulkan specification, and execute in between the application API call and the actual command. They usually don't directly affect the core functionality, and instead add separated logging, tracing and validation functionality that can be easily toggled (for example to only be present in debug builds). Some layers also allow the application to be able to use some extensions that are not natively supported, but in turn are emulated by the layer.
 
 The module for the validation layers is only compiled when the `vl` feature is enabled.
 

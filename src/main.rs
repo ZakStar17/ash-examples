@@ -9,7 +9,6 @@ mod validation_layers;
 use ash::vk;
 use std::ffi::CStr;
 
-// array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
 pub const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
@@ -20,7 +19,7 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 ];
 
 // Vulkan API version required to run the program
-// Some features or API calls may have to be substituted with older ones if the device or 
+// Some features or API calls may have to be substituted with older ones if the device or
 // driver doesn't support them
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
