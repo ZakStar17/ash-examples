@@ -1,4 +1,5 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char};
+use std::ffi::{CStr, FromBytesUntilNulError};
 
 use ash::vk;
 
@@ -60,6 +61,10 @@ where
   iter
     .filter(|b| slice.binary_search_by(|a| f(a, b)).is_ok())
     .collect()
+}
+
+pub unsafe fn i8_array_as_cstr<'a>(arr: &'a [i8]) -> Result<&'a CStr, FromBytesUntilNulError> {
+  CStr::from_bytes_until_nul(std::mem::transmute(arr))
 }
 
 // transmute literals to static CStr
