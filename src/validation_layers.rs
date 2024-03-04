@@ -33,9 +33,8 @@ impl Ord for LayerProperties {
 
 // returns a subset of VALIDATION_LAYERS that are available
 pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr]> {
-  log::info!("Checking for validation layers");
+  log::info!("Querying for Vulkan layers");
 
-  // supposedly only fails if there is no available memory
   let properties: Vec<vk::LayerProperties> = entry.enumerate_instance_layer_properties().unwrap();
 
   let mut all: Vec<LayerProperties> = properties
@@ -44,9 +43,7 @@ pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr
       |props| match utility::i8_array_to_string(&props.layer_name) {
         Ok(s) => Some((props, s)),
         Err(_) => {
-          log::warn!(
-          "There exists an available validation layer with an invalid name that couldn't be decoded"
-        );
+          log::warn!("There exists a layer that was skipped as its name couldn't be decoded");
           None
         }
       },
@@ -59,7 +56,7 @@ pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr
     })
     .collect();
 
-  log::debug!("System validation layers: {:#?}", all);
+  log::debug!("System available Vulkan Layers: {:#?}", all);
 
   let available = utility::in_slice(
     all.as_mut_slice(),
@@ -81,6 +78,7 @@ pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr
   available
 }
 
+// can be extensively customized
 unsafe extern "system" fn vulkan_debug_utils_callback(
   message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
   message_type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -123,7 +121,7 @@ impl DebugUtils {
     let messenger = unsafe {
       loader
         .create_debug_utils_messenger(&create_info, None)
-        .expect("Failed to create debug utils")
+        .unwrap()
     };
 
     Self { loader, messenger }

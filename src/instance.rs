@@ -115,7 +115,6 @@ pub fn create_instance(
   let vl_pointers: Vec<*const std::ffi::c_char> =
     validation_layers.iter().map(|name| name.as_ptr()).collect();
 
-  // required to be passed in instance creation p_next chain
   let debug_create_info = DebugUtils::get_debug_messenger_create_info();
 
   // enable/disable some validation features by passing a ValidationFeaturesEXT struct
@@ -140,11 +139,7 @@ pub fn create_instance(
   };
 
   log::debug!("Creating Instance");
-  let instance: ash::Instance = unsafe {
-    entry
-      .create_instance(&create_info, None)
-      .expect("Failed to create Instance")
-  };
+  let instance: ash::Instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
 
   log::debug!("Creating Debug Utils");
   let debug_utils = DebugUtils::setup(&entry, &instance, debug_create_info);
@@ -184,9 +179,5 @@ pub fn create_instance(entry: &ash::Entry) -> ash::Instance {
   };
 
   log::debug!("Creating Instance");
-  unsafe {
-    entry
-      .create_instance(&create_info, None)
-      .expect("Failed to create Instance")
-  }
+  unsafe { entry.create_instance(&create_info, None).unwrap() }
 }
