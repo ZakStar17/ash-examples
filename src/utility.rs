@@ -1,5 +1,4 @@
-use std::ffi::{c_char};
-use std::ffi::{CStr, FromBytesUntilNulError};
+use std::ffi::{c_char, CStr, FromBytesUntilNulError};
 
 use ash::vk;
 
@@ -12,17 +11,6 @@ pub fn parse_vulkan_api_version(v: u32) -> String {
     vk::api_version_minor(v),
     vk::api_version_patch(v)
   )
-}
-
-pub fn i8_array_to_string(arr: &[i8]) -> Result<String, std::string::FromUtf8Error> {
-  let mut bytes = Vec::with_capacity(arr.len());
-  for &b in arr {
-    if b == '\0' as i8 {
-      break;
-    }
-    bytes.push(b as u8)
-  }
-  String::from_utf8(bytes)
 }
 
 pub fn c_char_array_to_string(arr: &[c_char]) -> String {

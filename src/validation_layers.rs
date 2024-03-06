@@ -71,10 +71,7 @@ impl DebugUtils {
   ) -> Result<Self, vk::Result> {
     let loader = ash::extensions::ext::DebugUtils::new(entry, instance);
 
-    let messenger = unsafe {
-      loader
-        .create_debug_utils_messenger(&create_info, None)?
-    };
+    let messenger = unsafe { loader.create_debug_utils_messenger(&create_info, None)? };
 
     Ok(Self { loader, messenger })
   }

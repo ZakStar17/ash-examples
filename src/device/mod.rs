@@ -71,24 +71,22 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   );
 }
 
-fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
-  let properties = unsafe {
-    instance
-      .enumerate_device_extension_properties(device)
-      .expect("Failed to get device extension properties")
-  };
+fn check_extension_support(
+  instance: &ash::Instance,
+  device: vk::PhysicalDevice,
+) -> Result<bool, vk::Result> {
+  let properties = unsafe { instance.enumerate_device_extension_properties(device)? };
 
-  let mut available: Vec<String> = properties
-    .into_iter()
-    .map(|prop| utility::c_char_array_to_string(&prop.extension_name))
-    .collect();
+  for req in REQUIRED_DEVICE_EXTENSIONS {
+    if !properties
+      .iter()
+      .any(|props| unsafe { utility::i8_array_as_cstr(&props.extension_name) }.unwrap() == req)
+    {
+      return Ok(false);
+    }
+  }
 
-  utility::not_in_slice(
-    available.as_mut_slice(),
-    &mut REQUIRED_DEVICE_EXTENSIONS.iter(),
-    |av, req| av.as_str().cmp(req.to_str().unwrap()),
-  )
-  .is_empty()
+  Ok(true)
 }
 
 fn check_formats_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
@@ -224,27 +222,79 @@ unsafe fn select_physical_device(
       // A full application may use multiple metrics like limits, queue families and even the
       // device id to rank each device that a user can have
 
-      let queue_family_importance = 3;
-      let device_score_importance = 0;
+        // check if device supports all required extensions
+        let result = check_extension_support(instance, physical_device);
+        match result {
+          Ok(supports_extensions) => {
+            if !supports_extensions {
+              log::info!(
+                "Skipped physical device: Device does not support all required extensions"
+              );
+              return None;
+            }
+          }
+          Err(err) => {
+            log::error!("Device selection error: {:?}", err);
+            return None;
+          }
+        }
 
       // rank devices by number of specialized queue families
       let queue_score = QueueFamilies::FAMILY_COUNT - families.unique_indices.len();
 
-      // rank devices by commonly most powerful device type
-      let device_score = match instance
-        .get_physical_device_properties(*physical_device)
-        .device_type
-      {
-        vk::PhysicalDeviceType::DISCRETE_GPU => 0,
-        vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
-        vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
-        vk::PhysicalDeviceType::CPU => 3,
-        vk::PhysicalDeviceType::OTHER => 4,
-        _ => 5,
-      };
+        if features.f13.synchronization2 != vk::TRUE {
+          log::warn!("Skipped physical device: Device does not support synchronization features");
+          return None;
+        }
 
-      (queue_score << queue_family_importance) + (device_score << device_score_importance)
-    })
+        Some((physical_device, properties, features))
+      })
+      .filter_map(|(physical_device, properties, features)| {
+        // filter devices that do not have required queue families
+        match QueueFamilies::get_from_physical_device(instance, physical_device) {
+          Err(()) => {
+            log::info!("Skipped physical device: Device does not contain required queue families");
+            None
+          }
+          Ok(families) => Some((physical_device, properties, features, families)),
+        }
+      })
+      .min_by_key(|(physical_device, _properties, _features, families)| {
+        // Assign a score to each device and select the best one available
+        // A full application may use multiple metrics like limits, queue families and even the
+        // device id to rank each device that a user can have
+
+        let queue_family_importance = 3;
+        let device_score_importance = 0;
+
+        // rank devices by number of specialized queue families
+        let queue_score = if families.compute.is_some() { 0 } else { 1 }
+          + if families.transfer.is_some() { 0 } else { 1 };
+
+        // rank devices by commonly most powerful device type
+        let device_score = match instance
+          .get_physical_device_properties(*physical_device)
+          .device_type
+        {
+          vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+          vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+          vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+          vk::PhysicalDeviceType::CPU => 3,
+          vk::PhysicalDeviceType::OTHER => 4,
+          _ => 5,
+        };
+
+        (queue_score << queue_family_importance) + (device_score << device_score_importance)
+      }),
+  )
+}
+
+#[allow(unused)]
+struct PhysicalDeviceProperties {
+  pub p10: vk::PhysicalDeviceProperties,
+  pub p11: vk::PhysicalDeviceVulkan11Properties,
+  pub p12: vk::PhysicalDeviceVulkan12Properties,
+  pub p13: vk::PhysicalDeviceVulkan13Properties,
 }
 
 fn get_extended_properties(
@@ -259,6 +309,8 @@ fn get_extended_properties(
   let mut props11: MaybeUninit<vk::PhysicalDeviceVulkan11Properties> = MaybeUninit::uninit();
   let main_props_ptr = main_props.as_mut_ptr();
   let props11_ptr = props11.as_mut_ptr();
+  let props12_ptr = props12.as_mut_ptr();
+  let props13_ptr = props13.as_mut_ptr();
 
   unsafe {
     addr_of_mut!((*props11_ptr).s_type)

@@ -81,11 +81,18 @@ fn main() {
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
   #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) = instance::create_instance(&entry).expect("Failed to create an instance");
+  let (instance, mut debug_utils) =
+    instance::create_instance(&entry).expect("Failed to create an instance");
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry).expect("Failed to create an instance");
 
-  let physical_device = unsafe { PhysicalDevice::select(&instance) };
+  let physical_device = match unsafe { PhysicalDevice::select(&instance) } {
+    Ok(device_opt) => match device_opt {
+      Some(device) => device,
+      None => panic!("No suitable device found"),
+    },
+    Err(err) => panic!("Failed to query physical devices: {:?}", err),
+  };
 
   let (device, queues) = device::create_logical_device(&instance, &physical_device);
 
