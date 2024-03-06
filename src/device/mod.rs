@@ -16,7 +16,7 @@ pub use queues::{QueueFamilies, Queues};
 
 use crate::{
   device::vendor::Vendor,
-  utility::{self, c_char_array_to_string},
+  utility::{self, c_char_array_to_string, i8_array_as_cstr},
   IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
 };
 
@@ -29,7 +29,6 @@ macro_rules! const_flag_bitor {
     };
   }
 
-// kinda overkill
 const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags,
   vk::FormatFeatureFlags::TRANSFER_SRC,
@@ -80,7 +79,7 @@ fn check_extension_support(
   for req in REQUIRED_DEVICE_EXTENSIONS {
     if !properties
       .iter()
-      .any(|props| unsafe { utility::i8_array_as_cstr(&props.extension_name) }.unwrap() == req)
+      .any(|props| unsafe { i8_array_as_cstr(&props.extension_name) }.unwrap() == req)
     {
       return Ok(false);
     }
@@ -168,59 +167,33 @@ fn check_optimal_tiling_image_size_support(
 
 unsafe fn select_physical_device(
   instance: &ash::Instance,
-) -> Option<(vk::PhysicalDevice, QueueFamilies)> {
-  instance
-    .enumerate_physical_devices()
-    .expect("Failed to enumerate physical devices")
-    .into_iter()
-    .filter(|&physical_device| {
-      // Filter devices that are strictly not supported
-      // Check for any feature or limit that your application might require
+) -> Result<
+  Option<(
+    vk::PhysicalDevice,
+    PhysicalDeviceProperties,
+    PhysicalDeviceFeatures,
+    QueueFamilies,
+  )>,
+  vk::Result,
+> {
+  Ok(
+    instance
+      .enumerate_physical_devices()?
+      .into_iter()
+      .filter_map(|physical_device| {
+        // Filter devices that are strictly not supported
+        // Check for any features or limits required by the application
 
-      let properties = instance.get_physical_device_properties(physical_device);
-      log_device_properties(&properties);
+        let properties = get_extended_properties(instance, physical_device);
+        log_device_properties(&properties.p10);
+        let features = get_extended_features(instance, physical_device);
 
-      if properties.api_version < TARGET_API_VERSION {
-        log::info!(
-          "Skipped physical device: Device API version is less than targeted by the application"
-        );
-        return false;
-      }
-
-      // check if device supports all required extensions
-      if !check_extension_support(instance, physical_device) {
-        log::info!("Skipped physical device: Device does not support all required extensions");
-        return false;
-      }
-
-      // check if all required formats are supported
-      if !check_formats_support(instance, physical_device) {
-        log::warn!("Skipped physical device: Device does not support required formats");
-        return false;
-      }
-
-      // check if image sizes are supported
-      if !check_linear_tiling_image_size_support(instance, physical_device) || !check_optimal_tiling_image_size_support(instance, physical_device) {
-        log::warn!("Skipped physical device: Application image size requirements are bigger than supported by the device");
-        return false;
-      }
-
-      true
-    })
-    .filter_map(|physical_device| {
-      // filter devices that do not have required queue families
-      match QueueFamilies::get_from_physical_device(instance, physical_device) {
-        Err(()) => {
-          log::info!("Skipped physical device: Device does not contain required queue families");
-          None
-        },
-        Ok(families) => Some((physical_device, families))
-      }
-    })
-    .min_by_key(|(physical_device, families)| {
-      // Assign a score to each device and select the best one available
-      // A full application may use multiple metrics like limits, queue families and even the
-      // device id to rank each device that a user can have
+        if properties.p10.api_version < TARGET_API_VERSION {
+          log::info!(
+            "Skipped physical device: Device API version is less than targeted by the application"
+          );
+          return None;
+        }
 
         // check if device supports all required extensions
         let result = check_extension_support(instance, physical_device);
@@ -239,8 +212,10 @@ unsafe fn select_physical_device(
           }
         }
 
-      // rank devices by number of specialized queue families
-      let queue_score = QueueFamilies::FAMILY_COUNT - families.unique_indices.len();
+        if features.f12.timeline_semaphore != vk::TRUE {
+          log::warn!("Skipped physical device: Device does not support timeline semaphores");
+          return None;
+        }
 
         if features.f13.synchronization2 != vk::TRUE {
           log::warn!("Skipped physical device: Device does not support synchronization features");
@@ -268,8 +243,7 @@ unsafe fn select_physical_device(
         let device_score_importance = 0;
 
         // rank devices by number of specialized queue families
-        let queue_score = if families.compute.is_some() { 0 } else { 1 }
-          + if families.transfer.is_some() { 0 } else { 1 };
+        let queue_score = if families.transfer.is_some() { 0 } else { 1 };
 
         // rank devices by commonly most powerful device type
         let device_score = match instance
@@ -300,29 +274,84 @@ struct PhysicalDeviceProperties {
 fn get_extended_properties(
   instance: &ash::Instance,
   physical_device: vk::PhysicalDevice,
-) -> (
-  vk::PhysicalDeviceProperties,
-  vk::PhysicalDeviceVulkan11Properties,
-) {
-  // going c style (see https://doc.rust-lang.org/std/mem/union.MaybeUninit.html)
-  let mut main_props: MaybeUninit<vk::PhysicalDeviceProperties2> = MaybeUninit::uninit();
+) -> PhysicalDeviceProperties {
+  // see https://doc.rust-lang.org/std/mem/union.MaybeUninit.html
+  let mut props10: MaybeUninit<vk::PhysicalDeviceProperties2> = MaybeUninit::uninit();
   let mut props11: MaybeUninit<vk::PhysicalDeviceVulkan11Properties> = MaybeUninit::uninit();
-  let main_props_ptr = main_props.as_mut_ptr();
+  let mut props12: MaybeUninit<vk::PhysicalDeviceVulkan12Properties> = MaybeUninit::uninit();
+  let mut props13: MaybeUninit<vk::PhysicalDeviceVulkan13Properties> = MaybeUninit::uninit();
+
+  let props10_ptr = props10.as_mut_ptr();
   let props11_ptr = props11.as_mut_ptr();
   let props12_ptr = props12.as_mut_ptr();
   let props13_ptr = props13.as_mut_ptr();
 
   unsafe {
+    addr_of_mut!((*props10_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_PROPERTIES_2);
     addr_of_mut!((*props11_ptr).s_type)
       .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
-    addr_of_mut!((*props11_ptr).p_next).write(ptr::null_mut::<c_void>());
+    addr_of_mut!((*props12_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES);
+    addr_of_mut!((*props13_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES);
 
-    addr_of_mut!((*main_props_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_PROPERTIES_2);
-    // requesting for Vulkan11Properties
-    addr_of_mut!((*main_props_ptr).p_next).write(props11_ptr as *mut c_void);
+    addr_of_mut!((*props10_ptr).p_next).write(props11_ptr as *mut c_void);
+    addr_of_mut!((*props11_ptr).p_next).write(props12_ptr as *mut c_void);
+    addr_of_mut!((*props12_ptr).p_next).write(props13_ptr as *mut c_void);
+    addr_of_mut!((*props13_ptr).p_next).write(ptr::null_mut::<c_void>());
 
-    instance.get_physical_device_properties2(physical_device, main_props_ptr.as_mut().unwrap());
+    instance.get_physical_device_properties2(physical_device, props10_ptr.as_mut().unwrap());
+    PhysicalDeviceProperties {
+      p10: props10.assume_init().properties,
+      p11: props11.assume_init(),
+      p12: props12.assume_init(),
+      p13: props13.assume_init(),
+    }
+  }
+}
 
-    (main_props.assume_init().properties, props11.assume_init())
+#[allow(unused)]
+struct PhysicalDeviceFeatures {
+  pub f10: vk::PhysicalDeviceFeatures,
+  pub f11: vk::PhysicalDeviceVulkan11Features,
+  pub f12: vk::PhysicalDeviceVulkan12Features,
+  pub f13: vk::PhysicalDeviceVulkan13Features,
+}
+
+fn get_extended_features(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+) -> PhysicalDeviceFeatures {
+  let mut features10: MaybeUninit<vk::PhysicalDeviceFeatures2> = MaybeUninit::uninit();
+  let mut features11: MaybeUninit<vk::PhysicalDeviceVulkan11Features> = MaybeUninit::uninit();
+  let mut features12: MaybeUninit<vk::PhysicalDeviceVulkan12Features> = MaybeUninit::uninit();
+  let mut features13: MaybeUninit<vk::PhysicalDeviceVulkan13Features> = MaybeUninit::uninit();
+
+  let features10_ptr = features10.as_mut_ptr();
+  let features11_ptr = features11.as_mut_ptr();
+  let features12_ptr = features12.as_mut_ptr();
+  let features13_ptr = features13.as_mut_ptr();
+
+  unsafe {
+    addr_of_mut!((*features10_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_FEATURES_2);
+    addr_of_mut!((*features11_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
+    addr_of_mut!((*features12_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
+    addr_of_mut!((*features13_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
+
+    addr_of_mut!((*features10_ptr).p_next).write(features11_ptr as *mut c_void);
+    addr_of_mut!((*features11_ptr).p_next).write(features12_ptr as *mut c_void);
+    addr_of_mut!((*features12_ptr).p_next).write(features13_ptr as *mut c_void);
+    addr_of_mut!((*features13_ptr).p_next).write(ptr::null_mut::<c_void>());
+
+    instance.get_physical_device_features2(physical_device, features10_ptr.as_mut().unwrap());
+    PhysicalDeviceFeatures {
+      f10: features10.assume_init().features,
+      f11: features11.assume_init(),
+      f12: features12.assume_init(),
+      f13: features13.assume_init(),
+    }
   }
 }

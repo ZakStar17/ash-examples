@@ -1,3 +1,4 @@
+mod allocator;
 mod command_pools;
 mod device;
 mod entry;
@@ -18,7 +19,6 @@ use std::{
   ops::BitOr,
   ptr::{self, addr_of},
 };
-use utility::cstr;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
@@ -94,7 +94,8 @@ fn main() {
     Err(err) => panic!("Failed to query physical devices: {:?}", err),
   };
 
-  let (device, queues) = device::create_logical_device(&instance, &physical_device);
+  let (device, queues) = device::create_logical_device(&instance, &physical_device)
+    .expect("Failed to create logical device");
 
   // GPU image with DEVICE_LOCAL flags
   let mut local_image = Image::new(
