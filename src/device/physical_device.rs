@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::utility;
 
-use super::{get_extended_properties, select_physical_device};
+use super::select_physical_device;
 
 use super::QueueFamilies;
 
@@ -23,25 +23,26 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select(instance: &ash::Instance) -> PhysicalDevice {
-    let (physical_device, queue_families) =
-      select_physical_device(instance).expect("No supported physical device available");
+  pub unsafe fn select(instance: &ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
+    match select_physical_device(instance)? {
+      Some((physical_device, properties, _features, queue_families)) => {
+        let mem_properties = instance.get_physical_device_memory_properties(physical_device);
+        let queue_family_properties =
+          instance.get_physical_device_queue_family_properties(physical_device);
 
-    let (properties, _properties11) = get_extended_properties(instance, physical_device);
-    let mem_properties = instance.get_physical_device_memory_properties(physical_device);
-    let queue_family_properties =
-      instance.get_physical_device_queue_family_properties(physical_device);
+        log::info!(
+          "Using physical device \"{}\"",
+          utility::c_char_array_to_string(&properties.p10.device_name)
+        );
+        print_queue_families_debug_info(&queue_family_properties);
+        print_device_memory_debug_info(&mem_properties);
 
-    log::info!(
-      "Using physical device \"{}\"",
-      utility::c_char_array_to_string(&properties.device_name)
-    );
-    print_queue_families_debug_info(&queue_family_properties);
-    print_device_memory_debug_info(&mem_properties);
-
-    PhysicalDevice {
-      inner: physical_device,
-      queue_families,
+        Ok(Some(PhysicalDevice {
+          inner: physical_device,
+          queue_families,
+        }))
+      }
+      None => Ok(None),
     }
   }
 }

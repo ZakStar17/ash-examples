@@ -11,7 +11,7 @@ use super::{PhysicalDevice, Queues};
 pub fn create_logical_device(
   instance: &ash::Instance,
   physical_device: &PhysicalDevice,
-) -> (ash::Device, Queues) {
+) -> Result<(ash::Device, Queues), vk::Result> {
   let queue_create_infos = Queues::get_queue_create_infos(&physical_device.queue_families);
 
   let device_extensions_pointers: Vec<*const c_char> = REQUIRED_DEVICE_EXTENSIONS
@@ -43,14 +43,11 @@ pub fn create_logical_device(
     flags: vk::DeviceCreateFlags::empty(),
   };
   log::debug!("Creating logical device");
-  let device: ash::Device = unsafe {
-    instance
-      .create_device(**physical_device, &create_info, None)
-      .expect("Failed to create logical device")
-  };
+  let device: ash::Device =
+    unsafe { instance.create_device(**physical_device, &create_info, None)? };
 
   log::debug!("Retrieving queues");
   let queues = unsafe { Queues::retrieve(&device, &physical_device.queue_families) };
 
-  (device, queues)
+  Ok((device, queues))
 }

@@ -47,144 +47,182 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   );
 }
 
-fn check_extension_support(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
-  let properties = unsafe {
-    instance
-      .enumerate_device_extension_properties(device)
-      .expect("Failed to get device extension properties")
-  };
+fn check_extension_support(
+  instance: &ash::Instance,
+  device: vk::PhysicalDevice,
+) -> Result<bool, vk::Result> {
+  let properties = unsafe { instance.enumerate_device_extension_properties(device)? };
 
-  let mut available: Vec<String> = properties
-    .into_iter()
-    .map(|prop| utility::c_char_array_to_string(&prop.extension_name))
-    .collect();
+  for req in REQUIRED_DEVICE_EXTENSIONS {
+    if !properties
+      .iter()
+      .any(|props| unsafe { utility::i8_array_as_cstr(&props.extension_name) }.unwrap() == req)
+    {
+      return Ok(false);
+    }
+  }
 
-  utility::not_in_slice(
-    available.as_mut_slice(),
-    &mut REQUIRED_DEVICE_EXTENSIONS.iter(),
-    |av, req| av.as_str().cmp(req.to_str().unwrap()),
-  )
-  .is_empty()
+  Ok(true)
 }
 
 unsafe fn select_physical_device(
   instance: &ash::Instance,
-) -> Option<(vk::PhysicalDevice, QueueFamilies)> {
-  instance
-    .enumerate_physical_devices()
-    .expect("Failed to enumerate physical devices")
-    .into_iter()
-    .filter(|&physical_device| {
-      // Filter devices that are strictly not supported
-      // Check for any features or limits required by the application
+) -> Result<
+  Option<(
+    vk::PhysicalDevice,
+    PhysicalDeviceProperties,
+    PhysicalDeviceFeatures,
+    QueueFamilies,
+  )>,
+  vk::Result,
+> {
+  Ok(
+    instance
+      .enumerate_physical_devices()?
+      .into_iter()
+      .filter_map(|physical_device| {
+        // Filter devices that are strictly not supported
+        // Check for any features or limits required by the application
 
-      let properties = instance.get_physical_device_properties(physical_device);
-      log_device_properties(&properties);
-      let (_features10, _features11, features12, features13) =
-        get_extended_features(instance, physical_device);
+        let properties = get_extended_properties(instance, physical_device);
+        log_device_properties(&properties.p10);
+        let features = get_extended_features(instance, physical_device);
 
-      if properties.api_version < TARGET_API_VERSION {
-        log::info!(
-          "Skipped physical device: Device API version is less than targeted by the application"
-        );
-        return false;
-      }
-
-      // check if device supports all required extensions
-      if !check_extension_support(instance, physical_device) {
-        log::info!("Skipped physical device: Device does not support all required extensions");
-        return false;
-      }
-
-      if features12.timeline_semaphore != vk::TRUE {
-        log::warn!("Skipped physical device: Device does not support timeline semaphores");
-        return false;
-      }
-
-      if features13.synchronization2 != vk::TRUE {
-        log::warn!("Skipped physical device: Device does not support synchronization features");
-        return false;
-      }
-
-      true
-    })
-    .filter_map(|physical_device| {
-      // filter devices that do not have required queue families
-      match QueueFamilies::get_from_physical_device(instance, physical_device) {
-        Err(()) => {
-          log::info!("Skipped physical device: Device does not contain required queue families");
-          None
+        if properties.p10.api_version < TARGET_API_VERSION {
+          log::info!(
+            "Skipped physical device: Device API version is less than targeted by the application"
+          );
+          return None;
         }
-        Ok(families) => Some((physical_device, families)),
-      }
-    })
-    .min_by_key(|(physical_device, families)| {
-      // Assign a score to each device and select the best one available
-      // A full application may use multiple metrics like limits, queue families and even the
-      // device id to rank each device that a user can have
 
-      let queue_family_importance = 3;
-      let device_score_importance = 0;
+        // check if device supports all required extensions
+        let result = check_extension_support(instance, physical_device);
+        match result {
+          Ok(supports_extensions) => {
+            if !supports_extensions {
+              log::info!(
+                "Skipped physical device: Device does not support all required extensions"
+              );
+              return None;
+            }
+          }
+          Err(err) => {
+            log::error!("Device selection error: {:?}", err);
+            return None;
+          }
+        }
 
-      // rank devices by number of specialized queue families
-      let queue_score = if families.compute.is_some() { 0 } else { 1 }
-        + if families.transfer.is_some() { 0 } else { 1 };
+        if features.f12.timeline_semaphore != vk::TRUE {
+          log::warn!("Skipped physical device: Device does not support timeline semaphores");
+          return None;
+        }
 
-      // rank devices by commonly most powerful device type
-      let device_score = match instance
-        .get_physical_device_properties(*physical_device)
-        .device_type
-      {
-        vk::PhysicalDeviceType::DISCRETE_GPU => 0,
-        vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
-        vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
-        vk::PhysicalDeviceType::CPU => 3,
-        vk::PhysicalDeviceType::OTHER => 4,
-        _ => 5,
-      };
+        if features.f13.synchronization2 != vk::TRUE {
+          log::warn!("Skipped physical device: Device does not support synchronization features");
+          return None;
+        }
 
-      (queue_score << queue_family_importance) + (device_score << device_score_importance)
-    })
+        Some((physical_device, properties, features))
+      })
+      .filter_map(|(physical_device, properties, features)| {
+        // filter devices that do not have required queue families
+        match QueueFamilies::get_from_physical_device(instance, physical_device) {
+          Err(()) => {
+            log::info!("Skipped physical device: Device does not contain required queue families");
+            None
+          }
+          Ok(families) => Some((physical_device, properties, features, families)),
+        }
+      })
+      .min_by_key(|(physical_device, _properties, _features, families)| {
+        // Assign a score to each device and select the best one available
+        // A full application may use multiple metrics like limits, queue families and even the
+        // device id to rank each device that a user can have
+
+        let queue_family_importance = 3;
+        let device_score_importance = 0;
+
+        // rank devices by number of specialized queue families
+        let queue_score = if families.compute.is_some() { 0 } else { 1 }
+          + if families.transfer.is_some() { 0 } else { 1 };
+
+        // rank devices by commonly most powerful device type
+        let device_score = match instance
+          .get_physical_device_properties(*physical_device)
+          .device_type
+        {
+          vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+          vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+          vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+          vk::PhysicalDeviceType::CPU => 3,
+          vk::PhysicalDeviceType::OTHER => 4,
+          _ => 5,
+        };
+
+        (queue_score << queue_family_importance) + (device_score << device_score_importance)
+      }),
+  )
+}
+
+#[allow(unused)]
+struct PhysicalDeviceProperties {
+  pub p10: vk::PhysicalDeviceProperties,
+  pub p11: vk::PhysicalDeviceVulkan11Properties,
+  pub p12: vk::PhysicalDeviceVulkan12Properties,
+  pub p13: vk::PhysicalDeviceVulkan13Properties,
 }
 
 fn get_extended_properties(
   instance: &ash::Instance,
   physical_device: vk::PhysicalDevice,
-) -> (
-  vk::PhysicalDeviceProperties,
-  vk::PhysicalDeviceVulkan11Properties,
-) {
-  // going c style (see https://doc.rust-lang.org/std/mem/union.MaybeUninit.html)
+) -> PhysicalDeviceProperties {
+  // see https://doc.rust-lang.org/std/mem/union.MaybeUninit.html
   let mut props10: MaybeUninit<vk::PhysicalDeviceProperties2> = MaybeUninit::uninit();
   let mut props11: MaybeUninit<vk::PhysicalDeviceVulkan11Properties> = MaybeUninit::uninit();
+  let mut props12: MaybeUninit<vk::PhysicalDeviceVulkan12Properties> = MaybeUninit::uninit();
+  let mut props13: MaybeUninit<vk::PhysicalDeviceVulkan13Properties> = MaybeUninit::uninit();
 
   let props10_ptr = props10.as_mut_ptr();
   let props11_ptr = props11.as_mut_ptr();
+  let props12_ptr = props12.as_mut_ptr();
+  let props13_ptr = props13.as_mut_ptr();
 
   unsafe {
     addr_of_mut!((*props10_ptr).s_type).write(vk::StructureType::PHYSICAL_DEVICE_PROPERTIES_2);
     addr_of_mut!((*props11_ptr).s_type)
       .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
+    addr_of_mut!((*props12_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES);
+    addr_of_mut!((*props13_ptr).s_type)
+      .write(vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES);
 
-    // requesting for Vulkan11Properties
     addr_of_mut!((*props10_ptr).p_next).write(props11_ptr as *mut c_void);
-    addr_of_mut!((*props11_ptr).p_next).write(ptr::null_mut::<c_void>());
+    addr_of_mut!((*props11_ptr).p_next).write(props12_ptr as *mut c_void);
+    addr_of_mut!((*props12_ptr).p_next).write(props13_ptr as *mut c_void);
+    addr_of_mut!((*props13_ptr).p_next).write(ptr::null_mut::<c_void>());
 
     instance.get_physical_device_properties2(physical_device, props10_ptr.as_mut().unwrap());
-
-    (props10.assume_init().properties, props11.assume_init())
+    PhysicalDeviceProperties {
+      p10: props10.assume_init().properties,
+      p11: props11.assume_init(),
+      p12: props12.assume_init(),
+      p13: props13.assume_init(),
+    }
   }
+}
+
+#[allow(unused)]
+struct PhysicalDeviceFeatures {
+  pub f10: vk::PhysicalDeviceFeatures,
+  pub f11: vk::PhysicalDeviceVulkan11Features,
+  pub f12: vk::PhysicalDeviceVulkan12Features,
+  pub f13: vk::PhysicalDeviceVulkan13Features,
 }
 
 fn get_extended_features(
   instance: &ash::Instance,
   physical_device: vk::PhysicalDevice,
-) -> (
-  vk::PhysicalDeviceFeatures,
-  vk::PhysicalDeviceVulkan11Features,
-  vk::PhysicalDeviceVulkan12Features,
-  vk::PhysicalDeviceVulkan13Features,
-) {
+) -> PhysicalDeviceFeatures {
   let mut features10: MaybeUninit<vk::PhysicalDeviceFeatures2> = MaybeUninit::uninit();
   let mut features11: MaybeUninit<vk::PhysicalDeviceVulkan11Features> = MaybeUninit::uninit();
   let mut features12: MaybeUninit<vk::PhysicalDeviceVulkan12Features> = MaybeUninit::uninit();
@@ -210,12 +248,11 @@ fn get_extended_features(
     addr_of_mut!((*features13_ptr).p_next).write(ptr::null_mut::<c_void>());
 
     instance.get_physical_device_features2(physical_device, features10_ptr.as_mut().unwrap());
-
-    (
-      features10.assume_init().features,
-      features11.assume_init(),
-      features12.assume_init(),
-      features13.assume_init(),
-    )
+    PhysicalDeviceFeatures {
+      f10: features10.assume_init().features,
+      f11: features11.assume_init(),
+      f12: features12.assume_init(),
+      f13: features13.assume_init(),
+    }
   }
 }
