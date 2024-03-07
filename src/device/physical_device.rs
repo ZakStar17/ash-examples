@@ -84,11 +84,12 @@ impl<'a> Iterator for MemoryTypesIterator<'a> {
           .property_flags
           .contains(self.required_properties)
       {
-        break;
+        let item = Some((self.i, self.types[self.i]));
+        self.i += 1;
+        return item;
       }
       self.i += 1;
     }
-    Some((self.i, self.types[self.i]))
   }
 }
 

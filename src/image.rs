@@ -13,23 +13,20 @@ pub fn save_buffer_to_image_file<P>(
   P: AsRef<std::path::Path>,
 {
   // image memory needs to not be busy (getting used by device)
-
-  // map entire memory
   let image_bytes = unsafe {
-    log::debug!("Mapping image memory");
     let ptr = device
       .map_memory(
         buffer_memory,
         0,
+        // if size is not vk::WHOLE_SIZE, mapping should follow alignments
         vk::WHOLE_SIZE,
         vk::MemoryMapFlags::empty(),
       )
-      .expect("Failed to map memory") as *const u8;
+      .expect("Failed to map map memory while saving resulting buffer") as *const u8;
     std::slice::from_raw_parts(ptr, buffer_size)
   };
 
   // read bytes and save to file
-  log::debug!("Saving image");
   image::save_buffer(
     path,
     image_bytes,

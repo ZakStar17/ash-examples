@@ -44,11 +44,11 @@ pub const IMAGE_WIDTH: u32 = 1920;
 pub const IMAGE_HEIGHT: u32 = 1080;
 
 // device selection checks if format is available
-pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UINT;
+pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
                                                                            // valid color values depend on IMAGE_FORMAT
 pub const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  uint32: [134, 206, 203, 255], // rgba(134, 206, 203, 255)
+  float32: [134.0 / 255.0, 206.0 / 255.0, 203.0 / 255.0, 1.0] , // rgba(134, 206, 203, 255)
 };
 
 const IMAGE_SAVE_PATH: &str = "image.png";
@@ -134,6 +134,21 @@ fn main() {
     &[local_image],
     &[unsafe { device.get_image_memory_requirements(local_image) }],
   )
+  .or_else(|err| {
+    log::warn!(
+      "Failed to allocate optimal memory for image: {:?}\nTrying to allocate suboptimally",
+      err
+    );
+    allocate_and_bind_memory(
+      &device,
+      &physical_device,
+      vk::MemoryPropertyFlags::empty(),
+      &[],
+      &[],
+      &[local_image],
+      &[unsafe { device.get_image_memory_requirements(local_image) }],
+    )
+  })
   .expect("Failed to allocate memory for image")
   .memory;
 
