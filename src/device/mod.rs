@@ -264,7 +264,7 @@ unsafe fn select_physical_device(
 }
 
 #[allow(unused)]
-struct PhysicalDeviceProperties {
+pub struct PhysicalDeviceProperties {
   pub p10: vk::PhysicalDeviceProperties,
   pub p11: vk::PhysicalDeviceVulkan11Properties,
   pub p12: vk::PhysicalDeviceVulkan12Properties,
@@ -311,7 +311,7 @@ fn get_extended_properties(
 }
 
 #[allow(unused)]
-struct PhysicalDeviceFeatures {
+pub struct PhysicalDeviceFeatures {
   pub f10: vk::PhysicalDeviceFeatures,
   pub f11: vk::PhysicalDeviceVulkan11Features,
   pub f12: vk::PhysicalDeviceVulkan12Features,

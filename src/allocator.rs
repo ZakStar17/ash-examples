@@ -130,12 +130,20 @@ pub fn allocate_and_bind_memory(
     match unsafe { device.allocate_memory(&allocate_info, None) } {
       Ok(memory) => {
         for (&buffer, &offset) in buffers.iter().zip(offsets.buffer_offsets().iter()) {
-          unsafe { device.bind_buffer_memory(buffer, memory, offset) }
-            .map_err(|vk_err| AllocationError::BindingVkError(vk_err))?;
+          unsafe { device.bind_buffer_memory(buffer, memory, offset) }.map_err(|vk_err| {
+            unsafe {
+              device.free_memory(memory, None);
+            }
+            AllocationError::BindingVkError(vk_err)
+          })?;
         }
         for (&image, &offset) in images.iter().zip(offsets.image_offsets().iter()) {
-          unsafe { device.bind_image_memory(image, memory, offset) }
-            .map_err(|vk_err| AllocationError::BindingVkError(vk_err))?;
+          unsafe { device.bind_image_memory(image, memory, offset) }.map_err(|vk_err| {
+            unsafe {
+              device.free_memory(memory, None);
+            }
+            AllocationError::BindingVkError(vk_err)
+          })?;
         }
 
         return Ok(PackedAllocation {

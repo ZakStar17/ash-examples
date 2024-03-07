@@ -13,11 +13,15 @@ mod validation_layers;
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
 use device::PhysicalDevice;
-use image::Image;
 use std::{
   ffi::CStr,
   ops::BitOr,
   ptr::{self, addr_of},
+};
+
+use crate::{
+  allocator::allocate_and_bind_memory,
+  image::{create_image, save_buffer_to_image_file},
 };
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -75,6 +79,24 @@ fn create_fence(device: &ash::Device) -> vk::Fence {
   }
 }
 
+fn create_buffer(
+  device: &ash::Device,
+  size: u64,
+  usage: vk::BufferUsageFlags,
+) -> Result<vk::Buffer, vk::Result> {
+  let create_info = vk::BufferCreateInfo {
+    s_type: vk::StructureType::BUFFER_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::BufferCreateFlags::empty(),
+    size,
+    usage,
+    sharing_mode: vk::SharingMode::EXCLUSIVE,
+    queue_family_index_count: 0,
+    p_queue_family_indices: ptr::null(),
+  };
+  unsafe { device.create_buffer(&create_info, None) }
+}
+
 fn main() {
   env_logger::init();
 
@@ -98,23 +120,53 @@ fn main() {
     .expect("Failed to create logical device");
 
   // GPU image with DEVICE_LOCAL flags
-  let mut local_image = Image::new(
+  let local_image = create_image(
+    &device,
+    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+  )
+  .expect("Failed to create image");
+  let local_image_memory = allocate_and_bind_memory(
     &device,
     &physical_device,
-    vk::ImageTiling::OPTIMAL,
-    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
     vk::MemoryPropertyFlags::DEVICE_LOCAL,
-    vk::MemoryPropertyFlags::empty(),
-  );
-  // CPU accessible image with HOST_VISIBLE flags
-  let mut host_image = Image::new(
+    &[],
+    &[],
+    &[local_image],
+    &[unsafe { device.get_image_memory_requirements(local_image) }],
+  )
+  .expect("Failed to allocate memory for image")
+  .memory;
+
+  let buffer_size = IMAGE_WIDTH as u64 * IMAGE_HEIGHT as u64 * 4;
+  let host_buffer = create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
+    .expect("Failed to create buffer");
+
+  let host_buffer_memory = allocate_and_bind_memory(
     &device,
     &physical_device,
-    vk::ImageTiling::LINEAR,
-    vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
-    vk::MemoryPropertyFlags::HOST_VISIBLE,
-    vk::MemoryPropertyFlags::HOST_CACHED,
-  );
+    vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
+    &[host_buffer],
+    &[unsafe { device.get_buffer_memory_requirements(host_buffer) }],
+    &[],
+    &[],
+  )
+  .or_else(|err| {
+    log::warn!(
+      "Failed to allocate optimal memory for buffer: {:?}\nTrying to allocate suboptimally",
+      err
+    );
+    allocate_and_bind_memory(
+      &device,
+      &physical_device,
+      vk::MemoryPropertyFlags::HOST_VISIBLE,
+      &[host_buffer],
+      &[unsafe { device.get_buffer_memory_requirements(host_buffer) }],
+      &[],
+      &[],
+    )
+  })
+  .expect("Failed to allocate memory for buffer")
+  .memory;
 
   let mut compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families);
   let mut transfer_pool =
@@ -123,14 +175,14 @@ fn main() {
   // record command buffers
   unsafe {
     compute_pool.reset(&device);
-    compute_pool.record_clear_img(&device, &physical_device.queue_families, *local_image);
+    compute_pool.record_clear_img(&device, &physical_device.queue_families, local_image);
 
     transfer_pool.reset(&device);
-    transfer_pool.record_copy_img_to_host(
+    transfer_pool.record_copy_img_to_buffer(
       &device,
       &physical_device.queue_families,
-      *local_image,
-      *host_image,
+      local_image,
+      host_buffer,
     );
   }
 
@@ -178,7 +230,12 @@ fn main() {
   println!("GPU finished!");
 
   println!("Saving file...");
-  host_image.save_to_file(&device, &physical_device, IMAGE_SAVE_PATH);
+  save_buffer_to_image_file(
+    &device,
+    host_buffer_memory,
+    buffer_size as usize,
+    IMAGE_SAVE_PATH,
+  );
   println!("Done!");
 
   // Cleanup
@@ -195,8 +252,10 @@ fn main() {
     compute_pool.destroy_self(&device);
     transfer_pool.destroy_self(&device);
 
-    local_image.destroy_self(&device);
-    host_image.destroy_self(&device);
+    device.destroy_image(local_image, None);
+    device.free_memory(local_image_memory, None);
+    device.destroy_buffer(host_buffer, None);
+    device.free_memory(host_buffer_memory, None);
 
     log::debug!("Destroying device");
     device.destroy_device(None);
