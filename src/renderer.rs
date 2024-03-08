@@ -10,43 +10,34 @@ use crate::{
   device::{create_logical_device, PhysicalDevice, Queues},
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
-  image::create_image,
   instance::create_instance,
   utility::OnErr,
-  IMAGE_HEIGHT, IMAGE_SAVE_TYPE, IMAGE_WIDTH,
+  IMAGE_FORMAT,
 };
 
-fn create_semaphore(device: &ash::Device) -> vk::Semaphore {
+fn create_semaphore(device: &ash::Device) -> Result<vk::Semaphore, OutOfMemoryError> {
   let create_info = vk::SemaphoreCreateInfo {
     s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
     p_next: ptr::null(),
     flags: vk::SemaphoreCreateFlags::empty(),
   };
-  unsafe {
-    device
-      .create_semaphore(&create_info, None)
-      .expect("Failed to create a semaphore")
-  }
+  unsafe { device.create_semaphore(&create_info, None) }.map_err(|err| err.into())
 }
 
-fn create_fence(device: &ash::Device) -> vk::Fence {
+fn create_fence(device: &ash::Device) -> Result<vk::Fence, OutOfMemoryError> {
   let create_info = vk::FenceCreateInfo {
     s_type: vk::StructureType::FENCE_CREATE_INFO,
     p_next: ptr::null(),
     flags: vk::FenceCreateFlags::empty(),
   };
-  unsafe {
-    device
-      .create_fence(&create_info, None)
-      .expect("Failed to create a fence")
-  }
+  unsafe { device.create_fence(&create_info, None) }.map_err(|err| err.into())
 }
 
 fn create_buffer(
   device: &ash::Device,
   size: u64,
   usage: vk::BufferUsageFlags,
-) -> Result<vk::Buffer, vk::Result> {
+) -> Result<vk::Buffer, OutOfMemoryError> {
   let create_info = vk::BufferCreateInfo {
     s_type: vk::StructureType::BUFFER_CREATE_INFO,
     p_next: ptr::null(),
@@ -57,7 +48,39 @@ fn create_buffer(
     queue_family_index_count: 0,
     p_queue_family_indices: ptr::null(),
   };
-  unsafe { device.create_buffer(&create_info, None) }
+  unsafe { device.create_buffer(&create_info, None) }.map_err(|err| err.into())
+}
+
+pub fn create_image(
+  device: &ash::Device,
+  width: u32,
+  height: u32,
+  usage: vk::ImageUsageFlags,
+) -> Result<vk::Image, OutOfMemoryError> {
+  // 1 color layer 2d image
+  let create_info = vk::ImageCreateInfo {
+    s_type: vk::StructureType::IMAGE_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::ImageCreateFlags::empty(),
+    image_type: vk::ImageType::TYPE_2D,
+    format: IMAGE_FORMAT,
+    extent: vk::Extent3D {
+      width,
+      height,
+      depth: 1,
+    },
+    mip_levels: 1,
+    array_layers: 1,
+    samples: vk::SampleCountFlags::TYPE_1,
+    tiling: vk::ImageTiling::OPTIMAL,
+    usage,
+    sharing_mode: vk::SharingMode::EXCLUSIVE,
+    queue_family_index_count: 0,
+    p_queue_family_indices: ptr::null(), // ignored if sharing mode is exclusive
+    initial_layout: vk::ImageLayout::UNDEFINED,
+  };
+
+  unsafe { device.create_image(&create_info, None) }.map_err(|err| err.into())
 }
 
 pub struct Renderer {
@@ -86,7 +109,11 @@ struct GPUData {
 }
 
 impl Renderer {
-  pub fn initialize() -> Result<Self, InitializationError> {
+  pub fn initialize(
+    image_width: u32,
+    image_height: u32,
+    buffer_size: u64,
+  ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
 
     #[cfg(feature = "vl")]
@@ -117,7 +144,14 @@ impl Renderer {
       destroy_instance();
     })?;
 
-    let gpu_data = GPUData::new(&device, &physical_device).on_err(|_| unsafe {
+    let gpu_data = GPUData::new(
+      &device,
+      &physical_device,
+      image_width,
+      image_height,
+      buffer_size,
+    )
+    .on_err(|_| unsafe {
       command_pools.destroy_self(&device);
       device.destroy_device(None);
       destroy_instance();
@@ -155,8 +189,9 @@ impl Renderer {
     Ok(())
   }
 
-  pub fn submit_and_wait(&self) {
-    let image_clear_finished = create_semaphore(&self.device);
+  // can return vk::Result::ERROR_DEVICE_LOST
+  pub fn submit_and_wait(&self) -> Result<(), vk::Result> {
+    let image_clear_finished = create_semaphore(&self.device)?;
     let clear_image_submit = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
@@ -181,10 +216,15 @@ impl Renderer {
       p_signal_semaphores: ptr::null(),
     };
 
-    let finished = create_fence(&self.device);
+    let finished = create_fence(&self.device)
+      .on_err(|_| unsafe { self.device.destroy_semaphore(image_clear_finished, None) })?;
+
+    let destroy_objs = || unsafe {
+      self.device.destroy_fence(finished, None);
+      self.device.destroy_semaphore(image_clear_finished, None);
+    };
 
     unsafe {
-      // note: you can make multiple submits with device.queue_submit2
       self
         .device
         .queue_submit(
@@ -192,73 +232,41 @@ impl Renderer {
           &[clear_image_submit],
           vk::Fence::null(),
         )
-        .expect("Failed to submit compute");
+        .on_err(|_| destroy_objs())?;
       self
         .device
         .queue_submit(self.queues.transfer, &[transfer_image_submit], finished)
-        .expect("Failed to submit transfer");
+        .on_err(|_| destroy_objs())?;
 
       self
         .device
         .wait_for_fences(&[finished], true, u64::MAX)
-        .expect("Failed to wait for fences");
+        .on_err(|_| destroy_objs())?;
     }
 
-    unsafe {
-      self.device.destroy_fence(finished, None);
-      self.device.destroy_semaphore(image_clear_finished, None);
-    }
+    destroy_objs();
+
+    Ok(())
   }
 
-  pub fn save_buffer_to_image_file<P>(&self, path: P)
-  where
-    P: AsRef<std::path::Path>,
-  {
-    // image memory needs to not be busy (getting used by device)
-    let image_bytes = unsafe {
-      let ptr = self
-        .device
-        .map_memory(
-          self.gpu_data.host_buffer_memory,
-          0,
-          // if size is not vk::WHOLE_SIZE, mapping should follow alignments
-          vk::WHOLE_SIZE,
-          vk::MemoryMapFlags::empty(),
-        )
-        .expect("Failed to map map memory while saving resulting buffer")
-        as *const u8;
-      std::slice::from_raw_parts(ptr, self.gpu_data.host_buffer_size as usize)
-    };
-
-    // read bytes and save to file
-    image::save_buffer(
-      path,
-      image_bytes,
-      IMAGE_WIDTH,
-      IMAGE_HEIGHT,
-      IMAGE_SAVE_TYPE,
-    )
-    .expect("Failed to save image");
-
-    unsafe {
-      self.device.unmap_memory(self.gpu_data.host_buffer_memory);
-    }
+  pub unsafe fn get_resulting_data<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), vk::Result> {
+    self.gpu_data.get_buffer_data(&self.device, f)
   }
 }
 
 impl Drop for Renderer {
   fn drop(&mut self) {
+    log::debug!("Destroying renderer objects...");
     unsafe {
       // wait until all operations have finished and the device is safe to destroy
       self
         .device
         .device_wait_idle()
-        .expect("Failed to wait for the device to become idle");
+        .expect("Failed to wait for the device to become idle during drop");
 
       self.command_pools.destroy_self(&self.device);
       self.gpu_data.destroy_self(&self.device);
 
-      log::debug!("Destroying device");
       self.device.destroy_device(None);
 
       #[cfg(feature = "vl")]
@@ -300,10 +308,15 @@ impl GPUData {
   pub fn new(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
+    image_width: u32,
+    image_height: u32,
+    buffer_size: u64,
   ) -> Result<Self, AllocationError> {
     // GPU image with DEVICE_LOCAL flags
     let local_image = create_image(
       &device,
+      image_width,
+      image_height,
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
     )?;
     log::debug!("Allocating memory for local image");
@@ -340,12 +353,8 @@ impl GPUData {
       }
     };
 
-    let host_buffer_size = IMAGE_WIDTH as u64 * IMAGE_HEIGHT as u64 * 4;
-    let host_buffer = match create_buffer(
-      &device,
-      host_buffer_size,
-      vk::BufferUsageFlags::TRANSFER_DST,
-    ) {
+    let host_buffer = match create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
+    {
       Ok(buffer) => buffer,
       Err(err) => {
         unsafe {
@@ -395,9 +404,34 @@ impl GPUData {
       local_image,
       local_image_memory,
       host_buffer,
-      host_buffer_size,
+      host_buffer_size: buffer_size,
       host_buffer_memory,
     })
+  }
+
+  // map can fail with vk::Result::ERROR_MEMORY_MAP_FAILED
+  // in most cases it may be possible to try mapping again a smaller range
+  pub unsafe fn get_buffer_data<F: FnOnce(&[u8])>(
+    &self,
+    device: &ash::Device,
+    f: F,
+  ) -> Result<(), vk::Result> {
+    let ptr = device.map_memory(
+      self.host_buffer_memory,
+      0,
+      // if size is not vk::WHOLE_SIZE, mapping should follow alignments
+      vk::WHOLE_SIZE,
+      vk::MemoryMapFlags::empty(),
+    )? as *const u8;
+    let data = std::slice::from_raw_parts(ptr, self.host_buffer_size as usize);
+
+    f(data);
+
+    unsafe {
+      device.unmap_memory(self.host_buffer_memory);
+    }
+
+    Ok(())
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

@@ -27,6 +27,15 @@ impl From<vk::Result> for OutOfMemoryError {
   }
 }
 
+impl From<OutOfMemoryError> for vk::Result {
+  fn from(value: OutOfMemoryError) -> Self {
+    match value {
+      OutOfMemoryError::OutOfDeviceMemory => vk::Result::ERROR_OUT_OF_DEVICE_MEMORY,
+      OutOfMemoryError::OutOfHostMemory => vk::Result::ERROR_OUT_OF_HOST_MEMORY,
+    }
+  }
+}
+
 #[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("No physical device supports the application")]
@@ -101,5 +110,11 @@ impl std::fmt::Debug for AllocationError {
 impl From<vk::Result> for AllocationError {
   fn from(value: vk::Result) -> Self {
     AllocationError::NotEnoughMemory(OutOfMemoryError::from(value))
+  }
+}
+
+impl From<OutOfMemoryError> for AllocationError {
+  fn from(value: OutOfMemoryError) -> Self {
+    AllocationError::NotEnoughMemory(value)
   }
 }
