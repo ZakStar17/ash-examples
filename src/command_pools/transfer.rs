@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{device::QueueFamilies, IMAGE_HEIGHT, IMAGE_WIDTH};
+use crate::{device::QueueFamilies, errors::OutOfMemoryError, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 use super::dependency_info;
 
@@ -31,7 +31,7 @@ impl TransferCommandBufferPool {
     queue_families: &QueueFamilies,
     src_image: vk::Image,
     dst_buffer: vk::Buffer,
-  ) -> Result<(), vk::Result> {
+  ) -> Result<(), OutOfMemoryError> {
     let cb = self.copy_to_host;
     let begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
@@ -110,7 +110,9 @@ impl TransferCommandBufferPool {
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[flush_host], &[]));
 
-    device.end_command_buffer(cb)
+    device.end_command_buffer(cb)?;
+
+    Ok(())
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

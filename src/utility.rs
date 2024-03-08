@@ -45,3 +45,21 @@ macro_rules! cstr {
     unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
   }};
 }
+
+pub trait OnErr<T, E> {
+  fn on_err<O: FnOnce(&E)>(self: Self, op: O) -> Result<T, E>
+  where
+    Self: Sized;
+}
+
+impl<T, E> OnErr<T, E> for Result<T, E> {
+  fn on_err<O: FnOnce(&E)>(self, op: O) -> Result<T, E>
+  where
+    Self: Sized,
+  {
+    if let Err(ref e) = self {
+      op(e);
+    }
+    self
+  }
+}

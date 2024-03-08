@@ -2,7 +2,10 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{device::PhysicalDevice, errors::AllocationError};
+use crate::{
+  device::PhysicalDevice,
+  errors::{AllocationError, OutOfMemoryError},
+};
 
 pub struct PackedAllocation {
   pub memory: vk::DeviceMemory,
@@ -124,10 +127,14 @@ pub fn allocate_and_bind_memory(
   }
 
   if out_of_host_memory {
-    return Err(AllocationError::NotEnoughHostMemory);
+    return Err(AllocationError::NotEnoughMemory(
+      OutOfMemoryError::OutOfHostMemory,
+    ));
   }
   if out_of_device_memory {
-    return Err(AllocationError::NotEnoughDeviceMemory);
+    return Err(AllocationError::NotEnoughMemory(
+      OutOfMemoryError::OutOfDeviceMemory,
+    ));
   }
   if heap_capacity_exceeded {
     return Err(AllocationError::TooBigForAllSupportedHeaps(total_size));

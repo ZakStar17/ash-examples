@@ -2,7 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{device::QueueFamilies, IMAGE_COLOR};
+use crate::{device::QueueFamilies, errors::OutOfMemoryError, IMAGE_COLOR};
 
 use super::dependency_info;
 
@@ -30,7 +30,7 @@ impl ComputeCommandBufferPool {
     device: &ash::Device,
     queue_families: &QueueFamilies,
     image: vk::Image,
-  ) -> Result<(), vk::Result> {
+  ) -> Result<(), OutOfMemoryError> {
     let cb = self.clear_img;
     let begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
@@ -93,7 +93,9 @@ impl ComputeCommandBufferPool {
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
 
-    device.end_command_buffer(self.clear_img)
+    device.end_command_buffer(self.clear_img)?;
+
+    Ok(())
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {

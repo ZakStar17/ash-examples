@@ -50,7 +50,7 @@ fn main() {
   env_logger::init();
 
   let mut renderer = Renderer::initialize().expect("Failed to initialize");
-  unsafe { renderer.record_work() };
+  unsafe { renderer.record_work() }.expect("Failed to record work");
 
   println!("Submitting work...");
   renderer.submit_and_wait();

@@ -3,17 +3,39 @@ use ash::vk;
 use crate::utility::error_chain_fmt;
 
 #[derive(thiserror::Error)]
+pub enum OutOfMemoryError {
+  #[error("Out of Device Memory")]
+  OutOfDeviceMemory,
+  #[error("Out of host memory")]
+  OutOfHostMemory,
+}
+impl std::fmt::Debug for OutOfMemoryError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
+}
+
+impl From<vk::Result> for OutOfMemoryError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => OutOfMemoryError::OutOfDeviceMemory,
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY => OutOfMemoryError::OutOfHostMemory,
+      _ => {
+        panic!("Invalid vk::Result to OutOfMemoryError cast: {:?}", value);
+      }
+    }
+  }
+}
+
+#[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
 
-  // can by the most part happen anytime
-  #[error("Out of device memory")]
-  NotEnoughDeviceMemory(#[source] Option<AllocationError>),
-  #[error("Out of host memory")]
-  NotEnoughHostMemory(#[source] Option<AllocationError>),
+  #[error("Not enough memory")]
+  NotEnoughMemory(#[source] Option<AllocationError>),
 
-  // undefined behavior / driver bug (see vl)
+  // undefined behavior / driver or application bug (see vl)
   #[error("Device is lost")]
   DeviceLost,
   #[error("Unknown")]
@@ -28,8 +50,9 @@ impl std::fmt::Debug for InitializationError {
 impl From<vk::Result> for InitializationError {
   fn from(value: vk::Result) -> Self {
     match value {
-      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => InitializationError::NotEnoughDeviceMemory(None),
-      vk::Result::ERROR_OUT_OF_HOST_MEMORY => InitializationError::NotEnoughHostMemory(None),
+      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
+        InitializationError::NotEnoughMemory(None)
+      }
       vk::Result::ERROR_DEVICE_LOST => InitializationError::DeviceLost,
       vk::Result::ERROR_UNKNOWN => InitializationError::Unknown,
       // validation layers may say more on this
@@ -45,18 +68,15 @@ impl From<vk::Result> for InitializationError {
 impl From<AllocationError> for InitializationError {
   fn from(value: AllocationError) -> Self {
     match value {
-      AllocationError::NotEnoughDeviceMemory => {
-        InitializationError::NotEnoughDeviceMemory(Some(value))
-      }
-      AllocationError::NotEnoughHostMemory => InitializationError::NotEnoughHostMemory(Some(value)),
+      AllocationError::NotEnoughMemory(_) => {}
       _ => {
         log::error!(
           "Allocation error failed because of an unhandled case: {:?}",
           value
         );
-        InitializationError::Unknown
       }
     }
+    InitializationError::NotEnoughMemory(Some(value))
   }
 }
 
@@ -69,10 +89,8 @@ pub enum AllocationError {
   // allocation size is bigger than each supported heap size
   #[error("Allocation size ({0}) is bigger than the capacity of each supported heap")]
   TooBigForAllSupportedHeaps(u64),
-  #[error("Not enough device memory")]
-  NotEnoughDeviceMemory,
-  #[error("Not enough host memory")]
-  NotEnoughHostMemory,
+  #[error("Not enough memory")]
+  NotEnoughMemory(#[source] OutOfMemoryError),
 }
 impl std::fmt::Debug for AllocationError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -82,10 +100,6 @@ impl std::fmt::Debug for AllocationError {
 
 impl From<vk::Result> for AllocationError {
   fn from(value: vk::Result) -> Self {
-    match value {
-      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => AllocationError::NotEnoughDeviceMemory,
-      vk::Result::ERROR_OUT_OF_HOST_MEMORY => AllocationError::NotEnoughHostMemory,
-      _ => panic!(),
-    }
+    AllocationError::NotEnoughMemory(OutOfMemoryError::from(value))
   }
 }
