@@ -4,29 +4,25 @@ use ash::vk;
 
 use crate::{device::QueueFamilies, IMAGE_HEIGHT, IMAGE_WIDTH};
 
+use super::dependency_info;
+
 pub struct TransferCommandBufferPool {
   pool: vk::CommandPool,
   pub copy_to_host: vk::CommandBuffer,
 }
 
 impl TransferCommandBufferPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
+  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index());
+    let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index())?;
 
-    let copy_to_host = super::allocate_primary_command_buffers(device, pool, 1)[0];
+    let copy_to_host = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
-    Self { pool, copy_to_host }
+    Ok(Self { pool, copy_to_host })
   }
 
-  pub unsafe fn reset(&mut self, device: &ash::Device) {
-    device
-      .reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
-      .expect("Failed to reset command pool");
-  }
-
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_command_pool(self.pool, None);
+  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
+    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
   }
 
   pub unsafe fn record_copy_img_to_buffer(
@@ -35,16 +31,15 @@ impl TransferCommandBufferPool {
     queue_families: &QueueFamilies,
     src_image: vk::Image,
     dst_buffer: vk::Buffer,
-  ) {
+  ) -> Result<(), vk::Result> {
+    let cb = self.copy_to_host;
     let begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
       p_next: ptr::null(),
       flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
       p_inheritance_info: ptr::null(),
     };
-    device
-      .begin_command_buffer(self.copy_to_host, &begin_info)
-      .expect("Failed to begin recording command buffer");
+    device.begin_command_buffer(cb, &begin_info)?;
 
     let subresource_range = vk::ImageSubresourceRange {
       aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -54,35 +49,22 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    // This is the matching queue family ownership acquire operation to the one in the compute
-    // command buffer which executed on the source image
-    let src_acquire = vk::ImageMemoryBarrier {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+    // matches to release found in compute
+    let src_acquire = vk::ImageMemoryBarrier2 {
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
       p_next: ptr::null(),
-
-      // should be NONE for ownership acquire
-      src_access_mask: vk::AccessFlags::NONE,
-      // change image AccessFlags after the ownership transfer completes
-      dst_access_mask: vk::AccessFlags::TRANSFER_READ,
-
-      // should match the layouts specified in the compute buffer
+      src_access_mask: vk::AccessFlags2::NONE, // NONE for ownership acquire,
+      dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+      src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from semaphore
+      dst_stage_mask: vk::PipelineStageFlags2::COPY,
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-
       src_queue_family_index: queue_families.get_compute_index(),
       dst_queue_family_index: queue_families.get_transfer_index(),
       image: src_image,
       subresource_range,
     };
-    device.cmd_pipeline_barrier(
-      self.copy_to_host,
-      vk::PipelineStageFlags::TRANSFER,
-      vk::PipelineStageFlags::TRANSFER,
-      vk::DependencyFlags::empty(),
-      &[],
-      &[],
-      &[src_acquire],
-    );
+    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[src_acquire]));
 
     // 1 color layer
     let subresource_layers = vk::ImageSubresourceLayers {
@@ -105,37 +87,33 @@ impl TransferCommandBufferPool {
       buffer_row_length: 0,
     };
     device.cmd_copy_image_to_buffer(
-      self.copy_to_host,
+      cb,
       src_image,
       vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
       dst_buffer,
       &[copy_region],
     );
 
-    // change destination image access flags to host read
-    let buffer_wait = vk::BufferMemoryBarrier {
-      s_type: vk::StructureType::BUFFER_MEMORY_BARRIER,
+    // flush memory to host
+    let flush_host = vk::BufferMemoryBarrier2 {
+      s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
       p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-      dst_access_mask: vk::AccessFlags::HOST_READ,
+      src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+      dst_access_mask: vk::AccessFlags2::HOST_READ,
+      src_stage_mask: vk::PipelineStageFlags2::COPY,
+      dst_stage_mask: vk::PipelineStageFlags2::HOST,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       buffer: dst_buffer,
       offset: 0,
       size: vk::WHOLE_SIZE,
     };
-    device.cmd_pipeline_barrier(
-      self.copy_to_host,
-      vk::PipelineStageFlags::TRANSFER,
-      vk::PipelineStageFlags::HOST,
-      vk::DependencyFlags::empty(),
-      &[],
-      &[buffer_wait],
-      &[],
-    );
+    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[flush_host], &[]));
 
-    device
-      .end_command_buffer(self.copy_to_host)
-      .expect("Failed to finish recording command buffer");
+    device.end_command_buffer(cb)
+  }
+
+  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+    device.destroy_command_pool(self.pool, None);
   }
 }

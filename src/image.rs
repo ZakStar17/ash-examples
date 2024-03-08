@@ -2,44 +2,7 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::{IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_SAVE_TYPE, IMAGE_WIDTH};
-
-pub fn save_buffer_to_image_file<P>(
-  device: &ash::Device,
-  buffer_memory: vk::DeviceMemory,
-  buffer_size: usize,
-  path: P,
-) where
-  P: AsRef<std::path::Path>,
-{
-  // image memory needs to not be busy (getting used by device)
-  let image_bytes = unsafe {
-    let ptr = device
-      .map_memory(
-        buffer_memory,
-        0,
-        // if size is not vk::WHOLE_SIZE, mapping should follow alignments
-        vk::WHOLE_SIZE,
-        vk::MemoryMapFlags::empty(),
-      )
-      .expect("Failed to map map memory while saving resulting buffer") as *const u8;
-    std::slice::from_raw_parts(ptr, buffer_size)
-  };
-
-  // read bytes and save to file
-  image::save_buffer(
-    path,
-    image_bytes,
-    IMAGE_WIDTH,
-    IMAGE_HEIGHT,
-    IMAGE_SAVE_TYPE,
-  )
-  .expect("Failed to save image");
-
-  unsafe {
-    device.unmap_memory(buffer_memory);
-  }
-}
+use crate::{IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH};
 
 pub fn create_image(
   device: &ash::Device,
