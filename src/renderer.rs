@@ -119,7 +119,7 @@ impl Renderer {
     #[cfg(feature = "vl")]
     let (instance, mut debug_utils) = create_instance(&entry)?;
     #[cfg(not(feature = "vl"))]
-    let instance = instance::create_instance(&entry)?;
+    let instance = create_instance(&entry)?;
 
     let mut destroy_instance = || unsafe {
       #[cfg(feature = "vl")]

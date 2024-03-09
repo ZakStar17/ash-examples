@@ -38,14 +38,6 @@ pub fn error_chain_fmt(
   Ok(())
 }
 
-// transmute literals to static CStr
-#[macro_export]
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
-
 pub trait OnErr<T, E> {
   fn on_err<O: FnOnce(&E)>(self: Self, op: O) -> Result<T, E>
   where
@@ -62,4 +54,22 @@ impl<T, E> OnErr<T, E> for Result<T, E> {
     }
     self
   }
+}
+
+// transmute literals to static CStr
+#[macro_export]
+macro_rules! cstr {
+  ( $s:literal ) => {{
+    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
+  }};
+}
+
+#[macro_export]
+macro_rules! const_flag_bitor {
+  ($t:ty, $x:expr, $($y:expr),+) => {
+    // ash flags don't implement const bitor
+    <$t>::from_raw(
+      $x.as_raw() $(| $y.as_raw())+,
+    )
+  };
 }

@@ -15,34 +15,20 @@ pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
 use crate::{
-  device::vendor::Vendor,
-  utility::{self, c_char_array_to_string, i8_array_as_cstr},
-  IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+  const_flag_bitor, device::vendor::Vendor, utility::{self, c_char_array_to_string, i8_array_as_cstr}, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION
 };
 
-macro_rules! const_flag_bitor {
-    ($t:ty, $x:expr, $($y:expr),+) => {
-      // ash flags don't implement const bitor
-      <$t>::from_raw(
-        $x.as_raw() $(| $y.as_raw())+,
-      )
-    };
-  }
-
-const REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL: vk::FormatFeatureFlags = const_flag_bitor!(
+const REQUIRED_IMAGE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags,
   vk::FormatFeatureFlags::TRANSFER_SRC,
   vk::FormatFeatureFlags::TRANSFER_DST
 );
-const REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR: vk::FormatFeatureFlags =
-  vk::FormatFeatureFlags::TRANSFER_DST;
 
-const REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL: vk::ImageUsageFlags = const_flag_bitor!(
+const REQUIRED_IMAGE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags,
   vk::ImageUsageFlags::TRANSFER_SRC,
   vk::ImageUsageFlags::TRANSFER_DST
 );
-const REQUIRED_IMAGE_USAGE_FLAGS_LINEAR: vk::ImageUsageFlags = vk::ImageUsageFlags::TRANSFER_DST;
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
@@ -70,7 +56,7 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   );
 }
 
-fn check_extension_support(
+fn supports_required_extensions(
   instance: &ash::Instance,
   device: vk::PhysicalDevice,
 ) -> Result<bool, vk::Result> {
@@ -88,20 +74,13 @@ fn check_extension_support(
   Ok(true)
 }
 
-fn check_formats_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+fn supports_required_image_formats(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
   let properties =
     unsafe { instance.get_physical_device_format_properties(physical_device, IMAGE_FORMAT) };
 
   if !properties
     .optimal_tiling_features
-    .contains(REQUIRED_FORMAT_IMAGE_FLAGS_OPTIMAL)
-  {
-    return false;
-  }
-
-  if !properties
-    .linear_tiling_features
-    .contains(REQUIRED_FORMAT_IMAGE_FLAGS_LINEAR)
+    .contains(REQUIRED_IMAGE_FORMAT_FEATURES)
   {
     return false;
   }
@@ -109,12 +88,12 @@ fn check_formats_support(instance: &ash::Instance, physical_device: vk::Physical
   true
 }
 
-fn check_image_size_support(
+fn supports_image_dimensions(
   instance: &ash::Instance,
   physical_device: vk::PhysicalDevice,
   tiling: vk::ImageTiling,
   usage: vk::ImageUsageFlags,
-) -> bool {
+) -> Result<bool, vk::Result> {
   let properties = unsafe {
     instance
       .get_physical_device_image_format_properties(
@@ -124,45 +103,16 @@ fn check_image_size_support(
         tiling,
         usage,
         vk::ImageCreateFlags::empty(),
-      )
-      .expect("Failed to query for image format properties")
+      )?
   };
   log::debug!(
-    "{} image {:?} properties: {:#?}",
-    match tiling {
-      vk::ImageTiling::LINEAR => "Linear",
-      vk::ImageTiling::OPTIMAL => "Optimal",
-      _ => panic!(),
-    },
+    "image {:?} properties: {:#?}",
     IMAGE_FORMAT,
     properties
   );
 
-  IMAGE_WIDTH <= properties.max_extent.width && IMAGE_HEIGHT <= properties.max_extent.height
-}
 
-fn check_linear_tiling_image_size_support(
-  instance: &ash::Instance,
-  physical_device: vk::PhysicalDevice,
-) -> bool {
-  check_image_size_support(
-    instance,
-    physical_device,
-    vk::ImageTiling::LINEAR,
-    REQUIRED_IMAGE_USAGE_FLAGS_LINEAR,
-  )
-}
-
-fn check_optimal_tiling_image_size_support(
-  instance: &ash::Instance,
-  physical_device: vk::PhysicalDevice,
-) -> bool {
-  check_image_size_support(
-    instance,
-    physical_device,
-    vk::ImageTiling::OPTIMAL,
-    REQUIRED_IMAGE_USAGE_FLAGS_OPTIMAL,
-  )
+  Ok(IMAGE_WIDTH <= properties.max_extent.width && IMAGE_HEIGHT <= properties.max_extent.height && IMAGE_MINIMAL_SIZE <= properties.max_resource_size)
 }
 
 unsafe fn select_physical_device(
@@ -195,9 +145,7 @@ unsafe fn select_physical_device(
           return None;
         }
 
-        // check if device supports all required extensions
-        let result = check_extension_support(instance, physical_device);
-        match result {
+        match supports_required_extensions(instance, physical_device) {
           Ok(supports_extensions) => {
             if !supports_extensions {
               log::info!(
@@ -211,6 +159,27 @@ unsafe fn select_physical_device(
             return None;
           }
         }
+
+        if !supports_required_image_formats(instance, physical_device) {
+          log::warn!("Skipped physical device: Device does not support all required image formats");
+          return None;
+        }
+
+        match supports_image_dimensions(instance, physical_device, vk::ImageTiling::OPTIMAL, REQUIRED_IMAGE_USAGES) {
+          Ok(supports_dimensions) => {
+            if !supports_dimensions {
+              log::error!(
+                "Skipped physical device: Device does not required image dimensions"
+              );
+              return None;
+            }
+          }
+          Err(err) => {
+            log::error!("Device selection error: {:?}", err);
+            return None;
+          }
+        }
+
 
         if features.f12.timeline_semaphore != vk::TRUE {
           log::warn!("Skipped physical device: Device does not support timeline semaphores");
