@@ -129,9 +129,10 @@ fn main() {
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
   #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) = instance::create_instance(&entry);
+  let (instance, mut debug_utils) =
+    instance::create_instance(&entry).expect("Failed to create an instance");
   #[cfg(not(feature = "vl"))]
-  let instance = instance::create_instance(&entry);
+  let instance = instance::create_instance(&entry).expect("Failed to create an instance");
 
   let physical_device = unsafe { PhysicalDevice::select(&instance) };
 
@@ -290,7 +291,6 @@ fn main() {
     {
       debug_utils.destroy_self();
     }
-
     instance.destroy_instance(None);
   }
 }
