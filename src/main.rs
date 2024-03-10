@@ -46,12 +46,13 @@ pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
-pub const IMAGE_WIDTH: u32 = 4000;
-pub const IMAGE_HEIGHT: u32 = 4000;
+const IMAGE_WIDTH: u32 = 4000;
+const IMAGE_HEIGHT: u32 = 4000;
 
-// what is used in the shader
-pub const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
-pub const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
+const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+const IMAGE_SAVE_TYPE: ::image::ColorType = ::image::ColorType::Rgba8; // should be equivalent
+const IMAGE_FORMAT_SIZE: u64 = 4;
+const IMAGE_MINIMAL_SIZE: u64 = IMAGE_WIDTH as u64 * IMAGE_HEIGHT as u64 * IMAGE_FORMAT_SIZE;
 
 // Size of each local group in the shader invocation
 // Normally these would be calculated from image dimensions and clapped to respect device limits

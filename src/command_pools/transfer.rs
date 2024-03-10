@@ -62,9 +62,9 @@ impl TransferCommandBufferPool {
       p_next: ptr::null(),
 
       // This barrier needs to wait for the compute buffer to finish, which is signalled a
-      // semaphore with the dst_mask set to TRANSFER 
+      // semaphore with the dst_mask set to TRANSFER
       src_stage_mask: vk::PipelineStageFlags2::TRANSFER,
-      dst_stage_mask: vk::PipelineStageFlags2::COPY,  // should complete before copy
+      dst_stage_mask: vk::PipelineStageFlags2::COPY, // should complete before copy
 
       // should be NONE for ownership acquire
       src_access_mask: vk::AccessFlags2::NONE,

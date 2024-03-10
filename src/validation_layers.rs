@@ -4,83 +4,35 @@ use std::{ffi::CStr, os::raw::c_void, ptr};
 
 use crate::{utility, VALIDATION_LAYERS};
 
-#[derive(Debug)]
-struct LayerProperties {
-  name: String,
-  _description: String,
-  _implementation_version: String,
-}
-
-impl PartialEq for LayerProperties {
-  fn eq(&self, other: &Self) -> bool {
-    self.name.eq(&other.name)
-  }
-}
-
-impl PartialOrd for LayerProperties {
-  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-    self.name.partial_cmp(&other.name)
-  }
-}
-
-impl Eq for LayerProperties {}
-
-impl Ord for LayerProperties {
-  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-    self.name.cmp(&other.name)
-  }
+// returns a list of supported and unsupported instance layers
+fn filter_supported(
+  available: Vec<vk::LayerProperties>,
+) -> (Vec<&'static CStr>, Vec<&'static CStr>) {
+  VALIDATION_LAYERS.into_iter().partition(|&req| {
+    available
+      .iter()
+      .any(|av| unsafe { utility::i8_array_as_cstr(&av.layer_name) }.unwrap() == req)
+  })
 }
 
 // returns a subset of VALIDATION_LAYERS that are available
-pub fn get_supported_validation_layers(entry: &ash::Entry) -> Box<[&'static CStr]> {
-  log::info!("Checking for validation layers");
+pub fn get_supported_validation_layers(
+  entry: &ash::Entry,
+) -> Result<Box<[&'static CStr]>, vk::Result> {
+  log::info!("Querying Vulkan instance layers");
+  let (available, unavailable) = filter_supported(entry.enumerate_instance_layer_properties()?);
 
-  // supposedly only fails if there is no available memory
-  let properties: Vec<vk::LayerProperties> = entry.enumerate_instance_layer_properties().unwrap();
-
-  let mut all: Vec<LayerProperties> = properties
-    .iter()
-    .filter_map(
-      |props| match utility::i8_array_to_string(&props.layer_name) {
-        Ok(s) => Some((props, s)),
-        Err(_) => {
-          log::warn!(
-          "There exists an available validation layer with an invalid name that couldn't be decoded"
-        );
-          None
-        }
-      },
-    )
-    .map(|(props, name)| LayerProperties {
-      name,
-      _description: utility::i8_array_to_string(&props.description)
-        .unwrap_or(String::from("<Couldn't be decoded>")),
-      _implementation_version: utility::parse_vulkan_api_version(props.implementation_version),
-    })
-    .collect();
-
-  log::debug!("System validation layers: {:#?}", all);
-
-  let available = utility::in_slice(
-    all.as_mut_slice(),
-    &mut VALIDATION_LAYERS.clone().into_iter(),
-    |av, req| av.name.as_str().cmp(req.to_str().unwrap()),
-  );
-
-  if available.len() != VALIDATION_LAYERS.len() {
-    let unavailable: Vec<&&CStr> = VALIDATION_LAYERS
-      .iter()
-      .filter(|s| !available.contains(s))
-      .collect();
+  if !unavailable.is_empty() {
     log::error!(
       "Some requested validation layers are not available: {:?}",
       unavailable
     );
   }
 
-  available
+  Ok(available.into_boxed_slice())
 }
 
+// can be extensively customized
 unsafe extern "system" fn vulkan_debug_utils_callback(
   message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
   message_type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -112,21 +64,16 @@ pub struct DebugUtils {
 }
 
 impl DebugUtils {
-  pub fn setup(
+  pub fn create(
     entry: &ash::Entry,
     instance: &ash::Instance,
     create_info: DebugUtilsMessengerCreateInfoEXT,
-  ) -> Self {
+  ) -> Result<Self, vk::Result> {
     let loader = ash::extensions::ext::DebugUtils::new(entry, instance);
 
-    log::debug!("Creating debug utils messenger");
-    let messenger = unsafe {
-      loader
-        .create_debug_utils_messenger(&create_info, None)
-        .expect("Failed to create debug utils")
-    };
+    let messenger = unsafe { loader.create_debug_utils_messenger(&create_info, None)? };
 
-    Self { loader, messenger }
+    Ok(Self { loader, messenger })
   }
 
   pub fn get_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
