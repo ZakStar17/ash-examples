@@ -8,6 +8,8 @@ mod transfer;
 pub use compute::ComputeCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
+use crate::device::PhysicalDevice;
+
 pub fn create_command_pool(
   device: &ash::Device,
   flags: vk::CommandPoolCreateFlags,
@@ -55,5 +57,36 @@ fn dependency_info(
     p_buffer_memory_barriers: buffer.as_ptr(),
     image_memory_barrier_count: image.len() as u32,
     p_image_memory_barriers: image.as_ptr(),
+  }
+}
+
+pub struct CommandPools {
+  pub compute_pool: ComputeCommandBufferPool,
+  pub transfer_pool: TransferCommandBufferPool,
+}
+
+impl CommandPools {
+  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
+    let mut compute_pool =
+      ComputeCommandBufferPool::create(&device, &physical_device.queue_families)?;
+    let transfer_pool =
+      match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
+        Ok(pool) => pool,
+        Err(err) => {
+          unsafe {
+            compute_pool.destroy_self(device);
+          }
+          return Err(err);
+        }
+      };
+    Ok(Self {
+      compute_pool,
+      transfer_pool,
+    })
+  }
+
+  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+    self.compute_pool.destroy_self(device);
+    self.transfer_pool.destroy_self(device);
   }
 }

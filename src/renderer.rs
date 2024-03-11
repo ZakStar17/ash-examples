@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
   allocator::allocate_and_bind_memory,
-  command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool},
+  command_pools::CommandPools,
   device::{create_logical_device, PhysicalDevice, Queues},
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
@@ -93,11 +93,6 @@ pub struct Renderer {
   queues: Queues,
   command_pools: CommandPools,
   gpu_data: GPUData,
-}
-
-struct CommandPools {
-  compute_pool: ComputeCommandBufferPool,
-  transfer_pool: TransferCommandBufferPool,
 }
 
 struct GPUData {
@@ -275,32 +270,6 @@ impl Drop for Renderer {
       }
       self.instance.destroy_instance(None);
     }
-  }
-}
-
-impl CommandPools {
-  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let mut compute_pool =
-      ComputeCommandBufferPool::create(&device, &physical_device.queue_families)?;
-    let transfer_pool =
-      match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
-        Ok(pool) => pool,
-        Err(err) => {
-          unsafe {
-            compute_pool.destroy_self(device);
-          }
-          return Err(err);
-        }
-      };
-    Ok(Self {
-      compute_pool,
-      transfer_pool,
-    })
-  }
-
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    self.compute_pool.destroy_self(device);
-    self.transfer_pool.destroy_self(device);
   }
 }
 
