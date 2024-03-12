@@ -1,6 +1,7 @@
 mod allocator;
 mod command_pools;
 mod device;
+mod device_destroyable;
 mod entry;
 mod errors;
 mod instance;
@@ -50,7 +51,8 @@ const IMAGE_SAVE_PATH: &str = "image.png";
 fn main() {
   env_logger::init();
 
-  let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE).expect("Failed to initialize");
+  let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE)
+    .expect("Failed to initialize");
   unsafe { renderer.record_work() }.expect("Failed to record work");
 
   println!("Submitting work...");

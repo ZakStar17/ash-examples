@@ -7,7 +7,9 @@ use std::{
 use crate::{
   allocator::allocate_and_bind_memory,
   command_pools::CommandPools,
+  destroy,
   device::{create_logical_device, PhysicalDevice, Queues},
+  device_destroyable::DeviceDestroyable,
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
   instance::create_instance,
@@ -116,28 +118,21 @@ impl Renderer {
     #[cfg(not(feature = "vl"))]
     let instance = create_instance(&entry)?;
 
-    let mut destroy_instance = || unsafe {
-      #[cfg(feature = "vl")]
-      debug_utils.destroy_self();
-      instance.destroy_instance(None);
+    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
+      .on_err(|_| destroy!(&debug_utils, &instance))?
+    {
+      Some(device) => device,
+      None => {
+        destroy!(&debug_utils, &instance);
+        return Err(InitializationError::NoCompatibleDevices);
+      }
     };
 
-    let physical_device =
-      match unsafe { PhysicalDevice::select(&instance) }.on_err(|_| destroy_instance())? {
-        Some(device) => device,
-        None => {
-          destroy_instance();
-          return Err(InitializationError::NoCompatibleDevices);
-        }
-      };
+    let (device, queues) = create_logical_device(&instance, &physical_device)
+      .on_err(|_| destroy!(&debug_utils, &instance))?;
 
-    let (device, queues) =
-      create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
-
-    let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
-      device.destroy_device(None);
-      destroy_instance();
-    })?;
+    let mut command_pools = CommandPools::new(&device, &physical_device)
+      .on_err(|_| destroy!(&device, &debug_utils, &instance))?;
 
     let gpu_data = GPUData::new(
       &device,
@@ -146,11 +141,7 @@ impl Renderer {
       image_height,
       buffer_size,
     )
-    .on_err(|_| unsafe {
-      command_pools.destroy_self(&device);
-      device.destroy_device(None);
-      destroy_instance();
-    })?;
+    .on_err(|_| destroy!(&device => &command_pools, &device, &debug_utils, &instance))?;
 
     Ok(Self {
       _entry: entry,

@@ -8,7 +8,7 @@ mod transfer;
 pub use compute::ComputeCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
-use crate::device::PhysicalDevice;
+use crate::{device::PhysicalDevice, device_destroyable::DeviceDestroyable};
 
 pub fn create_command_pool(
   device: &ash::Device,
@@ -67,8 +67,7 @@ pub struct CommandPools {
 
 impl CommandPools {
   pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let mut compute_pool =
-      ComputeCommandBufferPool::create(&device, &physical_device.queue_families)?;
+    let compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families)?;
     let transfer_pool =
       match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
         Ok(pool) => pool,
@@ -84,8 +83,10 @@ impl CommandPools {
       transfer_pool,
     })
   }
+}
 
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+impl DeviceDestroyable for CommandPools {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     self.compute_pool.destroy_self(device);
     self.transfer_pool.destroy_self(device);
   }
