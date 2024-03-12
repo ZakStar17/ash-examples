@@ -76,25 +76,44 @@ impl ComputeCommandBufferPool {
       &[subresource_range],
     );
 
-    // Release image to transfer queue family and change image layout at the same time
-    // Even though the layout transition operation is submitted twice, it only executes once in
-    // between queue ownership transfer
-    // https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers
-    let release = vk::ImageMemoryBarrier2 {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
-      p_next: ptr::null(),
-      src_stage_mask: vk::PipelineStageFlags2::CLEAR, // complete clear before transfer
-      dst_stage_mask: vk::PipelineStageFlags2::TRANSFER, // to semaphore
-      src_access_mask: vk::AccessFlags2::TRANSFER_WRITE, // flush copy clear operation
-      dst_access_mask: vk::AccessFlags2::NONE,        // NONE for ownership release
-      old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-      src_queue_family_index: queue_families.get_compute_index(),
-      dst_queue_family_index: queue_families.get_transfer_index(),
-      image,
-      subresource_range,
-    };
-    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
+    if queue_families.get_compute_index() != queue_families.get_transfer_index() {
+      // Release image to transfer queue family and change image layout at the same time
+      // Even though the layout transition operation is submitted twice, it only executes once in
+      // between queue ownership transfer
+      // https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers
+      let release = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_stage_mask: vk::PipelineStageFlags2::CLEAR, // complete clear before transfer
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER, // to semaphore
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE, // flush copy clear operation
+        dst_access_mask: vk::AccessFlags2::NONE,        // NONE for ownership release
+        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: queue_families.get_compute_index(),
+        dst_queue_family_index: queue_families.get_transfer_index(),
+        image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
+    } else {
+      // if queues are equal just change image layout
+      let change_layout = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_stage_mask: vk::PipelineStageFlags2::CLEAR,
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[change_layout]));
+    }
 
     device.end_command_buffer(self.clear_img)?;
 

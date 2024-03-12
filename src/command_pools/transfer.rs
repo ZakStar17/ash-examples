@@ -52,22 +52,24 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    // matches to release found in compute
-    let src_acquire = vk::ImageMemoryBarrier2 {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
-      p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags2::NONE, // NONE for ownership acquire,
-      dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
-      src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from semaphore
-      dst_stage_mask: vk::PipelineStageFlags2::COPY,
-      old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-      new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-      src_queue_family_index: queue_families.get_compute_index(),
-      dst_queue_family_index: queue_families.get_transfer_index(),
-      image: src_image,
-      subresource_range,
-    };
-    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[src_acquire]));
+    if queue_families.get_compute_index() != queue_families.get_transfer_index() {
+      // matches to release found in compute
+      let src_acquire = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::NONE, // NONE for ownership acquire,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+        src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::COPY,
+        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: queue_families.get_compute_index(),
+        dst_queue_family_index: queue_families.get_transfer_index(),
+        image: src_image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[src_acquire]));
+    }
 
     // 1 color layer
     let subresource_layers = vk::ImageSubresourceLayers {
