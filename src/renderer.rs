@@ -132,7 +132,7 @@ impl Renderer {
       p_wait_semaphores: addr_of!(image_clear_finished),
       p_wait_dst_stage_mask: addr_of!(wait_for),
       command_buffer_count: 1,
-      p_command_buffers: addr_of!(self.command_pools.transfer_pool.copy_to_host),
+      p_command_buffers: addr_of!(self.command_pools.transfer_pool.copy_image_to_buffer),
       signal_semaphore_count: 0,
       p_signal_semaphores: ptr::null(),
     };

@@ -11,7 +11,7 @@ use super::dependency_info;
 
 pub struct TransferCommandBufferPool {
   pool: vk::CommandPool,
-  pub copy_to_host: vk::CommandBuffer,
+  pub copy_image_to_buffer: vk::CommandBuffer,
 }
 
 impl TransferCommandBufferPool {
@@ -19,9 +19,9 @@ impl TransferCommandBufferPool {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index())?;
 
-    let copy_to_host = super::allocate_primary_command_buffers(device, pool, 1)?[0];
+    let copy_image_to_buffer = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
-    Ok(Self { pool, copy_to_host })
+    Ok(Self { pool, copy_image_to_buffer })
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
@@ -35,7 +35,7 @@ impl TransferCommandBufferPool {
     src_image: vk::Image,
     dst_buffer: vk::Buffer,
   ) -> Result<(), OutOfMemoryError> {
-    let cb = self.copy_to_host;
+    let cb = self.copy_image_to_buffer;
     let begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
       p_next: ptr::null(),
