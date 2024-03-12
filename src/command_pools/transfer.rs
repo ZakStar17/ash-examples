@@ -3,7 +3,7 @@ use std::ptr;
 use ash::vk;
 
 use crate::{
-  device::QueueFamilies, device_destroyable::DeviceDestroyable, errors::OutOfMemoryError,
+  device::QueueFamilies, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
   IMAGE_HEIGHT, IMAGE_WIDTH,
 };
 
@@ -119,7 +119,7 @@ impl TransferCommandBufferPool {
   }
 }
 
-impl DeviceDestroyable for TransferCommandBufferPool {
+impl DeviceManuallyDestroyed for TransferCommandBufferPool {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     device.destroy_command_pool(self.pool, None);
   }

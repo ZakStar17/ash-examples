@@ -8,7 +8,7 @@ mod transfer;
 pub use compute::ComputeCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
-use crate::{device::PhysicalDevice, device_destroyable::DeviceDestroyable};
+use crate::{device::PhysicalDevice, device_destroyable::DeviceManuallyDestroyed};
 
 pub fn create_command_pool(
   device: &ash::Device,
@@ -85,7 +85,7 @@ impl CommandPools {
   }
 }
 
-impl DeviceDestroyable for CommandPools {
+impl DeviceManuallyDestroyed for CommandPools {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     self.compute_pool.destroy_self(device);
     self.transfer_pool.destroy_self(device);

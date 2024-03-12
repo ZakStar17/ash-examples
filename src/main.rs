@@ -1,5 +1,6 @@
 mod allocator;
 mod command_pools;
+mod create_objs;
 mod device;
 mod device_destroyable;
 mod entry;
