@@ -82,6 +82,7 @@ dependencies = [
  "env_logger",
  "image",
  "log",
+ "thiserror",
 ]
 
 [[package]]
@@ -368,12 +369,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro2"
+version = "1.0.79"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e835ff2298f5721608eb1a980ecaee1aef2c132bf95ecc026a11b7bf3c01c02e"
+dependencies = [
+ "unicode-ident",
+]
+
+[[package]]
 name = "qoi"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f6d64c71eb498fe9eae14ce4ec935c555749aef511cca85b5568910d6e48001"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "291ec9ab5efd934aaf503a6466c5d5251535d108ee747472c3977cc5acc868ef"
+dependencies = [
+ "proc-macro2",
 ]
 
 [[package]]
@@ -453,6 +472,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "2.0.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11a6ae1e52eb25aab8f3fb9fca13be982a373b8f1157ca14b897a825ba4a2d35"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.58"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03468839009160513471e86a034bb2c5c0e4baae3b43f79ffc55c4a5427b3297"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.58"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c61f3ba182994efc43764a46c018c347bc492c79f024e705f46567b418f6d4f7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "tiff"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -462,6 +512,12 @@ dependencies = [
  "jpeg-decoder",
  "weezl",
 ]
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
 
 [[package]]
 name = "utf8parse"

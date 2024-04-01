@@ -1,13 +1,15 @@
-#![feature(offset_of)]
-
+mod allocator;
 mod command_pools;
+mod create_objs;
 mod descriptor_sets;
 mod device;
+mod device_destroyable;
 mod entry;
-mod image;
+mod errors;
 mod instance;
 mod pipeline;
 mod pipeline_cache;
+mod renderer;
 mod shaders;
 mod utility;
 
@@ -18,13 +20,11 @@ mod validation_layers;
 use ash::vk;
 use command_pools::{ComputeCommandBufferPool, TransferCommandBufferPool};
 use device::PhysicalDevice;
-use image::Image;
 use std::{
   ffi::CStr,
   ops::BitOr,
   ptr::{self, addr_of},
 };
-use utility::cstr;
 
 use crate::{descriptor_sets::DescriptorSets, pipeline::ComputePipeline};
 

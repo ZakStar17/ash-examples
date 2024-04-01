@@ -2,7 +2,7 @@ use ash::vk::{self, DebugUtilsMessengerCreateInfoEXT};
 
 use std::{ffi::CStr, os::raw::c_void, ptr};
 
-use crate::{utility, VALIDATION_LAYERS};
+use crate::{device_destroyable::ManuallyDestroyed, utility, VALIDATION_LAYERS};
 
 // returns a list of supported and unsupported instance layers
 fn filter_supported(
@@ -93,9 +93,15 @@ impl DebugUtils {
     }
   }
 
-  pub unsafe fn destroy_self(&mut self) {
+  pub unsafe fn destroy_self(&self) {
     self
       .loader
       .destroy_debug_utils_messenger(self.messenger, None);
+  }
+}
+
+impl ManuallyDestroyed for DebugUtils {
+  unsafe fn destroy_self(self: &Self) {
+    self.destroy_self();
   }
 }

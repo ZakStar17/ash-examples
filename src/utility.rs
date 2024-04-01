@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, CStr, FromBytesUntilNulError};
 
 use ash::vk;
 
@@ -21,9 +21,7 @@ pub fn c_char_array_to_string(arr: &[c_char]) -> String {
     .to_owned()
 }
 
-pub unsafe fn i8_array_as_cstr<'a>(
-  arr: &'a [i8],
-) -> Result<&'a CStr, std::ffi::FromBytesUntilNulError> {
+pub unsafe fn i8_array_as_cstr<'a>(arr: &'a [i8]) -> Result<&'a CStr, FromBytesUntilNulError> {
   CStr::from_bytes_until_nul(std::mem::transmute(arr))
 }
 

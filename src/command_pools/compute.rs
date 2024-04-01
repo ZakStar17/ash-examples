@@ -3,37 +3,28 @@ use std::ptr;
 use ash::vk;
 
 use crate::{
-  descriptor_sets::DescriptorSets, device::QueueFamilies, pipeline::ComputePipeline, IMAGE_HEIGHT,
-  IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y,
+  descriptor_sets::DescriptorSets, device::QueueFamilies,
+  device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, pipeline::ComputePipeline,
+  IMAGE_HEIGHT, IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y,
 };
 
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
-  // executes a compute shader that writes to a storage image
-  pub storage_image: vk::CommandBuffer,
+  pub mandelbrot: vk::CommandBuffer,
 }
 
 impl ComputeCommandBufferPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
+  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_compute_index());
+    let pool = super::create_command_pool(device, flags, queue_families.get_compute_index())?;
 
-    let storage_image = super::allocate_primary_command_buffers(device, pool, 1)[0];
+    let mandelbrot = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
-    Self {
-      pool,
-      storage_image,
-    }
+    Ok(Self { pool, mandelbrot })
   }
 
-  pub unsafe fn reset(&mut self, device: &ash::Device) {
-    device
-      .reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
-      .expect("Failed to reset command pool");
-  }
-
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_command_pool(self.pool, None);
+  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
+    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
   }
 
   pub unsafe fn record_mandelbrot(
@@ -43,17 +34,15 @@ impl ComputeCommandBufferPool {
     pipeline: &ComputePipeline,
     descriptor_sets: &DescriptorSets,
     image: vk::Image,
-  ) {
-    let cb = self.storage_image;
+  ) -> Result<(), OutOfMemoryError> {
+    let cb = self.mandelbrot;
     let begin_info = vk::CommandBufferBeginInfo {
       s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
       p_next: ptr::null(),
       flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
       p_inheritance_info: ptr::null(),
     };
-    device
-      .begin_command_buffer(cb, &begin_info)
-      .expect("Failed to begin recording command buffer");
+    device.begin_command_buffer(cb, &begin_info)?;
 
     // image has 1 mip_level / 1 array layer
     let subresource_range = vk::ImageSubresourceRange {
@@ -133,8 +122,14 @@ impl ComputeCommandBufferPool {
       &[release],
     );
 
-    device
-      .end_command_buffer(cb)
-      .expect("Failed to finish recording command buffer");
+    device.end_command_buffer(cb)?;
+
+    Ok(())
+  }
+}
+
+impl DeviceManuallyDestroyed for ComputeCommandBufferPool {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    device.destroy_command_pool(self.pool, None);
   }
 }
