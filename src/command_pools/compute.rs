@@ -8,6 +8,8 @@ use crate::{
   IMAGE_HEIGHT, IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y,
 };
 
+use super::dependency_info;
+
 pub struct ComputeCommandBufferPool {
   pool: vk::CommandPool,
   pub mandelbrot: vk::CommandBuffer,
@@ -53,30 +55,21 @@ impl ComputeCommandBufferPool {
       layer_count: 1,
     };
 
-    let shader_write_layout = vk::ImageMemoryBarrier {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+    let prepare_image = vk::ImageMemoryBarrier2 {
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
       p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::NONE,
-      dst_access_mask: vk::AccessFlags::SHADER_WRITE,
+      src_access_mask: vk::AccessFlags2::NONE,
+      dst_access_mask: vk::AccessFlags2::SHADER_WRITE,
+      src_stage_mask: vk::PipelineStageFlags2::NONE,
+      dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
       old_layout: vk::ImageLayout::UNDEFINED,
-      // image layout is required to be GENERAL in order to be used as storage in a shader
       new_layout: vk::ImageLayout::GENERAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       image,
       subresource_range,
     };
-    device.cmd_pipeline_barrier(
-      cb,
-      // this operation doesn't have to wait for anything
-      vk::PipelineStageFlags::NONE,
-      // however it should finish before the compute shader
-      vk::PipelineStageFlags::COMPUTE_SHADER,
-      vk::DependencyFlags::empty(),
-      &[],
-      &[],
-      &[shader_write_layout],
-    );
+    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[prepare_image]));
 
     // descriptor set should already have the image info written to it
     device.cmd_bind_descriptor_sets(
@@ -95,32 +88,40 @@ impl ComputeCommandBufferPool {
       1,
     );
 
-    // Release image to transfer queue family and change image layout at the same time
-    // Even though the layout transition operation is submitted twice, it only executes once in
-    // between queue ownership transfer
-    // https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers
-    let release = vk::ImageMemoryBarrier {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
-      p_next: ptr::null(),
-      src_access_mask: vk::AccessFlags::SHADER_WRITE,
-      dst_access_mask: vk::AccessFlags::NONE, // should be NONE for ownership release
-      old_layout: vk::ImageLayout::GENERAL,
-      new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-      src_queue_family_index: queue_families.get_compute_index(),
-      dst_queue_family_index: queue_families.get_transfer_index(),
-      image,
-      subresource_range,
-    };
-    device.cmd_pipeline_barrier(
-      cb,
-      // wait for the shader to complete before transferring
-      vk::PipelineStageFlags::COMPUTE_SHADER,
-      vk::PipelineStageFlags::TRANSFER,
-      vk::DependencyFlags::empty(),
-      &[],
-      &[],
-      &[release],
-    );
+    if queue_families.get_compute_index() != queue_families.get_transfer_index() {
+      let release = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,  // semaphore
+        src_access_mask: vk::AccessFlags2::SHADER_WRITE,
+        dst_access_mask: vk::AccessFlags2::NONE,        // NONE for ownership release
+        old_layout: vk::ImageLayout::GENERAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: queue_families.get_compute_index(),
+        dst_queue_family_index: queue_families.get_transfer_index(),
+        image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
+    } else {
+      // if queues are equal just change image layout
+      let change_layout = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
+        src_access_mask: vk::AccessFlags2::SHADER_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+        old_layout: vk::ImageLayout::GENERAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[change_layout]));
+    }
 
     device.end_command_buffer(cb)?;
 

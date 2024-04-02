@@ -223,7 +223,7 @@ impl Drop for Renderer {
         .device_wait_idle()
         .expect("Failed to wait for the device to become idle during drop");
 
-      destroy!(&self.device => &self.command_pools, &self.gpu_data);
+      destroy!(&self.device => &self.command_pools, &self.pipeline, &self.descriptor_sets, &self.gpu_data);
 
       ManuallyDestroyed::destroy_self(&self.device);
 
@@ -249,7 +249,7 @@ impl GPUData {
       &device,
       image_width,
       image_height,
-      vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+      vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::STORAGE),
     )?;
     log::debug!("Allocating memory for the image that will be cleared");
     let mandelbrot_image_memory = match allocate_and_bind_memory(
@@ -369,6 +369,7 @@ impl DeviceManuallyDestroyed for GPUData {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     self.mandelbrot_image.destroy_self(device);
     self.mandelbrot_image_memory.destroy_self(device);
+    self.mandelbrot_image_view.destroy_self(device);
     self.final_buffer.destroy_self(device);
     self.final_buffer_memory.destroy_self(device);
   }
