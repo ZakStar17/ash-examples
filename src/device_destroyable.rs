@@ -71,3 +71,9 @@ impl DeviceManuallyDestroyed for vk::DeviceMemory {
     device.free_memory(*self, None);
   }
 }
+
+impl DeviceManuallyDestroyed for vk::PipelineCache {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    device.destroy_pipeline_cache(*self, None);
+  }
+}

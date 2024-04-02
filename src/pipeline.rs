@@ -7,8 +7,8 @@ use std::{
 use ash::vk;
 
 use crate::{
-  descriptor_sets::DescriptorSets, shaders::Shader, FOCAL_POINT, MAX_ITERATIONS,
-  SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y, ZOOM,
+  descriptor_sets::DescriptorSets, device_destroyable::DeviceManuallyDestroyed, shaders::Shader,
+  FOCAL_POINT, MAX_ITERATIONS, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y, ZOOM,
 };
 
 pub struct ComputePipeline {
@@ -68,7 +68,7 @@ impl ComputePipeline {
     device: &ash::Device,
     cache: vk::PipelineCache,
     descriptor_sets: &DescriptorSets,
-  ) -> Self {
+  ) -> Result<Self, vk::Result> {
     let mut shader = Shader::load(device);
     let main_function_name = CString::new("main").unwrap(); // the beginning function name in shader code
 
@@ -107,11 +107,7 @@ impl ComputePipeline {
       push_constant_range_count: 0,
       p_push_constant_ranges: ptr::null(),
     };
-    let layout = unsafe {
-      device
-        .create_pipeline_layout(&layout_create_info, None)
-        .expect("Failed to create pipeline layout")
-    };
+    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
 
     let create_info = vk::ComputePipelineCreateInfo {
       s_type: vk::StructureType::COMPUTE_PIPELINE_CREATE_INFO,
@@ -126,17 +122,19 @@ impl ComputePipeline {
     let pipeline = unsafe {
       device
         .create_compute_pipelines(cache, &[create_info], None)
-        .expect("Failed to create compute pipelines")[0]
+        .map_err(|incomplete| incomplete.1)?[0]
     };
 
     unsafe {
       shader.destroy_self(device);
     }
 
-    Self { layout, pipeline }
+    Ok(Self { layout, pipeline })
   }
+}
 
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+impl DeviceManuallyDestroyed for ComputePipeline {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     device.destroy_pipeline(self.pipeline, None);
     device.destroy_pipeline_layout(self.layout, None);
   }

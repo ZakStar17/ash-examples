@@ -8,12 +8,15 @@ use crate::{
   allocator::allocate_and_bind_memory,
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
+  descriptor_sets::DescriptorSets,
   destroy,
   device::{create_logical_device, PhysicalDevice, Queues},
   device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
   instance::create_instance,
+  pipeline::ComputePipeline,
+  pipeline_cache,
   utility::OnErr,
 };
 
@@ -25,8 +28,11 @@ pub struct Renderer {
   physical_device: PhysicalDevice,
   device: ash::Device,
   queues: Queues,
+  
   command_pools: CommandPools,
   gpu_data: GPUData,
+  descriptor_sets: DescriptorSets,
+  pipeline: ComputePipeline,
 }
 
 struct GPUData {
@@ -63,8 +69,39 @@ impl Renderer {
     let (device, queues) = create_logical_device(&instance, &physical_device)
       .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?;
 
-    let command_pools = CommandPools::new(&device, &physical_device)
+    let descriptor_sets = DescriptorSets::new(&device)
       .on_err(|_| unsafe { destroy!(&device, &debug_utils, &instance) })?;
+
+    log::info!("Creating pipeline cache");
+    let (pipeline_cache, created_from_file) =
+      pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
+        destroy!(&device => &descriptor_sets, &device, &debug_utils, &instance)
+      })?;
+    if created_from_file {
+      log::info!("Cache successfully created from an existing cache file");
+    } else {
+      log::info!("Cache initialized as empty");
+    }
+
+    log::debug!("Creating pipeline");
+    let pipeline =
+      ComputePipeline::create(&device, pipeline_cache, &descriptor_sets).on_err(|_| unsafe {
+        destroy!(&device => &pipeline_cache, &descriptor_sets, &device, &debug_utils, &instance)
+      })?;
+
+    // no more pipelines will be created, so might as well save and delete the cache
+    log::info!("Saving pipeline cache");
+    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
+    {
+      log::error!("Failed to save pipeline cache: {:?}", err);
+    }
+    unsafe {
+      pipeline_cache.destroy_self(&device);
+    }
+
+    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+      destroy!(&device => &pipeline, &descriptor_sets, &device, &debug_utils, &instance)
+    })?;
 
     let gpu_data = GPUData::new(
       &device,
@@ -73,7 +110,7 @@ impl Renderer {
       image_height,
       buffer_size,
     )
-    .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &debug_utils, &instance) })?;
+    .on_err(|_| unsafe { destroy!(&device => &command_pools, &pipeline, &descriptor_sets, &device, &debug_utils, &instance) })?;
 
     Ok(Self {
       _entry: entry,
@@ -85,6 +122,8 @@ impl Renderer {
       queues,
       command_pools,
       gpu_data,
+      descriptor_sets,
+      pipeline
     })
   }
 
