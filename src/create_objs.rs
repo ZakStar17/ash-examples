@@ -71,3 +71,36 @@ pub fn create_image(
 
   unsafe { device.create_image(&create_info, None) }.map_err(|err| err.into())
 }
+
+pub fn create_image_view(
+  device: &ash::Device,
+  image: vk::Image,
+) -> Result<vk::ImageView, OutOfMemoryError> {
+  let create_info = vk::ImageViewCreateInfo {
+    s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+    p_next: ptr::null(),
+    flags: vk::ImageViewCreateFlags::empty(),
+    image,
+    view_type: vk::ImageViewType::TYPE_2D,
+    format: IMAGE_FORMAT,
+    components: vk::ComponentMapping {
+      r: vk::ComponentSwizzle::IDENTITY,
+      g: vk::ComponentSwizzle::IDENTITY,
+      b: vk::ComponentSwizzle::IDENTITY,
+      a: vk::ComponentSwizzle::IDENTITY,
+    },
+    subresource_range: vk::ImageSubresourceRange {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      base_mip_level: 0,
+      level_count: 1,
+      base_array_layer: 0,
+      layer_count: 1,
+    },
+  };
+
+  unsafe {
+    device
+      .create_image_view(&create_info, None)
+      .map_err(|err| err.into())
+  }
+}

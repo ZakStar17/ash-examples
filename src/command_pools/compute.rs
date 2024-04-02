@@ -84,7 +84,7 @@ impl ComputeCommandBufferPool {
       vk::PipelineBindPoint::COMPUTE,
       pipeline.layout,
       0,
-      &[descriptor_sets.pool.mandelbrot],
+      &[descriptor_sets.mandelbrot_image],
       &[],
     );
     device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, pipeline.pipeline);

@@ -1,4 +1,4 @@
-use std::{cmp::min, ops::Deref, pin::Pin, ptr};
+use std::{cmp::min, ptr};
 
 use ash::vk;
 
@@ -12,7 +12,6 @@ pub struct QueueFamily {
 pub struct QueueFamilies {
   pub compute: QueueFamily,
   pub transfer: Option<QueueFamily>,
-  pub unique_indices: Box<[u32]>,
 }
 
 impl QueueFamilies {
@@ -49,16 +48,9 @@ impl QueueFamilies {
       return Err(());
     }
 
-    // commonly used
-    let unique_indices = [compute.as_ref(), transfer.as_ref()]
-      .into_iter()
-      .filter_map(|opt| opt.map(|f| f.index))
-      .collect();
-
     Ok(QueueFamilies {
       compute: compute.unwrap(),
       transfer,
-      unique_indices,
     })
   }
 
@@ -89,76 +81,57 @@ fn get_queue_create_info(
   }
 }
 
-fn get_queue_create_infos(
-  families: &QueueFamilies,
-  priorities_ptr: *const f32,
-) -> Vec<vk::DeviceQueueCreateInfo> {
-  let mut queues_create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
-
-  // add optional queues
-  for optional_family in [&families.transfer] {
-    if let Some(family) = optional_family {
-      queues_create_infos.push(get_queue_create_info(family.index, 1, priorities_ptr));
-    }
-  }
-
-  // add graphics queues, these will substitute not available queues
-  queues_create_infos.push(get_queue_create_info(
-    families.compute.index,
-    min(
-      // always watch out for limits
-      families.compute.queue_count,
-      // request remaining needed queues
-      (QueueFamilies::FAMILY_COUNT - queues_create_infos.len()) as u32,
-    ),
-    priorities_ptr,
-  ));
-
-  queues_create_infos
-}
-
+#[derive(Debug)]
 pub struct Queues {
   pub compute: vk::Queue,
   pub transfer: vk::Queue,
 }
 
-pub struct QueueCreateInfos {
-  _priorities: Pin<Box<[f32; QueueFamilies::FAMILY_COUNT]>>,
-  create_infos: Vec<vk::DeviceQueueCreateInfo>,
-}
-
-impl Deref for QueueCreateInfos {
-  type Target = Vec<vk::DeviceQueueCreateInfo>;
-
-  fn deref(&self) -> &Self::Target {
-    &self.create_infos
-  }
-}
-
 impl Queues {
-  pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> QueueCreateInfos {
-    // use mid priorities for all queues
-    let priorities = Box::pin([0.5_f32; QueueFamilies::FAMILY_COUNT]);
-    let create_infos = get_queue_create_infos(&queue_families, priorities.as_ptr());
+  // mid priorities for all queues
+  const QUEUE_PRIORITIES: [f32; QueueFamilies::FAMILY_COUNT] = [0.5; QueueFamilies::FAMILY_COUNT];
 
-    QueueCreateInfos {
-      _priorities: priorities,
-      create_infos,
+  pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> Vec<vk::DeviceQueueCreateInfo> {
+    let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
+
+    if let Some(family) = queue_families.transfer.as_ref() {
+      create_infos.push(get_queue_create_info(
+        family.index,
+        1,
+        Self::QUEUE_PRIORITIES.as_ptr(),
+      ));
     }
+
+    // add graphics queues, these substitute for missing families
+    create_infos.push(get_queue_create_info(
+      queue_families.get_compute_index(),
+      min(
+        queue_families.compute.queue_count,
+        1 + if queue_families.transfer.is_none() {
+          1
+        } else {
+          0
+        },
+      ),
+      Self::QUEUE_PRIORITIES.as_ptr(),
+    ));
+
+    create_infos
   }
 
-  pub unsafe fn retrieve(device: &ash::Device, families: &QueueFamilies) -> Queues {
+  pub unsafe fn retrieve(device: &ash::Device, queue_families: &QueueFamilies) -> Queues {
     let mut compute_i = 0;
     let mut get_next_compute_queue = || {
-      let queue = device.get_device_queue(families.compute.index, compute_i);
-      if compute_i < families.compute.queue_count {
+      let queue = device.get_device_queue(queue_families.compute.index, compute_i);
+      if compute_i + 1 < queue_families.compute.queue_count {
         compute_i += 1;
       }
       queue
     };
 
     let compute = get_next_compute_queue();
-    let transfer = match &families.transfer {
+
+    let transfer = match &queue_families.transfer {
       Some(family) => device.get_device_queue(family.index, 0),
       None => get_next_compute_queue(),
     };

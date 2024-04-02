@@ -77,3 +77,9 @@ impl DeviceManuallyDestroyed for vk::PipelineCache {
     device.destroy_pipeline_cache(*self, None);
   }
 }
+
+impl DeviceManuallyDestroyed for vk::ImageView {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    device.destroy_image_view(*self, None);
+  }
+}

@@ -7,7 +7,7 @@ use std::{
 use crate::{
   allocator::allocate_and_bind_memory,
   command_pools::CommandPools,
-  create_objs::{create_buffer, create_fence, create_image, create_semaphore},
+  create_objs::{create_buffer, create_fence, create_image, create_image_view, create_semaphore},
   descriptor_sets::DescriptorSets,
   destroy,
   device::{create_logical_device, PhysicalDevice, Queues},
@@ -28,7 +28,7 @@ pub struct Renderer {
   physical_device: PhysicalDevice,
   device: ash::Device,
   queues: Queues,
-  
+
   command_pools: CommandPools,
   gpu_data: GPUData,
   descriptor_sets: DescriptorSets,
@@ -36,8 +36,9 @@ pub struct Renderer {
 }
 
 struct GPUData {
-  clear_image: vk::Image,
-  clear_image_memory: vk::DeviceMemory,
+  mandelbrot_image: vk::Image,
+  mandelbrot_image_view: vk::ImageView,
+  mandelbrot_image_memory: vk::DeviceMemory,
   final_buffer: vk::Buffer,
   final_buffer_size: u64,
   final_buffer_memory: vk::DeviceMemory,
@@ -69,7 +70,7 @@ impl Renderer {
     let (device, queues) = create_logical_device(&instance, &physical_device)
       .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?;
 
-    let descriptor_sets = DescriptorSets::new(&device)
+    let mut descriptor_sets = DescriptorSets::new(&device)
       .on_err(|_| unsafe { destroy!(&device, &debug_utils, &instance) })?;
 
     log::info!("Creating pipeline cache");
@@ -112,6 +113,8 @@ impl Renderer {
     )
     .on_err(|_| unsafe { destroy!(&device => &command_pools, &pipeline, &descriptor_sets, &device, &debug_utils, &instance) })?;
 
+    descriptor_sets.write_image(&device, gpu_data.mandelbrot_image_view);
+
     Ok(Self {
       _entry: entry,
       instance,
@@ -123,7 +126,7 @@ impl Renderer {
       command_pools,
       gpu_data,
       descriptor_sets,
-      pipeline
+      pipeline,
     })
   }
 
@@ -132,14 +135,16 @@ impl Renderer {
     self.command_pools.compute_pool.record_mandelbrot(
       &self.device,
       &self.physical_device.queue_families,
-      self.gpu_data.clear_image,
+      &self.pipeline,
+      &self.descriptor_sets,
+      self.gpu_data.mandelbrot_image,
     )?;
 
     self.command_pools.transfer_pool.reset(&self.device)?;
     self.command_pools.transfer_pool.record_copy_img_to_buffer(
       &self.device,
       &self.physical_device.queue_families,
-      self.gpu_data.clear_image,
+      self.gpu_data.mandelbrot_image,
       self.gpu_data.final_buffer,
     )?;
 
@@ -152,14 +157,14 @@ impl Renderer {
     let all_done = create_fence(&self.device)
       .on_err(|_| unsafe { destroy!(&self.device => &image_clear_finished) })?;
 
-    let clear_image_submit = vk::SubmitInfo {
+    let mandelbrot_image_submit = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
       wait_semaphore_count: 0,
       p_wait_semaphores: ptr::null(),
       p_wait_dst_stage_mask: ptr::null(),
       command_buffer_count: 1,
-      p_command_buffers: addr_of!(self.command_pools.compute_pool.clear_img),
+      p_command_buffers: addr_of!(self.command_pools.compute_pool.mandelbrot),
       signal_semaphore_count: 1,
       p_signal_semaphores: addr_of!(image_clear_finished),
     };
@@ -183,7 +188,7 @@ impl Renderer {
         .device
         .queue_submit(
           self.queues.compute,
-          &[clear_image_submit],
+          &[mandelbrot_image_submit],
           vk::Fence::null(),
         )
         .on_err(|_| destroy_objs())?;
@@ -240,21 +245,21 @@ impl GPUData {
     buffer_size: u64,
   ) -> Result<Self, AllocationError> {
     // GPU image with DEVICE_LOCAL flags
-    let clear_image = create_image(
+    let mandelbrot_image = create_image(
       &device,
       image_width,
       image_height,
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
     )?;
     log::debug!("Allocating memory for the image that will be cleared");
-    let clear_image_memory = match allocate_and_bind_memory(
+    let mandelbrot_image_memory = match allocate_and_bind_memory(
       &device,
       &physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       &[],
       &[],
-      &[clear_image],
-      &[unsafe { device.get_image_memory_requirements(clear_image) }],
+      &[mandelbrot_image],
+      &[unsafe { device.get_image_memory_requirements(mandelbrot_image) }],
     )
     .or_else(|err| {
       log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
@@ -264,25 +269,28 @@ impl GPUData {
         vk::MemoryPropertyFlags::empty(),
         &[],
         &[],
-        &[clear_image],
-        &[unsafe { device.get_image_memory_requirements(clear_image) }],
+        &[mandelbrot_image],
+        &[unsafe { device.get_image_memory_requirements(mandelbrot_image) }],
       )
     }) {
       Ok(alloc) => alloc.memory,
       Err(err) => {
         unsafe {
-          clear_image.destroy_self(device);
+          mandelbrot_image.destroy_self(device);
         }
         return Err(err);
       }
     };
+
+    let mandelbrot_image_view = create_image_view(device, mandelbrot_image)
+      .on_err(|_| unsafe { destroy!(device => &mandelbrot_image_memory, &mandelbrot_image) })?;
 
     let final_buffer = match create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
     {
       Ok(buffer) => buffer,
       Err(err) => {
         unsafe {
-          destroy!(device => &clear_image_memory, &clear_image);
+          destroy!(device => &mandelbrot_image_view, &mandelbrot_image_memory, &mandelbrot_image);
         }
         return Err(err.into());
       }
@@ -315,15 +323,16 @@ impl GPUData {
       Ok(alloc) => alloc.memory,
       Err(err) => {
         unsafe {
-          destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
+          destroy!(device => &mandelbrot_image_view, &mandelbrot_image_memory, &mandelbrot_image, &final_buffer);
         }
         return Err(err);
       }
     };
 
     Ok(Self {
-      clear_image,
-      clear_image_memory,
+      mandelbrot_image,
+      mandelbrot_image_memory,
+      mandelbrot_image_view,
       final_buffer,
       final_buffer_size: buffer_size,
       final_buffer_memory,
@@ -358,8 +367,8 @@ impl GPUData {
 
 impl DeviceManuallyDestroyed for GPUData {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.clear_image.destroy_self(device);
-    self.clear_image_memory.destroy_self(device);
+    self.mandelbrot_image.destroy_self(device);
+    self.mandelbrot_image_memory.destroy_self(device);
     self.final_buffer.destroy_self(device);
     self.final_buffer_memory.destroy_self(device);
   }
