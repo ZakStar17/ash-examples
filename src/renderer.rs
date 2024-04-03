@@ -45,17 +45,14 @@ struct GPUData {
 }
 
 impl Renderer {
+  #[cfg(feature = "vl")]
   pub fn initialize(
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
-
-    #[cfg(feature = "vl")]
     let (instance, debug_utils) = create_instance(&entry)?;
-    #[cfg(not(feature = "vl"))]
-    let instance = create_instance(&entry)?;
 
     let physical_device = match unsafe { PhysicalDevice::select(&instance) }
       .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?
@@ -118,8 +115,87 @@ impl Renderer {
     Ok(Self {
       _entry: entry,
       instance,
-      #[cfg(feature = "vl")]
       debug_utils,
+      physical_device,
+      device,
+      queues,
+      command_pools,
+      gpu_data,
+      descriptor_sets,
+      pipeline,
+    })
+  }
+
+  #[cfg(not(feature = "vl"))]
+  pub fn initialize(
+    image_width: u32,
+    image_height: u32,
+    buffer_size: u64,
+  ) -> Result<Self, InitializationError> {
+    let entry: ash::Entry = unsafe { entry::get_entry() };
+    let instance = create_instance(&entry)?;
+
+    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
+      .on_err(|_| unsafe { destroy!(&instance) })?
+    {
+      Some(device) => device,
+      None => {
+        unsafe { destroy!(&instance) };
+        return Err(InitializationError::NoCompatibleDevices);
+      }
+    };
+
+    let (device, queues) = create_logical_device(&instance, &physical_device)
+      .on_err(|_| unsafe { destroy!(&instance) })?;
+
+    let mut descriptor_sets = DescriptorSets::new(&device)
+      .on_err(|_| unsafe { destroy!(&device, &instance) })?;
+
+    log::info!("Creating pipeline cache");
+    let (pipeline_cache, created_from_file) =
+      pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
+        destroy!(&device => &descriptor_sets, &device, &instance)
+      })?;
+    if created_from_file {
+      log::info!("Cache successfully created from an existing cache file");
+    } else {
+      log::info!("Cache initialized as empty");
+    }
+
+    log::debug!("Creating pipeline");
+    let pipeline =
+      ComputePipeline::create(&device, pipeline_cache, &descriptor_sets).on_err(|_| unsafe {
+        destroy!(&device => &pipeline_cache, &descriptor_sets, &device, &instance)
+      })?;
+
+    // no more pipelines will be created, so might as well save and delete the cache
+    log::info!("Saving pipeline cache");
+    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
+    {
+      log::error!("Failed to save pipeline cache: {:?}", err);
+    }
+    unsafe {
+      pipeline_cache.destroy_self(&device);
+    }
+
+    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+      destroy!(&device => &pipeline, &descriptor_sets, &device, &instance)
+    })?;
+
+    let gpu_data = GPUData::new(
+      &device,
+      &physical_device,
+      image_width,
+      image_height,
+      buffer_size,
+    )
+    .on_err(|_| unsafe { destroy!(&device => &command_pools, &pipeline, &descriptor_sets, &device, &instance) })?;
+
+    descriptor_sets.write_image(&device, gpu_data.mandelbrot_image_view);
+
+    Ok(Self {
+      _entry: entry,
+      instance,
       physical_device,
       device,
       queues,
