@@ -38,17 +38,14 @@ struct GPUData {
 }
 
 impl Renderer {
+  #[cfg(feature = "vl")]
   pub fn initialize(
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
-
-    #[cfg(feature = "vl")]
     let (instance, debug_utils) = create_instance(&entry)?;
-    #[cfg(not(feature = "vl"))]
-    let instance = create_instance(&entry)?;
 
     let physical_device = match unsafe { PhysicalDevice::select(&instance) }
       .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?
@@ -78,8 +75,52 @@ impl Renderer {
     Ok(Self {
       _entry: entry,
       instance,
-      #[cfg(feature = "vl")]
       debug_utils,
+      physical_device,
+      device,
+      queues,
+      command_pools,
+      gpu_data,
+    })
+  }
+
+  #[cfg(not(feature = "vl"))]
+  pub fn initialize(
+    image_width: u32,
+    image_height: u32,
+    buffer_size: u64,
+  ) -> Result<Self, InitializationError> {
+    let entry: ash::Entry = unsafe { entry::get_entry() };
+    let instance = create_instance(&entry)?;
+
+    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
+      .on_err(|_| unsafe { destroy!(&instance) })?
+    {
+      Some(device) => device,
+      None => {
+        unsafe { destroy!(&instance) };
+        return Err(InitializationError::NoCompatibleDevices);
+      }
+    };
+
+    let (device, queues) = create_logical_device(&instance, &physical_device)
+      .on_err(|_| unsafe { destroy!(&instance) })?;
+
+    let command_pools = CommandPools::new(&device, &physical_device)
+      .on_err(|_| unsafe { destroy!(&device, &instance) })?;
+
+    let gpu_data = GPUData::new(
+      &device,
+      &physical_device,
+      image_width,
+      image_height,
+      buffer_size,
+    )
+    .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &instance) })?;
+
+    Ok(Self {
+      _entry: entry,
+      instance,
       physical_device,
       device,
       queues,
