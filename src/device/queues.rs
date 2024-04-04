@@ -10,7 +10,7 @@ pub struct QueueFamily {
 
 #[derive(Debug)]
 pub struct QueueFamilies {
-  pub compute: QueueFamily,
+  pub graphics: QueueFamily,
   pub transfer: Option<QueueFamily>,
 }
 
@@ -24,12 +24,12 @@ impl QueueFamilies {
     let properties =
       unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
-    let mut compute = None;
+    let mut graphics = None;
     let mut transfer = None;
     for (i, family) in properties.iter().enumerate() {
-      if family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
-        if compute.is_none() {
-          compute = Some(QueueFamily {
+      if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+        if graphics.is_none() {
+          graphics = Some(QueueFamily {
             index: i as u32,
             queue_count: family.queue_count,
           });
@@ -44,24 +44,24 @@ impl QueueFamilies {
       }
     }
 
-    if compute.is_none() {
+    if graphics.is_none() {
       return Err(());
     }
 
     Ok(QueueFamilies {
-      compute: compute.unwrap(),
+      graphics: graphics.unwrap(),
       transfer,
     })
   }
 
-  pub fn get_compute_index(&self) -> u32 {
-    self.compute.index
+  pub fn get_graphics_index(&self) -> u32 {
+    self.graphics.index
   }
 
   pub fn get_transfer_index(&self) -> u32 {
     match self.transfer.as_ref() {
       Some(family) => family.index,
-      None => self.compute.index,
+      None => self.graphics.index,
     }
   }
 }
@@ -83,7 +83,7 @@ fn get_queue_create_info(
 
 #[derive(Debug)]
 pub struct Queues {
-  pub compute: vk::Queue,
+  pub graphics: vk::Queue,
   pub transfer: vk::Queue,
 }
 
@@ -104,9 +104,9 @@ impl Queues {
 
     // add graphics queues, these substitute for missing families
     create_infos.push(get_queue_create_info(
-      queue_families.get_compute_index(),
+      queue_families.get_graphics_index(),
       min(
-        queue_families.compute.queue_count,
+        queue_families.graphics.queue_count,
         1 + if queue_families.transfer.is_none() {
           1
         } else {
@@ -120,22 +120,22 @@ impl Queues {
   }
 
   pub unsafe fn retrieve(device: &ash::Device, queue_families: &QueueFamilies) -> Queues {
-    let mut compute_i = 0;
-    let mut get_next_compute_queue = || {
-      let queue = device.get_device_queue(queue_families.compute.index, compute_i);
-      if compute_i + 1 < queue_families.compute.queue_count {
-        compute_i += 1;
+    let mut graphics_i = 0;
+    let mut get_next_graphics_queue = || {
+      let queue = device.get_device_queue(queue_families.graphics.index, graphics_i);
+      if graphics_i + 1 < queue_families.graphics.queue_count {
+        graphics_i += 1;
       }
       queue
     };
 
-    let compute = get_next_compute_queue();
+    let graphics = get_next_graphics_queue();
 
     let transfer = match &queue_families.transfer {
       Some(family) => device.get_device_queue(family.index, 0),
-      None => get_next_compute_queue(),
+      None => get_next_graphics_queue(),
     };
 
-    Queues { compute, transfer }
+    Queues { graphics, transfer }
   }
 }

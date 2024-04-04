@@ -21,7 +21,10 @@ impl TransferCommandBufferPool {
 
     let copy_image_to_buffer = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
-    Ok(Self { pool, copy_image_to_buffer })
+    Ok(Self {
+      pool,
+      copy_image_to_buffer,
+    })
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
@@ -52,7 +55,7 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    if queue_families.get_compute_index() != queue_families.get_transfer_index() {
+    if queue_families.get_graphics_index() != queue_families.get_transfer_index() {
       // matches to release found in compute
       let src_acquire = vk::ImageMemoryBarrier2 {
         s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
@@ -63,7 +66,7 @@ impl TransferCommandBufferPool {
         dst_stage_mask: vk::PipelineStageFlags2::COPY,
         old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-        src_queue_family_index: queue_families.get_compute_index(),
+        src_queue_family_index: queue_families.get_graphics_index(),
         dst_queue_family_index: queue_families.get_transfer_index(),
         image: src_image,
         subresource_range,

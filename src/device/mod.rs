@@ -25,13 +25,13 @@ use crate::{
 const REQUIRED_IMAGE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags,
   vk::FormatFeatureFlags::TRANSFER_SRC,
-  vk::FormatFeatureFlags::TRANSFER_DST
+  vk::FormatFeatureFlags::COLOR_ATTACHMENT
 );
 
 const REQUIRED_IMAGE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags,
   vk::ImageUsageFlags::TRANSFER_SRC,
-  vk::ImageUsageFlags::TRANSFER_DST
+  vk::ImageUsageFlags::COLOR_ATTACHMENT
 );
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {

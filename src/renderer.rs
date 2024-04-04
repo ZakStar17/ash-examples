@@ -184,7 +184,7 @@ impl Renderer {
       self
         .device
         .queue_submit(
-          self.queues.compute,
+          self.queues.graphics,
           &[clear_image_submit],
           vk::Fence::null(),
         )

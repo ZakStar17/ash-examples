@@ -2,10 +2,10 @@ use std::ptr;
 
 use ash::vk;
 
-mod compute;
+mod graphics;
 mod transfer;
 
-pub use compute::ComputeCommandBufferPool;
+pub use graphics::GraphicsCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
 use crate::{device::PhysicalDevice, device_destroyable::DeviceManuallyDestroyed};
@@ -61,25 +61,26 @@ fn dependency_info(
 }
 
 pub struct CommandPools {
-  pub compute_pool: ComputeCommandBufferPool,
+  pub graphics_pool: GraphicsCommandBufferPool,
   pub transfer_pool: TransferCommandBufferPool,
 }
 
 impl CommandPools {
   pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families)?;
+    let graphics_pool =
+      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families)?;
     let transfer_pool =
       match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
         Ok(pool) => pool,
         Err(err) => {
           unsafe {
-            compute_pool.destroy_self(device);
+            graphics_pool.destroy_self(device);
           }
           return Err(err);
         }
       };
     Ok(Self {
-      compute_pool,
+      graphics_pool,
       transfer_pool,
     })
   }
@@ -87,7 +88,7 @@ impl CommandPools {
 
 impl DeviceManuallyDestroyed for CommandPools {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.compute_pool.destroy_self(device);
+    self.graphics_pool.destroy_self(device);
     self.transfer_pool.destroy_self(device);
   }
 }

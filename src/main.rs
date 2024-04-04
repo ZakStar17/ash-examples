@@ -6,8 +6,13 @@ mod device_destroyable;
 mod entry;
 mod errors;
 mod instance;
+mod pipeline;
+mod pipeline_cache;
 mod renderer;
+mod shaders;
 mod utility;
+mod vertices;
+mod render_pass;
 
 // validation layers module will only exist if validation layers are enabled
 #[cfg(feature = "vl")]
@@ -48,6 +53,25 @@ const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
 };
 
 const IMAGE_SAVE_PATH: &str = "image.png";
+
+const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  float32: [0.01, 0.01, 0.01, 1.0],
+};
+const VERTICES: [Vertex; VERTEX_COUNT] = [
+  Vertex {
+    pos: [0.7, 0.3],
+    color: [1.0, 0.0, 0.0],
+  },
+  Vertex {
+    pos: [-0.4, 0.9],
+    color: [0.0, 1.0, 0.0],
+  },
+  Vertex {
+    pos: [-0.9, -0.8],
+    color: [0.0, 0.0, 1.0],
+  },
+];
+const INDICES: [u16; 3] = [0, 1, 2];
 
 fn main() {
   env_logger::init();

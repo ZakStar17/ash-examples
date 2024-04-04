@@ -1,0 +1,120 @@
+use std::ptr;
+
+use ash::vk;
+
+use crate::{
+  device::QueueFamilies, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+  pipeline::GraphicsPipeline, BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
+};
+
+use super::dependency_info;
+
+pub struct GraphicsCommandBufferPool {
+  pool: vk::CommandPool,
+  pub triangle: vk::CommandBuffer,
+}
+
+impl GraphicsCommandBufferPool {
+  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
+    let flags = vk::CommandPoolCreateFlags::TRANSIENT;
+    let pool = super::create_command_pool(device, flags, queue_families.get_graphics_index())?;
+
+    let triangle = super::allocate_primary_command_buffers(device, pool, 1)?[0];
+
+    Ok(Self { pool, triangle })
+  }
+
+  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
+    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+  }
+
+  pub unsafe fn record_clear_img(
+    &mut self,
+    device: &ash::Device,
+    queue_families: &QueueFamilies,
+    image: vk::Image,
+    render_pass: vk::RenderPass,
+    framebuffer: vk::Framebuffer,
+    pipeline: &GraphicsPipeline,
+    vertex_buffer: vk::Buffer,
+    index_buffer: vk::Buffer,
+  ) -> Result<(), OutOfMemoryError> {
+    let cb = self.triangle;
+    let begin_info = vk::CommandBufferBeginInfo {
+      s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+      p_next: ptr::null(),
+      flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+      p_inheritance_info: ptr::null(),
+    };
+    device.begin_command_buffer(cb, &begin_info)?;
+
+    {
+      let clear_value = vk::ClearValue {
+        color: BACKGROUND_COLOR,
+      };
+      let render_pass_begin_info = vk::RenderPassBeginInfo {
+        s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
+        p_next: ptr::null(),
+        render_pass,
+        framebuffer,
+        // whole image
+        render_area: vk::Rect2D {
+          offset: vk::Offset2D { x: 0, y: 0 },
+          extent: vk::Extent2D {
+            width: IMAGE_WIDTH,
+            height: IMAGE_HEIGHT,
+          },
+        },
+        clear_value_count: 1,
+        p_clear_values: &clear_value,
+      };
+      device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
+
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
+      device.cmd_bind_vertex_buffers(cb, 0, &[vertex_buffer], &[0]);
+      device.cmd_bind_index_buffer(cb, index_buffer, 0, vk::IndexType::UINT16);
+      device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
+
+      device.cmd_end_render_pass(cb);
+    }
+
+    // image has 1 mip_level / 1 array layer
+    let subresource_range = vk::ImageSubresourceRange {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      base_mip_level: 0,
+      level_count: 1,
+      base_array_layer: 0,
+      layer_count: 1,
+    };
+
+    // After the render pass finishes the image will already have the correct layout, so only a
+    // queue ownership transfer is necessary
+    if queue_families.get_graphics_index() != queue_families.get_transfer_index() {
+      let release = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from render pass
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
+        src_access_mask: vk::AccessFlags2::NONE, // from render pass
+        dst_access_mask: vk::AccessFlags2::NONE, // NONE for ownership release
+        old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_queue_family_index: queue_families.get_graphics_index(),
+        dst_queue_family_index: queue_families.get_transfer_index(),
+        image,
+        subresource_range,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
+    }
+
+    device.end_command_buffer(self.triangle)?;
+
+    Ok(())
+  }
+}
+
+impl DeviceManuallyDestroyed for GraphicsCommandBufferPool {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    device.destroy_command_pool(self.pool, None);
+  }
+}
