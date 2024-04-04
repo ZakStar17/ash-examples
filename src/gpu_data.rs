@@ -3,6 +3,7 @@ use std::{mem::size_of, ops::BitOr};
 use ash::vk;
 
 use crate::{
+  allocator::allocate_and_bind_memory,
   create_objs::{create_buffer, create_image, create_image_view},
   destroy,
   device::PhysicalDevice,
@@ -30,10 +31,13 @@ struct FinalBuffer {
   size: u64,
 }
 
-struct GPUData {
+pub struct GPUData {
   triangle_image: TriangleImage,
+  triangle_image_memory: vk::DeviceMemory,
   triangle_model: TriangleModelData,
+  triangle_model_memory: vk::DeviceMemory,
   final_buffer: FinalBuffer,
+  final_buffer_memory: vk::DeviceMemory,
 }
 
 impl TriangleImage {
@@ -41,7 +45,7 @@ impl TriangleImage {
     device: &ash::Device,
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
-  ) -> Result<Self, AllocationError> {
+  ) -> Result<Self, OutOfMemoryError> {
     let image = create_image(
       &device,
       extent.width,
@@ -122,79 +126,160 @@ impl GPUData {
     let final_buffer = FinalBuffer::new(device, buffer_size)
       .on_err(|_| unsafe { destroy!(device => &triangle_model, &triangle_image) })?;
 
-    // todo
-    log::debug!("Allocating memory for the image that will be cleared");
-    let clear_image_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
+    let (triangle_image_memory, triangle_model_memory) =
+      Self::allocate_device_memory(device, physical_device, &triangle_image, &triangle_model)
+        .on_err(|_| unsafe {
+          destroy!(device => &final_buffer, &triangle_model, &triangle_image)
+        })?;
+    let final_buffer_memory = Self::allocate_host_memory(device, physical_device, &final_buffer)
+      .on_err(|_| unsafe {
+        triangle_image_memory.destroy_self(device);
+        if triangle_model_memory != triangle_image_memory {
+          triangle_image_memory.destroy_self(device);
+        }
+        destroy!(device => &final_buffer, &triangle_model, &triangle_image);
+      })?;
+
+    Ok(Self {
+      triangle_image,
+      triangle_image_memory,
+      triangle_model,
+      triangle_model_memory,
+      final_buffer,
+      final_buffer_memory,
+    })
+  }
+
+  fn allocate_device_memory(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    triangle_image: &TriangleImage,
+    triangle_model: &TriangleModelData,
+  ) -> Result<(vk::DeviceMemory, vk::DeviceMemory), AllocationError> {
+    let triangle_memory_requirements =
+      unsafe { device.get_image_memory_requirements(triangle_image.image) };
+    let vertex_memory_requirements =
+      unsafe { device.get_buffer_memory_requirements(triangle_model.vertex_buffer) };
+    let index_memory_requirements =
+      unsafe { device.get_buffer_memory_requirements(triangle_model.index_buffer) };
+
+    log::debug!("Allocating device memory for all objects");
+    match allocate_and_bind_memory(
+      device,
+      physical_device,
+      vk::MemoryPropertyFlags::DEVICE_LOCAL,
+      &[triangle_model.vertex_buffer, triangle_model.index_buffer],
+      &[vertex_memory_requirements, index_memory_requirements],
+      &[triangle_image.image],
+      &[triangle_memory_requirements],
+    ) {
+      Ok(alloc) => {
+        log::debug!("Allocated full memory block");
+        return Ok((alloc.memory, alloc.memory));
+      }
+      Err(err) => log::warn!(
+        "Failed to allocate full memory block, suballocating: {:?}",
+        err
+      ),
+    }
+
+    let triangle_memory = match allocate_and_bind_memory(
+      device,
+      physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       &[],
       &[],
-      &[clear_image],
-      &[unsafe { device.get_image_memory_requirements(clear_image) }],
-    )
-    .or_else(|err| {
-      log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
-      allocate_and_bind_memory(
-        &device,
-        &physical_device,
-        vk::MemoryPropertyFlags::empty(),
-        &[],
-        &[],
-        &[clear_image],
-        &[unsafe { device.get_image_memory_requirements(clear_image) }],
-      )
-    }) {
-      Ok(alloc) => alloc.memory,
-      Err(err) => {
-        unsafe {
-          clear_image.destroy_self(device);
-        }
-        return Err(err);
+      &[triangle_image.image],
+      &[triangle_memory_requirements],
+    ) {
+      Ok(alloc) => {
+        log::debug!("Triangle image memory allocated successfully");
+        alloc.memory
+      }
+      Err(_) => {
+        let alloc = allocate_and_bind_memory(
+          device,
+          physical_device,
+          vk::MemoryPropertyFlags::empty(),
+          &[],
+          &[],
+          &[triangle_image.image],
+          &[triangle_memory_requirements],
+        )?;
+        log::debug!("Triangle image memory allocated suboptimally");
+        alloc.memory
       }
     };
 
-    log::debug!("Allocating memory for the final buffer");
-    let final_buffer_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
-      &[final_buffer],
-      &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
+    let buffers_memory = match allocate_and_bind_memory(
+      device,
+      physical_device,
+      vk::MemoryPropertyFlags::DEVICE_LOCAL,
+      &[triangle_model.vertex_buffer, triangle_model.index_buffer],
+      &[vertex_memory_requirements, index_memory_requirements],
       &[],
       &[],
-    )
-    .or_else(|err| {
-      log::warn!(
-        "Failed to allocate optimal memory for the final buffer:\n{:?}",
-        err
-      );
-      allocate_and_bind_memory(
-        &device,
-        &physical_device,
-        vk::MemoryPropertyFlags::HOST_VISIBLE,
-        &[final_buffer],
-        &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
-        &[],
-        &[],
-      )
-    }) {
-      Ok(alloc) => alloc.memory,
-      Err(err) => {
-        unsafe {
-          destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
-        }
-        return Err(err);
+    ) {
+      Ok(alloc) => {
+        log::debug!("Triangle buffers memory allocated successfully");
+        alloc.memory
+      }
+      Err(_) => {
+        let alloc = allocate_and_bind_memory(
+          device,
+          physical_device,
+          vk::MemoryPropertyFlags::empty(),
+          &[triangle_model.vertex_buffer, triangle_model.index_buffer],
+          &[vertex_memory_requirements, index_memory_requirements],
+          &[],
+          &[],
+        )?;
+        log::debug!("Triangle buffers memory allocated suboptimally");
+        alloc.memory
       }
     };
 
-    Ok(Self {
-      clear_image,
-      clear_image_memory,
-      final_buffer,
-      final_buffer_size: buffer_size,
-      final_buffer_memory,
-    })
+    Ok((triangle_memory, buffers_memory))
+  }
+
+  fn allocate_host_memory(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    final_buffer: &FinalBuffer,
+  ) -> Result<vk::DeviceMemory, AllocationError> {
+    let final_buffer_memory_requirements =
+      unsafe { device.get_buffer_memory_requirements(final_buffer.buffer) };
+
+    log::debug!("Allocating final buffer memory");
+    Ok(
+      match allocate_and_bind_memory(
+        device,
+        physical_device,
+        vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
+        &[final_buffer.buffer],
+        &[final_buffer_memory_requirements],
+        &[],
+        &[],
+      ) {
+        Ok(alloc) => {
+          log::debug!("Final buffer memory allocated successfully");
+          alloc.memory
+        }
+        Err(_) => {
+          let alloc = allocate_and_bind_memory(
+            device,
+            physical_device,
+            vk::MemoryPropertyFlags::HOST_VISIBLE,
+            &[final_buffer.buffer],
+            &[final_buffer_memory_requirements],
+            &[],
+            &[],
+          )?;
+          log::debug!("Final buffer memory allocated suboptimally");
+          alloc.memory
+        }
+      },
+    )
   }
 
   // map can fail with vk::Result::ERROR_MEMORY_MAP_FAILED
@@ -211,7 +296,7 @@ impl GPUData {
       vk::WHOLE_SIZE,
       vk::MemoryMapFlags::empty(),
     )? as *const u8;
-    let data = std::slice::from_raw_parts(ptr, self.final_buffer_size as usize);
+    let data = std::slice::from_raw_parts(ptr, self.final_buffer.size as usize);
 
     f(data);
 
@@ -225,9 +310,14 @@ impl GPUData {
 
 impl DeviceManuallyDestroyed for GPUData {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.clear_image.destroy_self(device);
-    self.clear_image_memory.destroy_self(device);
-    self.final_buffer.destroy_self(device);
+    self.triangle_image_memory.destroy_self(device);
+    if self.triangle_model_memory != self.triangle_image_memory {
+      self.triangle_model_memory.destroy_self(device);
+    }
     self.final_buffer_memory.destroy_self(device);
+
+    self.triangle_image.destroy_self(device);
+    self.triangle_model.destroy_self(device);
+    self.final_buffer.destroy_self(device);
   }
 }

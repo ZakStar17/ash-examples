@@ -1,20 +1,19 @@
 use ash::vk;
-use std::{
-  ops::BitOr,
-  ptr::{self, addr_of},
-};
+use std::ptr::{self, addr_of};
 
 use crate::{
-  allocator::allocate_and_bind_memory,
   command_pools::CommandPools,
-  create_objs::{create_buffer, create_fence, create_image, create_semaphore},
+  create_objs::{create_fence, create_semaphore},
   destroy,
   device::{create_logical_device, PhysicalDevice, Queues},
   device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
   entry,
-  errors::{AllocationError, InitializationError, OutOfMemoryError},
+  errors::{InitializationError, OutOfMemoryError},
+  gpu_data::GPUData,
   instance::create_instance,
   pipeline::GraphicsPipeline,
+  pipeline_cache,
+  render_pass::create_render_pass,
   utility::OnErr,
 };
 
@@ -40,8 +39,6 @@ impl Renderer {
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
-    use crate::{pipeline_cache, render_pass::create_render_pass};
-
     let entry: ash::Entry = unsafe { entry::get_entry() };
     let (instance, debug_utils) = create_instance(&entry)?;
 
@@ -95,8 +92,11 @@ impl Renderer {
     let gpu_data = GPUData::new(
       &device,
       &physical_device,
-      image_width,
-      image_height,
+      render_pass,
+      vk::Extent2D {
+        width: image_width,
+        height: image_height,
+      },
       buffer_size,
     )
     .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &debug_utils, &instance) })?;

@@ -6,7 +6,7 @@ use ash::vk;
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Vertex {
   pub pos: [f32; 2],
-  pub tex_coords: [f32; 2],
+  pub color: [f32; 3],
 }
 
 impl Vertex {
@@ -34,8 +34,8 @@ impl Vertex {
       vk::VertexInputAttributeDescription {
         location: offset + 1,
         binding,
-        format: vk::Format::R32G32_SFLOAT,
-        offset: offset_of!(Self, tex_coords) as u32,
+        format: vk::Format::R32G32B32_SFLOAT,
+        offset: offset_of!(Self, color) as u32,
       },
     ]
   }

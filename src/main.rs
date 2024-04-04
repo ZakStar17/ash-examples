@@ -21,6 +21,7 @@ mod validation_layers;
 
 use ash::vk;
 use std::ffi::CStr;
+use vertices::Vertex;
 
 use crate::renderer::Renderer;
 
@@ -58,7 +59,7 @@ const IMAGE_SAVE_PATH: &str = "image.png";
 const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
-const VERTICES: [Vertex; VERTEX_COUNT] = [
+const VERTICES: [Vertex; 3] = [
   Vertex {
     pos: [0.7, 0.3],
     color: [1.0, 0.0, 0.0],
