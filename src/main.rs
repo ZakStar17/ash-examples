@@ -5,14 +5,15 @@ mod device;
 mod device_destroyable;
 mod entry;
 mod errors;
+mod gpu_data;
 mod instance;
 mod pipeline;
 mod pipeline_cache;
+mod render_pass;
 mod renderer;
 mod shaders;
 mod utility;
 mod vertices;
-mod render_pass;
 
 // validation layers module will only exist if validation layers are enabled
 #[cfg(feature = "vl")]

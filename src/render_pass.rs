@@ -72,7 +72,8 @@ pub fn create_render_pass(device: &ash::Device) -> Result<vk::RenderPass, OutOfM
   };
   unsafe {
     device
-      .create_render_pass(&create_info, None).map_err(|err| err.into())
+      .create_render_pass(&create_info, None)
+      .map_err(|err| err.into())
   }
 }
 
@@ -95,6 +96,7 @@ pub fn create_framebuffer(
   };
   unsafe {
     device
-      .create_framebuffer(&create_info, None).map_err(|err| err.into())
+      .create_framebuffer(&create_info, None)
+      .map_err(|err| err.into())
   }
 }

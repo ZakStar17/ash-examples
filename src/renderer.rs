@@ -14,6 +14,7 @@ use crate::{
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
   instance::create_instance,
+  pipeline::GraphicsPipeline,
   utility::OnErr,
 };
 
@@ -25,16 +26,11 @@ pub struct Renderer {
   physical_device: PhysicalDevice,
   device: ash::Device,
   queues: Queues,
+
+  render_pass: vk::RenderPass,
+  pipeline: GraphicsPipeline,
   command_pools: CommandPools,
   gpu_data: GPUData,
-}
-
-struct GPUData {
-  clear_image: vk::Image,
-  clear_image_memory: vk::DeviceMemory,
-  final_buffer: vk::Buffer,
-  final_buffer_size: u64,
-  final_buffer_memory: vk::DeviceMemory,
 }
 
 impl Renderer {
@@ -44,6 +40,8 @@ impl Renderer {
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
+    use crate::{pipeline_cache, render_pass::create_render_pass};
+
     let entry: ash::Entry = unsafe { entry::get_entry() };
     let (instance, debug_utils) = create_instance(&entry)?;
 
@@ -60,8 +58,39 @@ impl Renderer {
     let (device, queues) = create_logical_device(&instance, &physical_device)
       .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?;
 
-    let command_pools = CommandPools::new(&device, &physical_device)
+    let render_pass = create_render_pass(&device)
       .on_err(|_| unsafe { destroy!(&device, &debug_utils, &instance) })?;
+
+    log::info!("Creating pipeline cache");
+    let (pipeline_cache, created_from_file) =
+      pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
+        destroy!(&device => &render_pass, &device, &debug_utils, &instance)
+      })?;
+    if created_from_file {
+      log::info!("Cache successfully created from an existing cache file");
+    } else {
+      log::info!("Cache initialized as empty");
+    }
+
+    log::debug!("Creating pipeline");
+    let pipeline =
+      GraphicsPipeline::create(&device, pipeline_cache, render_pass).on_err(|_| unsafe {
+        destroy!(&device => &pipeline_cache, &render_pass, &device, &debug_utils, &instance)
+      })?;
+
+    // no more pipelines will be created, so might as well save and delete the cache
+    log::info!("Saving pipeline cache");
+    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
+    {
+      log::error!("Failed to save pipeline cache: {:?}", err);
+    }
+    unsafe {
+      pipeline_cache.destroy_self(&device);
+    }
+
+    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+      destroy!(&device => &pipeline, &render_pass, &device, &debug_utils, &instance)
+    })?;
 
     let gpu_data = GPUData::new(
       &device,
@@ -81,6 +110,8 @@ impl Renderer {
       queues,
       command_pools,
       gpu_data,
+      render_pass,
+      pipeline,
     })
   }
 
@@ -130,11 +161,14 @@ impl Renderer {
   }
 
   pub unsafe fn record_work(&mut self) -> Result<(), OutOfMemoryError> {
-    self.command_pools.compute_pool.reset(&self.device)?;
-    self.command_pools.compute_pool.record_clear_img(
+    self.command_pools.graphics_pool.reset(&self.device)?;
+    self.command_pools.graphics_pool.record_triangle(
       &self.device,
       &self.physical_device.queue_families,
-      self.gpu_data.clear_image,
+      self.gpu_data.triangle_image,
+      self.render_pass,
+      self.gpu_data.triangle_framebuffer,
+      self.pipeline,
     )?;
 
     self.command_pools.transfer_pool.reset(&self.device)?;
@@ -230,139 +264,5 @@ impl Drop for Renderer {
       }
       ManuallyDestroyed::destroy_self(&self.instance);
     }
-  }
-}
-
-impl GPUData {
-  pub fn new(
-    device: &ash::Device,
-    physical_device: &PhysicalDevice,
-    image_width: u32,
-    image_height: u32,
-    buffer_size: u64,
-  ) -> Result<Self, AllocationError> {
-    // GPU image with DEVICE_LOCAL flags
-    let clear_image = create_image(
-      &device,
-      image_width,
-      image_height,
-      vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
-    )?;
-    log::debug!("Allocating memory for the image that will be cleared");
-    let clear_image_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
-      vk::MemoryPropertyFlags::DEVICE_LOCAL,
-      &[],
-      &[],
-      &[clear_image],
-      &[unsafe { device.get_image_memory_requirements(clear_image) }],
-    )
-    .or_else(|err| {
-      log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
-      allocate_and_bind_memory(
-        &device,
-        &physical_device,
-        vk::MemoryPropertyFlags::empty(),
-        &[],
-        &[],
-        &[clear_image],
-        &[unsafe { device.get_image_memory_requirements(clear_image) }],
-      )
-    }) {
-      Ok(alloc) => alloc.memory,
-      Err(err) => {
-        unsafe {
-          clear_image.destroy_self(device);
-        }
-        return Err(err);
-      }
-    };
-
-    let final_buffer = match create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
-    {
-      Ok(buffer) => buffer,
-      Err(err) => {
-        unsafe {
-          destroy!(device => &clear_image_memory, &clear_image);
-        }
-        return Err(err.into());
-      }
-    };
-    log::debug!("Allocating memory for the final buffer");
-    let final_buffer_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
-      &[final_buffer],
-      &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
-      &[],
-      &[],
-    )
-    .or_else(|err| {
-      log::warn!(
-        "Failed to allocate optimal memory for the final buffer:\n{:?}",
-        err
-      );
-      allocate_and_bind_memory(
-        &device,
-        &physical_device,
-        vk::MemoryPropertyFlags::HOST_VISIBLE,
-        &[final_buffer],
-        &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
-        &[],
-        &[],
-      )
-    }) {
-      Ok(alloc) => alloc.memory,
-      Err(err) => {
-        unsafe {
-          destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
-        }
-        return Err(err);
-      }
-    };
-
-    Ok(Self {
-      clear_image,
-      clear_image_memory,
-      final_buffer,
-      final_buffer_size: buffer_size,
-      final_buffer_memory,
-    })
-  }
-
-  // map can fail with vk::Result::ERROR_MEMORY_MAP_FAILED
-  // in most cases it may be possible to try mapping again a smaller range
-  pub unsafe fn get_buffer_data<F: FnOnce(&[u8])>(
-    &self,
-    device: &ash::Device,
-    f: F,
-  ) -> Result<(), vk::Result> {
-    let ptr = device.map_memory(
-      self.final_buffer_memory,
-      0,
-      // if size is not vk::WHOLE_SIZE, mapping should follow alignments
-      vk::WHOLE_SIZE,
-      vk::MemoryMapFlags::empty(),
-    )? as *const u8;
-    let data = std::slice::from_raw_parts(ptr, self.final_buffer_size as usize);
-
-    f(data);
-
-    unsafe {
-      device.unmap_memory(self.final_buffer_memory);
-    }
-
-    Ok(())
-  }
-}
-
-impl DeviceManuallyDestroyed for GPUData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.clear_image.destroy_self(device);
-    self.clear_image_memory.destroy_self(device);
-    self.final_buffer.destroy_self(device);
-    self.final_buffer_memory.destroy_self(device);
   }
 }

@@ -28,7 +28,7 @@ impl GraphicsCommandBufferPool {
     device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
   }
 
-  pub unsafe fn record_clear_img(
+  pub unsafe fn record_triangle(
     &mut self,
     device: &ash::Device,
     queue_families: &QueueFamilies,
