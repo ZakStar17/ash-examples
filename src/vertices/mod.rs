@@ -105,4 +105,3 @@ macro_rules! vertex_input_state_create_info {
     }
   };
 }
-pub use vertex_input_state_create_info;

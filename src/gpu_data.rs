@@ -15,28 +15,28 @@ use crate::{
   INDICES, VERTICES,
 };
 
-struct TriangleImage {
-  image: vk::Image,
-  image_view: vk::ImageView,
-  framebuffer: vk::Framebuffer,
+pub struct TriangleImage {
+  pub image: vk::Image,
+  pub image_view: vk::ImageView,
+  pub framebuffer: vk::Framebuffer,
 }
 
-struct TriangleModelData {
-  vertex_buffer: vk::Buffer,
-  index_buffer: vk::Buffer,
+pub struct TriangleModelData {
+  pub vertex_buffer: vk::Buffer,
+  pub index_buffer: vk::Buffer,
 }
 
-struct FinalBuffer {
-  buffer: vk::Buffer,
+pub struct FinalBuffer {
+  pub buffer: vk::Buffer,
   size: u64,
 }
 
 pub struct GPUData {
-  triangle_image: TriangleImage,
+  pub triangle_image: TriangleImage,
   triangle_image_memory: vk::DeviceMemory,
-  triangle_model: TriangleModelData,
+  pub triangle_model: TriangleModelData,
   triangle_model_memory: vk::DeviceMemory,
-  final_buffer: FinalBuffer,
+  pub final_buffer: FinalBuffer,
   final_buffer_memory: vk::DeviceMemory,
 }
 

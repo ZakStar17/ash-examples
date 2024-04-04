@@ -49,10 +49,6 @@ const IMAGE_FORMAT_SIZE: u64 = 4;
 const IMAGE_MINIMAL_SIZE: u64 = IMAGE_WIDTH as u64 * IMAGE_HEIGHT as u64 * IMAGE_FORMAT_SIZE;
 
 const IMAGE_SAVE_TYPE: image::ColorType = image::ColorType::Rgba8; // should be equivalent
-                                                                   // valid color values depend on IMAGE_FORMAT
-const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  float32: [134.0 / 255.0, 206.0 / 255.0, 203.0 / 255.0, 1.0], // rgba(134, 206, 203, 255)
-};
 
 const IMAGE_SAVE_PATH: &str = "image.png";
 

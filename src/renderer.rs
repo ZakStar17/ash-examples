@@ -162,21 +162,20 @@ impl Renderer {
 
   pub unsafe fn record_work(&mut self) -> Result<(), OutOfMemoryError> {
     self.command_pools.graphics_pool.reset(&self.device)?;
-    self.command_pools.graphics_pool.record_triangle(
-      &self.device,
+    self.command_pools.graphics_pool.record_triangle(&self.device, 
       &self.physical_device.queue_families,
-      self.gpu_data.triangle_image,
       self.render_pass,
-      self.gpu_data.triangle_framebuffer,
-      self.pipeline,
+      &self.pipeline,
+      &self.gpu_data.triangle_image,
+      &self.gpu_data.triangle_model
     )?;
 
     self.command_pools.transfer_pool.reset(&self.device)?;
     self.command_pools.transfer_pool.record_copy_img_to_buffer(
       &self.device,
       &self.physical_device.queue_families,
-      self.gpu_data.clear_image,
-      self.gpu_data.final_buffer,
+      self.gpu_data.triangle_image.image,
+      self.gpu_data.final_buffer.buffer,
     )?;
 
     Ok(())
@@ -195,7 +194,7 @@ impl Renderer {
       p_wait_semaphores: ptr::null(),
       p_wait_dst_stage_mask: ptr::null(),
       command_buffer_count: 1,
-      p_command_buffers: addr_of!(self.command_pools.compute_pool.clear_img),
+      p_command_buffers: addr_of!(self.command_pools.graphics_pool.triangle),
       signal_semaphore_count: 1,
       p_signal_semaphores: addr_of!(image_clear_finished),
     };
