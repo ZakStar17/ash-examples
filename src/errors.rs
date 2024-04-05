@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::{pipeline_cache::PipelineCacheError, utility::error_chain_fmt};
+use crate::{pipeline_cache::PipelineCacheError, shaders::ShaderError, utility::error_chain_fmt};
 
 #[derive(thiserror::Error)]
 pub enum OutOfMemoryError {
@@ -43,6 +43,9 @@ pub enum InitializationError {
 
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] Option<AllocationError>),
+
+  #[error("Shader compilation failed")]
+  ShaderCompilation,
 
   #[error("IO error")]
   IOError(#[source] std::io::Error),
@@ -103,6 +106,16 @@ impl From<PipelineCacheError> for InitializationError {
     match value {
       PipelineCacheError::IOError(err) => InitializationError::IOError(err),
       PipelineCacheError::OutOfMemoryError(err) => InitializationError::from(err),
+    }
+  }
+}
+
+impl From<ShaderError> for InitializationError {
+  fn from(value: ShaderError) -> Self {
+    match value {
+      ShaderError::IO(err) => InitializationError::IOError(err),
+      ShaderError::OutOfMemory(_) => InitializationError::NotEnoughMemory(None),
+      ShaderError::InvalidShader => InitializationError::ShaderCompilation
     }
   }
 }

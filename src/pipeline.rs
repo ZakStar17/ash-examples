@@ -3,7 +3,7 @@ use std::ptr::{self, addr_of};
 use ash::vk;
 
 use crate::{
-  device_destroyable::DeviceManuallyDestroyed, shaders, vertex_input_state_create_info,
+  device_destroyable::DeviceManuallyDestroyed, shaders::{self, ShaderError}, vertex_input_state_create_info,
   vertices::Vertex, IMAGE_HEIGHT, IMAGE_WIDTH,
 };
 
@@ -17,8 +17,8 @@ impl GraphicsPipeline {
     device: &ash::Device,
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
-  ) -> Result<Self, vk::Result> {
-    let shader = shaders::Shader::load(device);
+  ) -> Result<Self, ShaderError> {
+    let shader = shaders::Shader::load(device)?;
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
     let vertex_input_state = vertex_input_state_create_info!(Vertex);
