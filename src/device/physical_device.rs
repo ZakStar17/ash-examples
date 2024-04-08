@@ -57,6 +57,10 @@ impl PhysicalDevice {
     }
   }
 
+  pub fn get_memory_type(&self, type_i: u32) -> vk::MemoryType {
+    self.mem_properties.memory_types[type_i as usize]
+  }
+
   pub fn memory_type_heap(&self, type_i: usize) -> vk::MemoryHeap {
     self.mem_properties.memory_heaps[self.mem_properties.memory_types[type_i].heap_index as usize]
   }

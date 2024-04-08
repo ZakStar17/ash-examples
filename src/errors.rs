@@ -47,6 +47,9 @@ pub enum InitializationError {
   #[error("Shader compilation failed")]
   ShaderCompilation,
 
+  #[error("Memory map failed: The application was unable to map the require memory")]
+  MemoryMapFailed,
+
   #[error("IO error")]
   IOError(#[source] std::io::Error),
 
@@ -72,6 +75,7 @@ impl From<vk::Result> for InitializationError {
       vk::Result::ERROR_UNKNOWN => InitializationError::Unknown,
       // validation layers may say more on this
       vk::Result::ERROR_INITIALIZATION_FAILED => InitializationError::Unknown,
+      vk::Result::ERROR_MEMORY_MAP_FAILED => InitializationError::MemoryMapFailed,
       _ => {
         log::error!("Invalid vk::Result: {:?}", value);
         InitializationError::Unknown
@@ -81,6 +85,7 @@ impl From<vk::Result> for InitializationError {
 }
 
 impl From<AllocationError> for InitializationError {
+  // TODO
   fn from(value: AllocationError) -> Self {
     match value {
       AllocationError::NotEnoughMemory(_) => {}
@@ -115,7 +120,7 @@ impl From<ShaderError> for InitializationError {
     match value {
       ShaderError::IO(err) => InitializationError::IOError(err),
       ShaderError::OutOfMemory(_) => InitializationError::NotEnoughMemory(None),
-      ShaderError::InvalidShader => InitializationError::ShaderCompilation
+      ShaderError::InvalidShader => InitializationError::ShaderCompilation,
     }
   }
 }
@@ -131,6 +136,10 @@ pub enum AllocationError {
   TooBigForAllSupportedHeaps(u64),
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] OutOfMemoryError),
+  #[error("Failed to map necessary memory")]
+  MemoryMapFailed,
+  #[error("Device is lost")]
+  DeviceIsLost,
 }
 impl std::fmt::Debug for AllocationError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -140,7 +149,14 @@ impl std::fmt::Debug for AllocationError {
 
 impl From<vk::Result> for AllocationError {
   fn from(value: vk::Result) -> Self {
-    AllocationError::NotEnoughMemory(OutOfMemoryError::from(value))
+    match value {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        AllocationError::NotEnoughMemory(OutOfMemoryError::from(value))
+      }
+      vk::Result::ERROR_MEMORY_MAP_FAILED => AllocationError::MemoryMapFailed,
+      vk::Result::ERROR_DEVICE_LOST => AllocationError::DeviceIsLost,
+      _ => panic!("Invalid cast from vk::Result to AllocationError"),
+    }
   }
 }
 

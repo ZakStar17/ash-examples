@@ -85,11 +85,11 @@ impl Renderer {
       pipeline_cache.destroy_self(&device);
     }
 
-    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+    let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
       destroy!(&device => &pipeline, &render_pass, &device, &debug_utils, &instance)
     })?;
 
-    let gpu_data = GPUData::new(
+    let mut gpu_data = GPUData::new(
       &device,
       &physical_device,
       render_pass,
@@ -99,7 +99,16 @@ impl Renderer {
       },
       buffer_size,
     )
-    .on_err(|_| unsafe { destroy!(&device => &command_pools, &pipeline, &render_pass, &device, &debug_utils, &instance) })?;
+    .on_err(|_| unsafe {
+      destroy!(&device => &command_pools, &pipeline, &render_pass, &device, &debug_utils, &instance)
+    })?;
+
+    gpu_data.initialize_memory(
+      &device,
+      &physical_device,
+      &queues,
+      &mut command_pools.transfer_pool,
+    )?;
 
     Ok(Self {
       _entry: entry,
@@ -162,12 +171,13 @@ impl Renderer {
 
   pub unsafe fn record_work(&mut self) -> Result<(), OutOfMemoryError> {
     self.command_pools.graphics_pool.reset(&self.device)?;
-    self.command_pools.graphics_pool.record_triangle(&self.device, 
+    self.command_pools.graphics_pool.record_triangle(
+      &self.device,
       &self.physical_device.queue_families,
       self.render_pass,
       &self.pipeline,
       &self.gpu_data.triangle_image,
-      &self.gpu_data.triangle_model
+      &self.gpu_data.triangle_model,
     )?;
 
     self.command_pools.transfer_pool.reset(&self.device)?;

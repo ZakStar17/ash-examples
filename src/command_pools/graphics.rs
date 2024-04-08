@@ -3,7 +3,12 @@ use std::ptr;
 use ash::vk;
 
 use crate::{
-  device::QueueFamilies, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, gpu_data::{TriangleImage, TriangleModelData}, pipeline::GraphicsPipeline, BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES
+  device::QueueFamilies,
+  device_destroyable::DeviceManuallyDestroyed,
+  errors::OutOfMemoryError,
+  gpu_data::{TriangleImage, TriangleModelData},
+  pipeline::GraphicsPipeline,
+  BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
 };
 
 use super::dependency_info;
@@ -36,7 +41,7 @@ impl GraphicsCommandBufferPool {
     // contains image, image_view and framebuffer
     triangle_image: &TriangleImage,
     // contains index and vertex buffer
-    triangle_model: &TriangleModelData, 
+    triangle_model: &TriangleModelData,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.triangle;
     let begin_info = vk::CommandBufferBeginInfo {

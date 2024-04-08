@@ -3,8 +3,11 @@ use std::ptr::{self, addr_of};
 use ash::vk;
 
 use crate::{
-  device_destroyable::DeviceManuallyDestroyed, shaders::{self, ShaderError}, vertex_input_state_create_info,
-  vertices::Vertex, IMAGE_HEIGHT, IMAGE_WIDTH,
+  device_destroyable::DeviceManuallyDestroyed,
+  shaders::{self, ShaderError},
+  vertex_input_state_create_info,
+  vertices::Vertex,
+  IMAGE_HEIGHT, IMAGE_WIDTH,
 };
 
 pub struct GraphicsPipeline {
