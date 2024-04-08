@@ -99,7 +99,7 @@ impl Renderer {
       },
       buffer_size,
     )
-    .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &debug_utils, &instance) })?;
+    .on_err(|_| unsafe { destroy!(&device => &command_pools, &pipeline, &render_pass, &device, &debug_utils, &instance) })?;
 
     Ok(Self {
       _entry: entry,
@@ -253,7 +253,7 @@ impl Drop for Renderer {
         .device_wait_idle()
         .expect("Failed to wait for the device to become idle during drop");
 
-      destroy!(&self.device => &self.command_pools, &self.gpu_data);
+      destroy!(&self.device => &self.command_pools, &self.gpu_data, &self.pipeline, &self.render_pass);
 
       ManuallyDestroyed::destroy_self(&self.device);
 

@@ -70,8 +70,8 @@ impl GraphicsCommandBufferPool {
       device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
 
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
-      device.cmd_bind_vertex_buffers(cb, 0, &[triangle_model.vertex_buffer], &[0]);
-      device.cmd_bind_index_buffer(cb, triangle_model.index_buffer, 0, vk::IndexType::UINT16);
+      device.cmd_bind_vertex_buffers(cb, 0, &[triangle_model.vertex], &[0]);
+      device.cmd_bind_index_buffer(cb, triangle_model.index, 0, vk::IndexType::UINT16);
       device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);

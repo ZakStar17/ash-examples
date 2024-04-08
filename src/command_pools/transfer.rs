@@ -64,7 +64,7 @@ impl TransferCommandBufferPool {
         dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
         src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from semaphore
         dst_stage_mask: vk::PipelineStageFlags2::COPY,
-        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         src_queue_family_index: queue_families.get_graphics_index(),
         dst_queue_family_index: queue_families.get_transfer_index(),

@@ -44,7 +44,7 @@ const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 const IMAGE_WIDTH: u32 = 1920;
 const IMAGE_HEIGHT: u32 = 1080;
 
-const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 const IMAGE_FORMAT_SIZE: u64 = 4;
 const IMAGE_MINIMAL_SIZE: u64 = IMAGE_WIDTH as u64 * IMAGE_HEIGHT as u64 * IMAGE_FORMAT_SIZE;
 
