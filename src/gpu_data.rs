@@ -271,6 +271,7 @@ impl GPUData {
     let vertex_src = create_buffer(device, vertex_size, vk::BufferUsageFlags::TRANSFER_SRC)?;
     let index_src = create_buffer(device, index_size, vk::BufferUsageFlags::TRANSFER_SRC)
       .on_err(|_| unsafe { vertex_src.destroy_self(device) })?;
+    let destroy_created_objs = || unsafe { destroy!(device => &vertex_src, &index_src) };
 
     let vertex_src_requirements = unsafe { device.get_buffer_memory_requirements(vertex_src) };
     let index_src_requirements = unsafe { device.get_buffer_memory_requirements(index_src) };
@@ -283,17 +284,20 @@ impl GPUData {
       &[vertex_src_requirements, index_src_requirements],
       &[],
       &[],
-    )?;
+    )
+    .on_err(|_| destroy_created_objs())?;
     let vertex_offset = staging_alloc.offsets.buffer_offsets()[0];
     let index_offset = staging_alloc.offsets.buffer_offsets()[1];
 
     unsafe {
-      let mem_ptr = device.map_memory(
-        staging_alloc.memory,
-        0,
-        vk::WHOLE_SIZE,
-        vk::MemoryMapFlags::empty(),
-      )? as *mut u8;
+      let mem_ptr = device
+        .map_memory(
+          staging_alloc.memory,
+          0,
+          vk::WHOLE_SIZE,
+          vk::MemoryMapFlags::empty(),
+        )
+        .on_err(|_| destroy_created_objs())? as *mut u8;
 
       let vertices = VERTICES;
       let indices = INDICES;
@@ -320,7 +324,9 @@ impl GPUData {
           offset: 0,
           size: vk::WHOLE_SIZE,
         };
-        device.flush_mapped_memory_ranges(&[range])?;
+        device
+          .flush_mapped_memory_ranges(&[range])
+          .on_err(|_| destroy_created_objs())?;
       }
     }
 
@@ -336,7 +342,9 @@ impl GPUData {
       ..vertex_region
     };
     unsafe {
-      command_pool.reset(device)?;
+      command_pool
+        .reset(device)
+        .on_err(|_| destroy_created_objs())?;
       command_pool.record_copy_buffers_to_buffers(
         device,
         &[
@@ -360,7 +368,9 @@ impl GPUData {
       )?;
     }
 
-    let fence = create_fence(device)?;
+    let fence = create_fence(device).on_err(|_| destroy_created_objs())?;
+    let destroy_created_objs =
+      || unsafe { destroy!(device => &fence, &vertex_src, &index_src, &staging_alloc.memory) };
     let submit_info = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
@@ -373,13 +383,15 @@ impl GPUData {
       p_signal_semaphores: ptr::null(),
     };
     unsafe {
-      device.queue_submit(queues.transfer, &[submit_info], fence)?;
-      device.wait_for_fences(&[fence], true, u64::MAX)?;
+      device
+        .queue_submit(queues.transfer, &[submit_info], fence)
+        .on_err(|_| destroy_created_objs())?;
+      device
+        .wait_for_fences(&[fence], true, u64::MAX)
+        .on_err(|_| destroy_created_objs())?;
     }
 
-    unsafe {
-      destroy!(device => &fence, &vertex_src, &index_src, &staging_alloc.memory);
-    }
+    destroy_created_objs();
 
     Ok(())
   }
