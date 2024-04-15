@@ -85,18 +85,19 @@ impl From<vk::Result> for InitializationError {
 }
 
 impl From<AllocationError> for InitializationError {
-  // TODO
   fn from(value: AllocationError) -> Self {
     match value {
-      AllocationError::NotEnoughMemory(_) => {}
+      AllocationError::NotEnoughMemory(_) => InitializationError::NotEnoughMemory(Some(value)),
+      AllocationError::DeviceIsLost => InitializationError::DeviceLost,
+      AllocationError::MemoryMapFailed => InitializationError::MemoryMapFailed,
       _ => {
         log::error!(
           "Allocation error failed because of an unhandled case: {:?}",
           value
         );
+        InitializationError::NotEnoughMemory(Some(value))
       }
     }
-    InitializationError::NotEnoughMemory(Some(value))
   }
 }
 
