@@ -1,10 +1,12 @@
-use std::{pin::pin, ptr::{self, addr_of}};
+use std::ptr::{self, addr_of};
 
 use ash::vk;
 
 use crate::{
-  shaders,
-  vertex::{PipelineVertexInputStateCreateInfoGen, Vertex},
+  device_destroyable::DeviceManuallyDestroyed,
+  shaders::{self, ShaderError},
+  vertex_input_state_create_info,
+  vertices::Vertex,
   IMAGE_HEIGHT, IMAGE_WIDTH,
 };
 
@@ -18,13 +20,11 @@ impl GraphicsPipeline {
     device: &ash::Device,
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
-  ) -> Self {
-    let mut shader = shaders::Shader::load(device);
+  ) -> Result<Self, ShaderError> {
+    let shader = shaders::Shader::load(device)?;
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
-    let vertex_input_state_gen = pin!(Vertex::get_input_state_create_info_gen(0, 0));
-    let vertex_input_state =
-      PipelineVertexInputStateCreateInfoGen::gen(vertex_input_state_gen.as_ref());
+    let vertex_input_state = vertex_input_state_create_info!(Vertex);
 
     let input_assembly_state_ci = triangle_input_assembly_state();
 
@@ -61,7 +61,7 @@ impl GraphicsPipeline {
       // no blend state
       blend_enable: vk::FALSE,
       color_write_mask: vk::ColorComponentFlags::RGBA,
-    
+
       // everything else doesn't matter
       ..Default::default()
     };
@@ -86,11 +86,7 @@ impl GraphicsPipeline {
       push_constant_range_count: 0,
       p_push_constant_ranges: ptr::null(),
     };
-    let layout = unsafe {
-      device
-        .create_pipeline_layout(&layout_create_info, None)
-        .expect("Failed to create pipeline layout")
-    };
+    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
 
     let create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
@@ -98,7 +94,7 @@ impl GraphicsPipeline {
       flags: vk::PipelineCreateFlags::empty(),
       stage_count: shader_stages.len() as u32,
       p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: vertex_input_state.as_ptr(),
+      p_vertex_input_state: vertex_input_state.get(),
       p_input_assembly_state: &input_assembly_state_ci,
       p_tessellation_state: ptr::null(),
       p_viewport_state: &viewport_state,
@@ -116,17 +112,19 @@ impl GraphicsPipeline {
     let pipeline = unsafe {
       device
         .create_graphics_pipelines(cache, &[create_info], None)
-        .expect("Failed to create graphics pipelines")[0]
+        .map_err(|(_pipelines, err)| err)?[0]
     };
 
     unsafe {
       shader.destroy_self(device);
     }
 
-    Self { layout, pipeline }
+    Ok(Self { layout, pipeline })
   }
+}
 
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+impl DeviceManuallyDestroyed for GraphicsPipeline {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     device.destroy_pipeline(self.pipeline, None);
     device.destroy_pipeline_layout(self.layout, None);
   }

@@ -2,9 +2,9 @@ use std::ptr;
 
 use ash::vk;
 
-use crate::IMAGE_FORMAT;
+use crate::{errors::OutOfMemoryError, IMAGE_FORMAT};
 
-pub fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
+pub fn create_render_pass(device: &ash::Device) -> Result<vk::RenderPass, OutOfMemoryError> {
   let image_attachment = vk::AttachmentDescription {
     flags: vk::AttachmentDescriptionFlags::empty(),
     format: IMAGE_FORMAT,
@@ -73,7 +73,7 @@ pub fn create_render_pass(device: &ash::Device) -> vk::RenderPass {
   unsafe {
     device
       .create_render_pass(&create_info, None)
-      .expect("Failed to create render pass!")
+      .map_err(|err| err.into())
   }
 }
 
@@ -82,7 +82,7 @@ pub fn create_framebuffer(
   render_pass: vk::RenderPass,
   image_view: vk::ImageView,
   extent: vk::Extent2D,
-) -> vk::Framebuffer {
+) -> Result<vk::Framebuffer, OutOfMemoryError> {
   let create_info = vk::FramebufferCreateInfo {
     s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
     p_next: ptr::null(),
@@ -97,6 +97,6 @@ pub fn create_framebuffer(
   unsafe {
     device
       .create_framebuffer(&create_info, None)
-      .expect("Failed to create framebuffer")
+      .map_err(|err| err.into())
   }
 }

@@ -2,9 +2,9 @@ use std::{ffi::CStr, path::Path, ptr};
 
 use ash::vk;
 
-use crate::utility::cstr;
+use crate::{cstr, device_destroyable::DeviceManuallyDestroyed};
 
-use super::load_shader;
+use super::{load_shader, ShaderError};
 
 const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
 const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
@@ -17,16 +17,11 @@ pub struct Shader {
 }
 
 impl Shader {
-  pub fn load(device: &ash::Device) -> Self {
-    Self {
-      vert: load_shader(device, Path::new(VERT_SHADER_PATH)),
-      frag: load_shader(device, Path::new(FRAG_SHADER_PATH)),
-    }
-  }
-
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    device.destroy_shader_module(self.vert, None);
-    device.destroy_shader_module(self.frag, None);
+  pub fn load(device: &ash::Device) -> Result<Self, ShaderError> {
+    Ok(Self {
+      vert: load_shader(device, Path::new(VERT_SHADER_PATH))?,
+      frag: load_shader(device, Path::new(FRAG_SHADER_PATH))?,
+    })
   }
 }
 
@@ -54,5 +49,12 @@ impl Shader {
         stage: vk::ShaderStageFlags::FRAGMENT,
       },
     ]
+  }
+}
+
+impl DeviceManuallyDestroyed for Shader {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    device.destroy_shader_module(self.vert, None);
+    device.destroy_shader_module(self.frag, None);
   }
 }
