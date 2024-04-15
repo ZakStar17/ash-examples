@@ -146,17 +146,60 @@ impl Renderer {
     let (device, queues) = create_logical_device(&instance, &physical_device)
       .on_err(|_| unsafe { destroy!(&instance) })?;
 
-    let command_pools = CommandPools::new(&device, &physical_device)
+    let render_pass = create_render_pass(&device)
       .on_err(|_| unsafe { destroy!(&device, &instance) })?;
 
-    let gpu_data = GPUData::new(
+    log::info!("Creating pipeline cache");
+    let (pipeline_cache, created_from_file) =
+      pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
+        destroy!(&device => &render_pass, &device, &instance)
+      })?;
+    if created_from_file {
+      log::info!("Cache successfully created from an existing cache file");
+    } else {
+      log::info!("Cache initialized as empty");
+    }
+
+    log::debug!("Creating pipeline");
+    let pipeline =
+      GraphicsPipeline::create(&device, pipeline_cache, render_pass).on_err(|_| unsafe {
+        destroy!(&device => &pipeline_cache, &render_pass, &device, &instance)
+      })?;
+
+    // no more pipelines will be created, so might as well save and delete the cache
+    log::info!("Saving pipeline cache");
+    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
+    {
+      log::error!("Failed to save pipeline cache: {:?}", err);
+    }
+    unsafe {
+      pipeline_cache.destroy_self(&device);
+    }
+
+    let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+      destroy!(&device => &pipeline, &render_pass, &device, &instance)
+    })?;
+
+    let mut gpu_data = GPUData::new(
       &device,
       &physical_device,
-      image_width,
-      image_height,
+      render_pass,
+      vk::Extent2D {
+        width: image_width,
+        height: image_height,
+      },
       buffer_size,
     )
-    .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &instance) })?;
+    .on_err(|_| unsafe {
+      destroy!(&device => &command_pools, &pipeline, &render_pass, &device, &instance)
+    })?;
+
+    gpu_data.initialize_memory(
+      &device,
+      &physical_device,
+      &queues,
+      &mut command_pools.transfer_pool,
+    )?;
 
     Ok(Self {
       _entry: entry,
@@ -166,6 +209,8 @@ impl Renderer {
       queues,
       command_pools,
       gpu_data,
+      render_pass,
+      pipeline,
     })
   }
 
