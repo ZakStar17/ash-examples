@@ -6,6 +6,7 @@ mod renderer;
 mod shaders;
 mod sync_renderer;
 mod vertex;
+mod device_destroyable;
 
 use std::ffi::CStr;
 
