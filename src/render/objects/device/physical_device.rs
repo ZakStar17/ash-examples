@@ -2,57 +2,55 @@ use std::ops::{BitOr, Deref};
 
 use ash::vk;
 
-use crate::{render::objects::Surface, utility::c_char_array_to_string};
+use crate::{render::objects::Surface, utility};
 
-use super::{get_extended_properties, select_physical_device};
+use super::{select_physical_device, PhysicalDeviceProperties};
 
 use super::QueueFamilies;
 
 // Saves physical device additional information in order to not query it multiple times
 pub struct PhysicalDevice {
-  vk_device: vk::PhysicalDevice,
+  inner: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
-  properties: vk::PhysicalDeviceProperties,
+  pub properties: PhysicalDeviceProperties,
   mem_properties: vk::PhysicalDeviceMemoryProperties,
-  max_memory_allocation_size: vk::DeviceSize,
 }
 
 impl Deref for PhysicalDevice {
   type Target = vk::PhysicalDevice;
 
   fn deref(&self) -> &Self::Target {
-    &self.vk_device
+    &self.inner
   }
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select(instance: &ash::Instance, surface: &Surface) -> PhysicalDevice {
-    let (physical_device, queue_families) =
-      select_physical_device(instance, surface).expect("No supported physical device available");
+  pub unsafe fn select(
+    instance: &ash::Instance,
+    surface: &Surface,
+  ) -> Result<Option<PhysicalDevice>, vk::Result> {
+    match select_physical_device(instance, surface)? {
+      Some((physical_device, properties, _features, queue_families)) => {
+        let mem_properties = instance.get_physical_device_memory_properties(physical_device);
+        let queue_family_properties =
+          instance.get_physical_device_queue_family_properties(physical_device);
 
-    let (properties, properties11) = get_extended_properties(instance, physical_device);
-    let mem_properties = instance.get_physical_device_memory_properties(physical_device);
-    let queue_family_properties =
-      instance.get_physical_device_queue_family_properties(physical_device);
+        log::info!(
+          "Using physical device \"{}\"",
+          utility::c_char_array_to_string(&properties.p10.device_name)
+        );
+        print_queue_families_debug_info(&queue_family_properties);
+        print_device_memory_debug_info(&mem_properties);
 
-    log::info!(
-      "Using physical device \"{}\"",
-      c_char_array_to_string(&properties.device_name)
-    );
-    print_queue_families_debug_info(&queue_family_properties);
-    print_device_memory_debug_info(&mem_properties);
-
-    PhysicalDevice {
-      vk_device: physical_device,
-      properties,
-      mem_properties,
-      queue_families,
-      max_memory_allocation_size: properties11.max_memory_allocation_size,
+        Ok(Some(PhysicalDevice {
+          inner: physical_device,
+          queue_families,
+          properties,
+          mem_properties,
+        }))
+      }
+      None => Ok(None),
     }
-  }
-
-  pub fn get_properties(&self) -> &vk::PhysicalDeviceProperties {
-    &self.properties
   }
 
   pub fn find_memory_type(
@@ -96,7 +94,7 @@ impl PhysicalDevice {
   }
 
   pub fn get_max_memory_allocation_size(&self) -> vk::DeviceSize {
-    self.max_memory_allocation_size
+    self.properties.p11.max_memory_allocation_size
   }
 }
 

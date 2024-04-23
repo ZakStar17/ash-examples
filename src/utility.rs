@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, CStr, FromBytesUntilNulError};
 
 use ash::vk;
 
@@ -64,6 +64,10 @@ where
 
 pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
   std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
+}
+
+pub unsafe fn i8_array_as_cstr<'a>(arr: &'a [i8]) -> Result<&'a CStr, FromBytesUntilNulError> {
+  CStr::from_bytes_until_nul(std::mem::transmute(arr))
 }
 
 // bitor between flags to be used as constants

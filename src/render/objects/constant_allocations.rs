@@ -280,13 +280,36 @@ impl ConstantAllocatedObjects {
       transfer_command_pool.reset(device);
       graphics_command_pool.reset(device);
 
-      Self::record_buffer_copy(device, transfer_command_pool, vertex_src, vertex_dst, vertex_size, index_src, index_dst, index_size);
-      Self::record_texture_load_and_transfer(device, physical_device, transfer_command_pool, graphics_command_pool, texture_src, texture_dst, texture_width, texture_height);
+      Self::record_buffer_copy(
+        device,
+        transfer_command_pool,
+        vertex_src,
+        vertex_dst,
+        vertex_size,
+        index_src,
+        index_dst,
+        index_size,
+      );
+      Self::record_texture_load_and_transfer(
+        device,
+        physical_device,
+        transfer_command_pool,
+        graphics_command_pool,
+        texture_src,
+        texture_dst,
+        texture_width,
+        texture_height,
+      );
     }
 
     log::info!("Submitting operations to populate constant buffers and images");
     unsafe {
-      Self::submit_and_wait_copy_to_final_objects(device, queues, transfer_command_pool, graphics_command_pool);
+      Self::submit_and_wait_copy_to_final_objects(
+        device,
+        queues,
+        transfer_command_pool,
+        graphics_command_pool,
+      );
     }
 
     // free staging allocations

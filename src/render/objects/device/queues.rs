@@ -1,4 +1,4 @@
-use std::{cmp::min, ops::Deref, pin::Pin, ptr};
+use std::{cmp::min, ptr};
 
 use ash::vk;
 
@@ -21,7 +21,6 @@ pub struct QueueFamilies {
   pub presentation: QueueFamily,
   pub graphics: QueueFamily,
   pub transfer: Option<QueueFamily>,
-  pub unique_indices: Box<[u32]>,
 }
 
 impl QueueFamilies {
@@ -83,17 +82,10 @@ impl QueueFamilies {
       transfer = compute;
     }
 
-    // commonly used
-    let unique_indices = [graphics.as_ref(), transfer.as_ref()]
-      .into_iter()
-      .filter_map(|opt| opt.map(|f| f.index))
-      .collect();
-
     Ok(QueueFamilies {
       presentation: presentation.unwrap(),
       graphics: graphics.unwrap(),
       transfer,
-      unique_indices,
     })
   }
 
@@ -135,36 +127,26 @@ pub struct Queues {
   pub transfer: vk::Queue,
 }
 
-pub struct QueueCreateInfos {
-  // create infos contains a ptr to priorities, so it has to own it as well
-  _priorities: Pin<Box<[f32; QueueFamilies::FAMILY_COUNT]>>,
-  create_infos: Vec<vk::DeviceQueueCreateInfo>,
-}
-
-impl Deref for QueueCreateInfos {
-  type Target = Vec<vk::DeviceQueueCreateInfo>;
-
-  fn deref(&self) -> &Self::Target {
-    &self.create_infos
-  }
-}
-
 impl Queues {
-  pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> QueueCreateInfos {
-    // use mid priorities for all queues
-    let priorities = Box::pin([0.5_f32; QueueFamilies::FAMILY_COUNT]);
+  // mid priorities for all queues
+  const QUEUE_PRIORITIES: [f32; QueueFamilies::FAMILY_COUNT] = [0.5; QueueFamilies::FAMILY_COUNT];
 
+  pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> Vec<vk::DeviceQueueCreateInfo> {
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
 
-    if let Some(family) = queue_families.transfer {
-      create_infos.push(get_queue_create_info(family.index, 1, priorities.as_ptr()));
+    if let Some(family) = queue_families.transfer.as_ref() {
+      create_infos.push(get_queue_create_info(
+        family.index,
+        1,
+        Self::QUEUE_PRIORITIES.as_ptr(),
+      ));
     }
 
     if queue_families.presentation != queue_families.graphics {
       create_infos.push(get_queue_create_info(
         queue_families.get_presentation_index(),
         1,
-        priorities.as_ptr(),
+        Self::QUEUE_PRIORITIES.as_ptr(),
       ));
     }
 
@@ -179,18 +161,13 @@ impl Queues {
           0
         }),
       ),
-      priorities.as_ptr(),
+      Self::QUEUE_PRIORITIES.as_ptr(),
     ));
 
-    QueueCreateInfos {
-      _priorities: priorities,
-      create_infos,
-    }
+    create_infos
   }
 
   pub unsafe fn retrieve(device: &ash::Device, queue_families: &QueueFamilies) -> Queues {
-    //! Should match get_queue_create_infos
-
     let mut graphics_i = 0;
     let mut get_next_graphics_queue = || {
       let queue = device.get_device_queue(queue_families.graphics.index, graphics_i);
