@@ -52,7 +52,8 @@ fn main() {
     Err(err) => panic!("Failed to query physical devices: {:?}", err),
   };
 
-  let (logical_device, _queues) = create_logical_device(&instance, &physical_device).expect("Failed to create an logical device");
+  let (logical_device, _queues) =
+    create_logical_device(&instance, &physical_device).expect("Failed to create an logical device");
 
   println!("Successfully created the logical device!");
 
