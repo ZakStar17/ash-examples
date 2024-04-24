@@ -1,8 +1,8 @@
-use ash::vk::{self, DebugUtilsMessengerCreateInfoEXT};
+use ash::vk::{self};
 
 use std::{ffi::CStr, os::raw::c_void, ptr};
 
-use crate::{utility, VALIDATION_LAYERS};
+use crate::{errors::OutOfMemoryError, VALIDATION_LAYERS};
 
 // returns a list of supported and unsupported instance layers
 fn filter_supported(
@@ -11,7 +11,8 @@ fn filter_supported(
   VALIDATION_LAYERS.into_iter().partition(|&req| {
     available
       .iter()
-      .any(|av| unsafe { utility::i8_array_as_cstr(&av.layer_name) }.unwrap() == req)
+      .filter_map(|av| av.layer_name_as_c_str().ok())
+      .any(|av| av == req)
   })
 }
 
@@ -20,7 +21,8 @@ pub fn get_supported_validation_layers(
   entry: &ash::Entry,
 ) -> Result<Box<[&'static CStr]>, vk::Result> {
   log::info!("Querying Vulkan instance layers");
-  let (available, unavailable) = filter_supported(entry.enumerate_instance_layer_properties()?);
+  let (available, unavailable) =
+    filter_supported(unsafe { entry.enumerate_instance_layer_properties() }?);
 
   if !unavailable.is_empty() {
     log::error!(
@@ -59,7 +61,7 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
 }
 
 pub struct DebugUtils {
-  loader: ash::extensions::ext::DebugUtils,
+  loader: ash::ext::debug_utils::Instance,
   messenger: vk::DebugUtilsMessengerEXT,
 }
 
@@ -67,19 +69,17 @@ impl DebugUtils {
   pub fn create(
     entry: &ash::Entry,
     instance: &ash::Instance,
-    create_info: DebugUtilsMessengerCreateInfoEXT,
-  ) -> Result<Self, vk::Result> {
-    let loader = ash::extensions::ext::DebugUtils::new(entry, instance);
+    create_info: vk::DebugUtilsMessengerCreateInfoEXT,
+  ) -> Result<Self, OutOfMemoryError> {
+    let loader = ash::ext::debug_utils::Instance::new(entry, instance);
 
     let messenger = unsafe { loader.create_debug_utils_messenger(&create_info, None)? };
 
     Ok(Self { loader, messenger })
   }
 
-  pub fn get_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
+  pub fn get_debug_messenger_create_info<'a>() -> vk::DebugUtilsMessengerCreateInfoEXT<'a> {
     vk::DebugUtilsMessengerCreateInfoEXT {
-      s_type: vk::StructureType::DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-      p_next: ptr::null(),
       flags: vk::DebugUtilsMessengerCreateFlagsEXT::empty(),
       message_severity: vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
         | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
@@ -90,6 +90,7 @@ impl DebugUtils {
         | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
       pfn_user_callback: Some(vulkan_debug_utils_callback),
       p_user_data: ptr::null_mut(),
+      ..Default::default()
     }
   }
 

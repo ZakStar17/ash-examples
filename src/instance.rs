@@ -1,13 +1,34 @@
 use ash::vk;
 use std::{
-  ffi::CStr,
-  ptr::{self},
+  ffi::{c_char, c_void, CStr},
+  marker::PhantomData,
+  ptr,
 };
 
-use crate::{utility, APPLICATION_NAME, APPLICATION_VERSION, TARGET_API_VERSION};
+use crate::{
+  errors::OutOfMemoryError, utility, APPLICATION_NAME, APPLICATION_VERSION, TARGET_API_VERSION,
+};
 
-fn check_target_api_version(entry: &ash::Entry) {
-  let max_supported_version = match entry.try_enumerate_instance_version() {
+#[derive(thiserror::Error, Debug)]
+pub enum InstanceCreationError {
+  #[error("Vulkan implementation API maximum supported version ({0}) is less than the one targeted by the application ({1})")]
+  UnsupportedApiVersion(String, String),
+
+  #[error("Missing instance extension \"{0}\"")]
+  MissingExtension(String),
+  // validation layers will be skipped if not available
+  #[error("Missing instance layer \"{0}\"")]
+  MissingLayer(String),
+
+  #[error("")]
+  OutOfMemory(#[from] OutOfMemoryError),
+
+  #[error("Failed to create an instance because of an unknown reason")]
+  Failed,
+}
+
+fn check_api_version(entry: &ash::Entry) -> Result<(), InstanceCreationError> {
+  let max_supported_version = match unsafe { entry.try_enumerate_instance_version() } {
     // Vulkan 1.1+
     Ok(opt) => match opt {
       Some(version) => version,
@@ -23,26 +44,16 @@ fn check_target_api_version(entry: &ash::Entry) {
   );
 
   if max_supported_version < TARGET_API_VERSION {
-    panic!("Vulkan implementation API maximum supported version is less than the one targeted by the application.");
+    return Err(InstanceCreationError::UnsupportedApiVersion(
+      utility::parse_vulkan_api_version(max_supported_version),
+      utility::parse_vulkan_api_version(TARGET_API_VERSION),
+    ));
   }
+
+  Ok(())
 }
 
-// Returns a subset of unavailable extensions
-fn filter_unavailable_extensions<'a>(
-  available: Vec<vk::ExtensionProperties>,
-  required: &'a [&'a CStr],
-) -> Box<[&'a &'a CStr]> {
-  required
-    .iter()
-    .filter(|&req| {
-      !available
-        .iter()
-        .any(|av| unsafe { utility::i8_array_as_cstr(&av.extension_name) }.unwrap() == *req)
-    })
-    .collect()
-}
-
-fn get_app_info() -> vk::ApplicationInfo {
+fn get_app_info<'a>() -> vk::ApplicationInfo<'a> {
   vk::ApplicationInfo {
     s_type: vk::StructureType::APPLICATION_INFO,
     api_version: TARGET_API_VERSION,
@@ -51,44 +62,28 @@ fn get_app_info() -> vk::ApplicationInfo {
     p_engine_name: ptr::null(),
     engine_version: vk::make_api_version(0, 1, 0, 0),
     p_next: ptr::null(),
+    _marker: PhantomData,
   }
 }
 
 #[cfg(feature = "vl")]
 pub fn create_instance(
   entry: &ash::Entry,
-) -> Result<(ash::Instance, crate::validation_layers::DebugUtils), vk::Result> {
-  use std::{ffi::c_void, ptr::addr_of};
+) -> Result<(ash::Instance, crate::validation_layers::DebugUtils), InstanceCreationError> {
+  use std::ptr::addr_of;
 
   use crate::{
     validation_layers::{self, DebugUtils},
     ADDITIONAL_VALIDATION_FEATURES,
   };
 
-  check_target_api_version(entry);
-
-  let required_extensions = vec![ash::extensions::ext::DebugUtils::name()];
-  let unavailable_extensions = filter_unavailable_extensions(
-    entry.enumerate_instance_extension_properties(None)?,
-    required_extensions.as_slice(),
-  );
-  if !unavailable_extensions.is_empty() {
-    panic!(
-      "Some instance extensions are not available: {:?}",
-      unavailable_extensions
-    )
-  };
-  let required_extensions_ptrs: Vec<*const i8> = required_extensions
-    .iter()
-    .map(|v| v.as_ptr() as *const i8)
-    .collect();
-
   let app_info = get_app_info();
 
-  // valid until the end of scope
-  let validation_layers = validation_layers::get_supported_validation_layers(&entry)?;
-  let vl_pointers: Vec<*const std::ffi::c_char> =
-    validation_layers.iter().map(|name| name.as_ptr()).collect();
+  let extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
+
+  let layers_str = validation_layers::get_supported_validation_layers(&entry)
+    .map_err(|err| InstanceCreationError::OutOfMemory(err.into()))?;
+  let layers: Vec<*const c_char> = layers_str.iter().map(|name| name.as_ptr()).collect();
 
   let debug_create_info = DebugUtils::get_debug_messenger_create_info();
 
@@ -100,21 +95,16 @@ pub fn create_instance(
     p_enabled_validation_features: ADDITIONAL_VALIDATION_FEATURES.as_ptr(),
     disabled_validation_feature_count: 0,
     p_disabled_validation_features: ptr::null(),
+    _marker: PhantomData,
   };
 
-  let create_info = vk::InstanceCreateInfo {
-    s_type: vk::StructureType::INSTANCE_CREATE_INFO,
-    p_next: addr_of!(additional_features) as *const c_void,
-    p_application_info: &app_info,
-    pp_enabled_layer_names: vl_pointers.as_ptr(),
-    enabled_layer_count: vl_pointers.len() as u32,
-    pp_enabled_extension_names: required_extensions_ptrs.as_ptr(),
-    enabled_extension_count: required_extensions_ptrs.len() as u32,
-    flags: vk::InstanceCreateFlags::empty(),
-  };
-
-  log::debug!("Creating Instance");
-  let instance: ash::Instance = unsafe { entry.create_instance(&create_info, None)? };
+  let instance = create_instance_checked(
+    entry,
+    app_info,
+    &extensions,
+    &layers,
+    addr_of!(additional_features) as *const c_void,
+  )?;
 
   log::debug!("Creating Debug Utils");
   let debug_utils = DebugUtils::create(&entry, &instance, debug_create_info)?;
@@ -123,38 +113,80 @@ pub fn create_instance(
 }
 
 #[cfg(not(feature = "vl"))]
-pub fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, vk::Result> {
-  check_target_api_version(entry);
-
-  let required_extensions = vec![ash::extensions::ext::DebugUtils::name()];
-  let unavailable_extensions = filter_unavailable_extensions(
-    entry.enumerate_instance_extension_properties(None)?,
-    required_extensions.as_slice(),
-  );
-  if !unavailable_extensions.is_empty() {
-    panic!(
-      "Some instance extensions are not available: {:?}",
-      unavailable_extensions
-    )
-  };
-  let required_extensions_ptr: Vec<*const i8> = required_extensions
-    .iter()
-    .map(|v| v.as_ptr() as *const i8)
-    .collect();
+pub fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, InstanceCreationError> {
+  check_api_version(entry)?;
 
   let app_info = get_app_info();
+  let extensions = [];
+  let layers = [];
+  create_instance_checked(entry, app_info, &extensions, &layers, ptr::null())
+}
 
-  let create_info = vk::InstanceCreateInfo {
-    s_type: vk::StructureType::INSTANCE_CREATE_INFO,
-    p_next: ptr::null(),
-    p_application_info: &app_info,
-    pp_enabled_layer_names: ptr::null(),
-    enabled_layer_count: 0,
-    pp_enabled_extension_names: required_extensions_ptr.as_ptr(),
-    enabled_extension_count: required_extensions_ptr.len() as u32,
-    flags: vk::InstanceCreateFlags::empty(),
+// check if extensions are layers are present and then create a vk instance
+fn create_instance_checked(
+  entry: &ash::Entry,
+  app_info: vk::ApplicationInfo,
+  extensions: &[*const c_char],
+  layers: &[*const c_char],
+  p_next: *const c_void,
+) -> Result<ash::Instance, InstanceCreationError> {
+  check_api_version(entry)?;
+
+  // check that all extensions are available
+  {
+    let available = unsafe { entry.enumerate_instance_extension_properties(None) }
+      .map_err(|err| InstanceCreationError::OutOfMemory(err.into()))?;
+    for &ptr in extensions {
+      let extension = unsafe { CStr::from_ptr(ptr) };
+      if !available
+        .iter()
+        .filter_map(|av| av.extension_name_as_c_str().ok())
+        .any(|av| av == extension)
+      {
+        return Err(InstanceCreationError::MissingExtension(String::from(
+          extension.to_str().unwrap(),
+        )));
+      }
+    }
   };
 
+  // check that all layers are available
+  {
+    let available = unsafe { entry.enumerate_instance_layer_properties() }
+      .map_err(|err| InstanceCreationError::OutOfMemory(err.into()))?;
+    for &ptr in layers {
+      let layer = unsafe { CStr::from_ptr(ptr) };
+      if !available
+        .iter()
+        .filter_map(|av| av.layer_name_as_c_str().ok())
+        .any(|av| av == layer)
+      {
+        return Err(InstanceCreationError::MissingLayer(String::from(
+          layer.to_str().unwrap(),
+        )));
+      }
+    }
+  };
+
+  let mut create_info = vk::InstanceCreateInfo::default()
+    .application_info(&app_info)
+    .enabled_extension_names(extensions)
+    .enabled_layer_names(layers);
+  create_info.p_next = p_next;
+
   log::debug!("Creating Instance");
-  unsafe { entry.create_instance(&create_info, None) }
+  let instance: ash::Instance =
+    unsafe { entry.create_instance(&create_info, None) }.map_err(|err| match err {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
+        InstanceCreationError::OutOfMemory(OutOfMemoryError::from(err))
+      }
+      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        InstanceCreationError::OutOfMemory(OutOfMemoryError::from(err))
+      }
+      vk::Result::ERROR_INITIALIZATION_FAILED => InstanceCreationError::Failed,
+      // other results have been checked
+      _ => panic!(),
+    })?;
+
+  Ok(instance)
 }
