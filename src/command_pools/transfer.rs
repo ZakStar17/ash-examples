@@ -21,7 +21,10 @@ impl TransferCommandBufferPool {
 
     let copy_image_to_buffer = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
-    Ok(Self { pool, copy_image_to_buffer })
+    Ok(Self {
+      pool,
+      copy_image_to_buffer,
+    })
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
