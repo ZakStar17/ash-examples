@@ -1,4 +1,4 @@
-use std::{cmp::min, ptr};
+use std::{cmp::min, marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -67,11 +67,11 @@ impl QueueFamilies {
   }
 }
 
-fn queue_create_info(
+fn queue_create_info<'a>(
   index: u32,
   count: u32,
   priorities_ptr: *const f32,
-) -> vk::DeviceQueueCreateInfo {
+) -> vk::DeviceQueueCreateInfo<'a> {
   vk::DeviceQueueCreateInfo {
     s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
     queue_family_index: index,
@@ -79,6 +79,7 @@ fn queue_create_info(
     p_queue_priorities: priorities_ptr,
     p_next: ptr::null(),
     flags: vk::DeviceQueueCreateFlags::empty(),
+    _marker: PhantomData,
   }
 }
 
