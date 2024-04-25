@@ -1,18 +1,15 @@
 use ash::vk;
 
-use crate::{pipeline_cache::PipelineCacheError, utility::error_chain_fmt};
+use crate::{
+  instance::InstanceCreationError, pipeline_cache::PipelineCacheError, utility::error_chain_fmt,
+};
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
   #[error("Out of Device Memory")]
   OutOfDeviceMemory,
   #[error("Out of host memory")]
   OutOfHostMemory,
-}
-impl std::fmt::Debug for OutOfMemoryError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 
 impl From<vk::Result> for OutOfMemoryError {
@@ -36,8 +33,11 @@ impl From<OutOfMemoryError> for vk::Result {
   }
 }
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
+  #[error("Instance creation failed")]
+  InstanceCreationFailed(#[source] InstanceCreationError),
+
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
 
@@ -53,9 +53,10 @@ pub enum InitializationError {
   #[error("Unknown")]
   Unknown,
 }
-impl std::fmt::Debug for InitializationError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
+
+impl From<InstanceCreationError> for InitializationError {
+  fn from(value: InstanceCreationError) -> Self {
+    InitializationError::InstanceCreationFailed(value)
   }
 }
 
@@ -107,7 +108,7 @@ impl From<PipelineCacheError> for InitializationError {
   }
 }
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum AllocationError {
   #[error("No memory type supports all buffers and images")]
   NoMemoryTypeSupportsAll,
@@ -118,11 +119,6 @@ pub enum AllocationError {
   TooBigForAllSupportedHeaps(u64),
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] OutOfMemoryError),
-}
-impl std::fmt::Debug for AllocationError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 
 impl From<vk::Result> for AllocationError {

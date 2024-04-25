@@ -32,13 +32,13 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
   vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
 ];
 
-pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
+const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
-pub const APPLICATION_NAME: &'static CStr = cstr!("Mandelbrot");
-pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
+const APPLICATION_NAME: &'static CStr = cstr!("Mandelbrot");
+const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
+const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
 
 const IMAGE_WIDTH: u32 = 4000;
 const IMAGE_HEIGHT: u32 = 4000;

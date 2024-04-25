@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -38,12 +38,8 @@ impl ComputeCommandBufferPool {
     image: vk::Image,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.mandelbrot;
-    let begin_info = vk::CommandBufferBeginInfo {
-      s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-      p_next: ptr::null(),
-      flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-      p_inheritance_info: ptr::null(),
-    };
+    let begin_info =
+      vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
     // image has 1 mip_level / 1 array layer
@@ -68,6 +64,7 @@ impl ComputeCommandBufferPool {
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       image,
       subresource_range,
+      _marker: PhantomData,
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[prepare_image]));
 
@@ -93,15 +90,16 @@ impl ComputeCommandBufferPool {
         s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
         p_next: ptr::null(),
         src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,  // semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER, // semaphore
         src_access_mask: vk::AccessFlags2::SHADER_WRITE,
-        dst_access_mask: vk::AccessFlags2::NONE,        // NONE for ownership release
+        dst_access_mask: vk::AccessFlags2::NONE, // NONE for ownership release
         old_layout: vk::ImageLayout::GENERAL,
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         src_queue_family_index: queue_families.get_compute_index(),
         dst_queue_family_index: queue_families.get_transfer_index(),
         image,
         subresource_range,
+        _marker: PhantomData,
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
     } else {
@@ -119,6 +117,7 @@ impl ComputeCommandBufferPool {
         dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         image,
         subresource_range,
+        _marker: PhantomData,
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[change_layout]));
     }

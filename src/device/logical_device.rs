@@ -1,5 +1,6 @@
 use ash::vk::{self};
 use std::{
+  marker::PhantomData,
   os::raw::{c_char, c_void},
   ptr::{self, addr_of},
 };
@@ -42,6 +43,7 @@ pub fn create_logical_device(
     pp_enabled_extension_names: device_extensions_pointers.as_ptr(),
     enabled_extension_count: device_extensions_pointers.len() as u32,
     flags: vk::DeviceCreateFlags::empty(),
+    _marker: PhantomData,
   };
   log::debug!("Creating logical device");
   let device: ash::Device =

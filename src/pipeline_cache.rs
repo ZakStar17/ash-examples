@@ -10,7 +10,7 @@ use std::{
 
 use ash::vk;
 
-use crate::{device::PhysicalDevice, errors::OutOfMemoryError, utility::error_chain_fmt};
+use crate::{device::PhysicalDevice, errors::OutOfMemoryError};
 
 // random number used to identify that the file type is correct
 // this is not that reliable but its better than not having it
@@ -40,17 +40,12 @@ struct PipelineCacheHeader {
   cache_uuid: [u8; vk::UUID_SIZE],
 }
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum PipelineCacheError {
   #[error("")]
   IOError(#[source] io::Error),
   #[error("")]
   OutOfMemoryError(#[source] OutOfMemoryError),
-}
-impl std::fmt::Debug for PipelineCacheError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 impl From<OutOfMemoryError> for PipelineCacheError {
   fn from(value: OutOfMemoryError) -> Self {
