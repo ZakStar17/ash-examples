@@ -29,7 +29,7 @@ impl From<OutOfMemoryError> for vk::Result {
   }
 }
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
@@ -42,11 +42,6 @@ pub enum InitializationError {
   DeviceLost,
   #[error("Unknown")]
   Unknown,
-}
-impl std::fmt::Debug for InitializationError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 
 impl From<vk::Result> for InitializationError {
@@ -82,7 +77,7 @@ impl From<AllocationError> for InitializationError {
   }
 }
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum AllocationError {
   #[error("No memory type supports all buffers and images")]
   NoMemoryTypeSupportsAll,
@@ -93,11 +88,6 @@ pub enum AllocationError {
   TooBigForAllSupportedHeaps(u64),
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] OutOfMemoryError),
-}
-impl std::fmt::Debug for AllocationError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 
 impl From<vk::Result> for AllocationError {

@@ -25,19 +25,6 @@ pub unsafe fn i8_array_as_cstr<'a>(arr: &'a [i8]) -> Result<&'a CStr, FromBytesU
   CStr::from_bytes_until_nul(std::mem::transmute(arr))
 }
 
-pub fn error_chain_fmt(
-  e: &impl std::error::Error,
-  f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
-  writeln!(f, "{}\n", e)?;
-  let mut current = e.source();
-  while let Some(cause) = current {
-    writeln!(f, "Caused by:\n\t{}", cause)?;
-    current = cause.source();
-  }
-  Ok(())
-}
-
 pub trait OnErr<T, E> {
   fn on_err<O: FnOnce(&E)>(self: Self, op: O) -> Result<T, E>
   where

@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -39,12 +39,7 @@ impl TransferCommandBufferPool {
     dst_buffer: vk::Buffer,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.copy_image_to_buffer;
-    let begin_info = vk::CommandBufferBeginInfo {
-      s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-      p_next: ptr::null(),
-      flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-      p_inheritance_info: ptr::null(),
-    };
+    let begin_info = vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
     let subresource_range = vk::ImageSubresourceRange {
@@ -70,6 +65,7 @@ impl TransferCommandBufferPool {
         dst_queue_family_index: queue_families.get_transfer_index(),
         image: src_image,
         subresource_range,
+        _marker: PhantomData
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[src_acquire]));
     }
@@ -115,6 +111,7 @@ impl TransferCommandBufferPool {
       buffer: dst_buffer,
       offset: 0,
       size: vk::WHOLE_SIZE,
+      _marker: PhantomData
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[flush_host], &[]));
 

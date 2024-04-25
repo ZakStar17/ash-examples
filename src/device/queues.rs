@@ -96,7 +96,7 @@ impl Queues {
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
 
     if let Some(family) = queue_families.transfer.as_ref() {
-      create_infos.push(get_queue_create_info(
+      create_infos.push(queue_create_info(
         family.index,
         1,
         Self::QUEUE_PRIORITIES.as_ptr(),
@@ -104,7 +104,7 @@ impl Queues {
     }
 
     // add graphics queues, these substitute for missing families
-    create_infos.push(get_queue_create_info(
+    create_infos.push(queue_create_info(
       queue_families.get_compute_index(),
       min(
         queue_families.compute.queue_count,

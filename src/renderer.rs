@@ -1,7 +1,6 @@
 use ash::vk;
 use std::{
-  ops::BitOr,
-  ptr::{self, addr_of},
+  marker::PhantomData, ops::BitOr, ptr::{self, addr_of}
 };
 
 use crate::{
@@ -45,7 +44,7 @@ impl Renderer {
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
-    let (instance, debug_utils) = create_instance(&entry)?;
+    let (instance, debug_utils) = create_instance(&entry).unwrap();
 
     let physical_device = match unsafe { PhysicalDevice::select(&instance) }
       .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?
@@ -91,7 +90,7 @@ impl Renderer {
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
-    let instance = create_instance(&entry)?;
+    let instance = create_instance(&entry).unwrap();
 
     let physical_device = match unsafe { PhysicalDevice::select(&instance) }
       .on_err(|_| unsafe { destroy!(&instance) })?
@@ -164,6 +163,7 @@ impl Renderer {
       p_command_buffers: addr_of!(self.command_pools.compute_pool.clear_img),
       signal_semaphore_count: 1,
       p_signal_semaphores: addr_of!(image_clear_finished),
+      _marker: PhantomData
     };
     let wait_for = vk::PipelineStageFlags::TRANSFER;
     let transfer_image_submit = vk::SubmitInfo {
@@ -176,6 +176,7 @@ impl Renderer {
       p_command_buffers: addr_of!(self.command_pools.transfer_pool.copy_image_to_buffer),
       signal_semaphore_count: 0,
       p_signal_semaphores: ptr::null(),
+      _marker: PhantomData
     };
 
     let destroy_objs = || unsafe { destroy!(&self.device => &image_clear_finished, &all_done) };

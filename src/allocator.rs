@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -64,7 +64,7 @@ pub fn allocate_and_bind_memory(
     buffers_len: buffers.len(),
   };
 
-  if total_size >= physical_device.properties.p11.max_memory_allocation_size {
+  if total_size >= physical_device.max_memory_allocation_size {
     return Err(AllocationError::TotalSizeExceedsAllowed(total_size));
   }
 
@@ -85,6 +85,7 @@ pub fn allocate_and_bind_memory(
       p_next: ptr::null(),
       allocation_size: total_size,
       memory_type_index: mem_type_i as u32,
+      _marker: PhantomData
     };
     match unsafe { device.allocate_memory(&allocate_info, None) } {
       Ok(memory) => {
