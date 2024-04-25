@@ -1,6 +1,8 @@
 use ash::vk;
 use std::{
-  marker::PhantomData, ops::BitOr, ptr::{self, addr_of}
+  marker::PhantomData,
+  ops::BitOr,
+  ptr::{self, addr_of},
 };
 
 use crate::{
@@ -37,30 +39,40 @@ struct GPUData {
 }
 
 impl Renderer {
-  #[cfg(feature = "vl")]
   pub fn initialize(
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
-    let (instance, debug_utils) = create_instance(&entry).unwrap();
 
-    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
-      .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?
-    {
-      Some(device) => device,
-      None => {
-        unsafe { destroy!(&debug_utils, &instance) };
-        return Err(InitializationError::NoCompatibleDevices);
-      }
+    #[cfg(feature = "vl")]
+    let (instance, debug_utils) = create_instance(&entry)?;
+    #[cfg(not(feature = "vl"))]
+    let instance = create_instance(&entry)?;
+
+    let destroy_instance = || unsafe {
+      #[cfg(feature = "vl")]
+      destroy!(&debug_utils);
+      destroy!(&instance);
     };
 
-    let (device, queues) = create_logical_device(&instance, &physical_device)
-      .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?;
+    let physical_device =
+      match unsafe { PhysicalDevice::select(&instance) }.on_err(|_| destroy_instance())? {
+        Some(device) => device,
+        None => {
+          destroy_instance();
+          return Err(InitializationError::NoCompatibleDevices);
+        }
+      };
 
-    let command_pools = CommandPools::new(&device, &physical_device)
-      .on_err(|_| unsafe { destroy!(&device, &debug_utils, &instance) })?;
+    let (device, queues) =
+      create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
+
+    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+      destroy!(&device);
+      destroy_instance();
+    })?;
 
     let gpu_data = GPUData::new(
       &device,
@@ -69,57 +81,16 @@ impl Renderer {
       image_height,
       buffer_size,
     )
-    .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &debug_utils, &instance) })?;
+    .on_err(|_| unsafe {
+      destroy!(&device => &command_pools, &device);
+      destroy_instance();
+    })?;
 
     Ok(Self {
       _entry: entry,
       instance,
+      #[cfg(feature = "vl")]
       debug_utils,
-      physical_device,
-      device,
-      queues,
-      command_pools,
-      gpu_data,
-    })
-  }
-
-  #[cfg(not(feature = "vl"))]
-  pub fn initialize(
-    image_width: u32,
-    image_height: u32,
-    buffer_size: u64,
-  ) -> Result<Self, InitializationError> {
-    let entry: ash::Entry = unsafe { entry::get_entry() };
-    let instance = create_instance(&entry).unwrap();
-
-    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
-      .on_err(|_| unsafe { destroy!(&instance) })?
-    {
-      Some(device) => device,
-      None => {
-        unsafe { destroy!(&instance) };
-        return Err(InitializationError::NoCompatibleDevices);
-      }
-    };
-
-    let (device, queues) = create_logical_device(&instance, &physical_device)
-      .on_err(|_| unsafe { destroy!(&instance) })?;
-
-    let command_pools = CommandPools::new(&device, &physical_device)
-      .on_err(|_| unsafe { destroy!(&device, &instance) })?;
-
-    let gpu_data = GPUData::new(
-      &device,
-      &physical_device,
-      image_width,
-      image_height,
-      buffer_size,
-    )
-    .on_err(|_| unsafe { destroy!(&device => &command_pools, &device, &instance) })?;
-
-    Ok(Self {
-      _entry: entry,
-      instance,
       physical_device,
       device,
       queues,
@@ -163,7 +134,7 @@ impl Renderer {
       p_command_buffers: addr_of!(self.command_pools.compute_pool.clear_img),
       signal_semaphore_count: 1,
       p_signal_semaphores: addr_of!(image_clear_finished),
-      _marker: PhantomData
+      _marker: PhantomData,
     };
     let wait_for = vk::PipelineStageFlags::TRANSFER;
     let transfer_image_submit = vk::SubmitInfo {
@@ -176,7 +147,7 @@ impl Renderer {
       p_command_buffers: addr_of!(self.command_pools.transfer_pool.copy_image_to_buffer),
       signal_semaphore_count: 0,
       p_signal_semaphores: ptr::null(),
-      _marker: PhantomData
+      _marker: PhantomData,
     };
 
     let destroy_objs = || unsafe { destroy!(&self.device => &image_clear_finished, &all_done) };

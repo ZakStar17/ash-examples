@@ -13,7 +13,7 @@ pub struct PhysicalDevice {
   inner: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
   pub mem_properties: vk::PhysicalDeviceMemoryProperties,
-  pub max_memory_allocation_size: u64
+  pub max_memory_allocation_size: u64,
 }
 
 impl Deref for PhysicalDevice {
@@ -25,7 +25,9 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select<'b>(instance: &'b ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
+  pub unsafe fn select<'b>(
+    instance: &'b ash::Instance,
+  ) -> Result<Option<PhysicalDevice>, vk::Result> {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);
@@ -50,7 +52,7 @@ impl PhysicalDevice {
           inner: physical_device,
           queue_families,
           mem_properties,
-          max_memory_allocation_size: properties.p11.max_memory_allocation_size
+          max_memory_allocation_size: properties.p11.max_memory_allocation_size,
         }))
       }
       None => Ok(None),

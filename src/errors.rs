@@ -1,5 +1,7 @@
 use ash::vk;
 
+use crate::instance::InstanceCreationError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
   #[error("Out of Device Memory")]
@@ -31,6 +33,9 @@ impl From<OutOfMemoryError> for vk::Result {
 
 #[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
+  #[error("Instance creation failed")]
+  InstanceCreationFailed(#[source] InstanceCreationError),
+
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
 
@@ -42,6 +47,12 @@ pub enum InitializationError {
   DeviceLost,
   #[error("Unknown")]
   Unknown,
+}
+
+impl From<InstanceCreationError> for InitializationError {
+  fn from(value: InstanceCreationError) -> Self {
+    InitializationError::InstanceCreationFailed(value)
+  }
 }
 
 impl From<vk::Result> for InitializationError {

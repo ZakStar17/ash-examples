@@ -28,7 +28,7 @@ pub fn create_buffer(
     sharing_mode: vk::SharingMode::EXCLUSIVE,
     queue_family_index_count: 0,
     p_queue_family_indices: ptr::null(),
-    _marker: PhantomData
+    _marker: PhantomData,
   };
   unsafe { device.create_buffer(&create_info, None) }.map_err(|err| err.into())
 }
@@ -60,7 +60,7 @@ pub fn create_image(
     queue_family_index_count: 0,
     p_queue_family_indices: ptr::null(), // ignored if sharing mode is exclusive
     initial_layout: vk::ImageLayout::UNDEFINED,
-    _marker: PhantomData
+    _marker: PhantomData,
   };
 
   unsafe { device.create_image(&create_info, None) }.map_err(|err| err.into())

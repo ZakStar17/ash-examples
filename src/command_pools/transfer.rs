@@ -39,7 +39,8 @@ impl TransferCommandBufferPool {
     dst_buffer: vk::Buffer,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.copy_image_to_buffer;
-    let begin_info = vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let begin_info =
+      vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
     let subresource_range = vk::ImageSubresourceRange {
@@ -65,7 +66,7 @@ impl TransferCommandBufferPool {
         dst_queue_family_index: queue_families.get_transfer_index(),
         image: src_image,
         subresource_range,
-        _marker: PhantomData
+        _marker: PhantomData,
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[src_acquire]));
     }
@@ -111,7 +112,7 @@ impl TransferCommandBufferPool {
       buffer: dst_buffer,
       offset: 0,
       size: vk::WHOLE_SIZE,
-      _marker: PhantomData
+      _marker: PhantomData,
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[flush_host], &[]));
 

@@ -85,7 +85,7 @@ pub fn allocate_and_bind_memory(
       p_next: ptr::null(),
       allocation_size: total_size,
       memory_type_index: mem_type_i as u32,
-      _marker: PhantomData
+      _marker: PhantomData,
     };
     match unsafe { device.allocate_memory(&allocate_info, None) } {
       Ok(memory) => {

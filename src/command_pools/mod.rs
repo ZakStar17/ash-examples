@@ -20,7 +20,7 @@ pub fn create_command_pool(
     p_next: ptr::null(),
     flags,
     queue_family_index,
-    _marker: PhantomData
+    _marker: PhantomData,
   };
   log::debug!("Creating command pool");
   unsafe { device.create_command_pool(&command_pool_create_info, None) }
@@ -37,7 +37,7 @@ fn allocate_primary_command_buffers(
     command_buffer_count,
     command_pool,
     level: vk::CommandBufferLevel::PRIMARY,
-    _marker: PhantomData
+    _marker: PhantomData,
   };
 
   log::debug!("Allocating command buffers");
@@ -59,7 +59,7 @@ fn dependency_info<'a>(
     p_buffer_memory_barriers: buffer.as_ptr(),
     image_memory_barrier_count: image.len() as u32,
     p_image_memory_barriers: image.as_ptr(),
-    _marker: PhantomData
+    _marker: PhantomData,
   }
 }
 

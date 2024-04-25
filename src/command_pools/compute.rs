@@ -35,7 +35,8 @@ impl ComputeCommandBufferPool {
     image: vk::Image,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.clear_img;
-    let begin_info =  vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let begin_info =
+      vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
     // image has 1 mip_level / 1 array layer
@@ -60,7 +61,7 @@ impl ComputeCommandBufferPool {
       dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
       image,
       subresource_range,
-      _marker: PhantomData
+      _marker: PhantomData,
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[prepare_image]));
 
@@ -90,7 +91,7 @@ impl ComputeCommandBufferPool {
         dst_queue_family_index: queue_families.get_transfer_index(),
         image,
         subresource_range,
-        _marker: PhantomData
+        _marker: PhantomData,
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
     } else {
@@ -108,7 +109,7 @@ impl ComputeCommandBufferPool {
         dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         image,
         subresource_range,
-        _marker: PhantomData
+        _marker: PhantomData,
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[change_layout]));
     }
