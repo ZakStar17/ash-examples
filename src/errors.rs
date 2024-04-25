@@ -1,18 +1,11 @@
 use ash::vk;
 
-use crate::utility::error_chain_fmt;
-
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
   #[error("Out of Device Memory")]
   OutOfDeviceMemory,
   #[error("Out of host memory")]
   OutOfHostMemory,
-}
-impl std::fmt::Debug for OutOfMemoryError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 
 impl From<vk::Result> for OutOfMemoryError {
