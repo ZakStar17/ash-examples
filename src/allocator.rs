@@ -3,8 +3,8 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 use crate::{
-  device::PhysicalDevice,
   errors::{AllocationError, OutOfMemoryError},
+  initialization::device::PhysicalDevice,
 };
 
 pub struct PackedAllocation {

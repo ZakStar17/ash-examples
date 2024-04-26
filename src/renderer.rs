@@ -11,13 +11,14 @@ use crate::{
   create_objs::{create_buffer, create_fence, create_image, create_image_view, create_semaphore},
   descriptor_sets::DescriptorSets,
   destroy,
-  device::{create_logical_device, PhysicalDevice, Queues},
   device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
-  entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
-  instance::create_instance,
-  pipeline::ComputePipeline,
-  pipeline_cache,
+  initialization::{
+    create_instance,
+    device::{create_logical_device, PhysicalDevice, Queues},
+    get_entry,
+  },
+  pipelines::{self, ComputePipeline},
   utility::OnErr,
 };
 
@@ -25,7 +26,7 @@ pub struct Renderer {
   _entry: ash::Entry,
   instance: ash::Instance,
   #[cfg(feature = "vl")]
-  debug_utils: crate::validation_layers::DebugUtils,
+  debug_utils: crate::initialization::DebugUtils,
   physical_device: PhysicalDevice,
   device: ash::Device,
   queues: Queues,
@@ -51,7 +52,7 @@ impl Renderer {
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
-    let entry: ash::Entry = unsafe { entry::get_entry() };
+    let entry: ash::Entry = unsafe { get_entry() };
 
     #[cfg(feature = "vl")]
     let (instance, debug_utils) = create_instance(&entry)?;
@@ -83,7 +84,7 @@ impl Renderer {
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
-      pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
+      pipelines::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
         destroy!(&device => &descriptor_sets, &device);
         destroy_instance();
       })?;
@@ -102,8 +103,7 @@ impl Renderer {
 
     // no more pipelines will be created, so might as well save and delete the cache
     log::info!("Saving pipeline cache");
-    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
-    {
+    if let Err(err) = pipelines::save_pipeline_cache(&device, &physical_device, pipeline_cache) {
       log::error!("Failed to save pipeline cache: {:?}", err);
     }
     unsafe {

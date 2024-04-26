@@ -4,20 +4,13 @@ mod allocator;
 mod command_pools;
 mod create_objs;
 mod descriptor_sets;
-mod device;
 mod device_destroyable;
-mod entry;
 mod errors;
-mod instance;
-mod pipeline;
-mod pipeline_cache;
+mod initialization;
+mod pipelines;
 mod renderer;
 mod shaders;
 mod utility;
-
-// validation layers module will only exist if validation layers are enabled
-#[cfg(feature = "vl")]
-mod validation_layers;
 
 use ash::vk;
 use std::ffi::CStr;

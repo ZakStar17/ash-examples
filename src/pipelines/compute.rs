@@ -11,9 +11,11 @@ use crate::{
   descriptor_sets::DescriptorSets,
   device_destroyable::DeviceManuallyDestroyed,
   errors::OutOfMemoryError,
-  shaders::{shader, Shader, ShaderError},
+  shaders::{shader, Shader},
   FOCAL_POINT, MAX_ITERATIONS, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y, ZOOM,
 };
+
+use super::PipelineCreationError;
 
 pub struct ComputePipeline {
   pub layout: vk::PipelineLayout,
@@ -64,22 +66,6 @@ impl SpecializationData {
         size: size_of::<f32>(),
       },
     ]
-  }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum PipelineCreationError {
-  #[error("Out of memory")]
-  OutOfMemory(#[source] OutOfMemoryError),
-  #[error("Failed to load shader \"{1}\"")]
-  ShaderFailed(#[source] ShaderError, &'static str),
-  #[error("Failed to compile or link shaders")]
-  CompilationFailed,
-}
-
-impl From<OutOfMemoryError> for PipelineCreationError {
-  fn from(value: OutOfMemoryError) -> Self {
-    PipelineCreationError::OutOfMemory(value)
   }
 }
 

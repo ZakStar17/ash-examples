@@ -3,8 +3,8 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 use crate::{
-  descriptor_sets::DescriptorSets, device::QueueFamilies,
-  device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, pipeline::ComputePipeline,
+  descriptor_sets::DescriptorSets, device_destroyable::DeviceManuallyDestroyed,
+  errors::OutOfMemoryError, initialization::device::QueueFamilies, pipelines::ComputePipeline,
   IMAGE_HEIGHT, IMAGE_WIDTH, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y,
 };
 

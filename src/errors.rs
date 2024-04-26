@@ -1,8 +1,8 @@
 use ash::vk;
 
 use crate::{
-  instance::InstanceCreationError, pipeline::PipelineCreationError,
-  pipeline_cache::PipelineCacheError,
+  initialization::InstanceCreationError,
+  pipelines::{PipelineCacheError, PipelineCreationError},
 };
 
 pub fn error_chain_fmt(

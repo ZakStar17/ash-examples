@@ -3,8 +3,8 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 use crate::{
-  device::QueueFamilies, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
-  IMAGE_HEIGHT, IMAGE_WIDTH,
+  device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+  initialization::device::QueueFamilies, IMAGE_HEIGHT, IMAGE_WIDTH,
 };
 
 use super::dependency_info;

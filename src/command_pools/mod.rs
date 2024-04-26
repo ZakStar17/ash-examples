@@ -8,7 +8,7 @@ mod transfer;
 pub use compute::ComputeCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
-use crate::{device::PhysicalDevice, device_destroyable::DeviceManuallyDestroyed};
+use crate::{device_destroyable::DeviceManuallyDestroyed, initialization::device::PhysicalDevice};
 
 pub fn create_command_pool(
   device: &ash::Device,
