@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -7,7 +7,7 @@ use crate::{
   device_destroyable::DeviceManuallyDestroyed,
   errors::OutOfMemoryError,
   gpu_data::{TriangleImage, TriangleModelData},
-  pipeline::GraphicsPipeline,
+  pipelines::GraphicsPipeline,
   BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
 };
 
@@ -44,12 +44,8 @@ impl GraphicsCommandBufferPool {
     triangle_model: &TriangleModelData,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.triangle;
-    let begin_info = vk::CommandBufferBeginInfo {
-      s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-      p_next: ptr::null(),
-      flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-      p_inheritance_info: ptr::null(),
-    };
+    let begin_info =
+      vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
     {
@@ -71,6 +67,7 @@ impl GraphicsCommandBufferPool {
         },
         clear_value_count: 1,
         p_clear_values: &clear_value,
+        _marker: PhantomData,
       };
       device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
 
@@ -107,6 +104,7 @@ impl GraphicsCommandBufferPool {
         dst_queue_family_index: queue_families.get_transfer_index(),
         image: triangle_image.image,
         subresource_range,
+        _marker: PhantomData,
       };
       device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
     }

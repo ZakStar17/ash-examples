@@ -1,4 +1,5 @@
 use std::{
+  marker::PhantomData,
   mem::size_of,
   ops::BitOr,
   ptr::{self, addr_of, copy_nonoverlapping},
@@ -323,6 +324,7 @@ impl GPUData {
           memory: staging_alloc.memory,
           offset: 0,
           size: vk::WHOLE_SIZE,
+          _marker: PhantomData,
         };
         device
           .flush_mapped_memory_ranges(&[range])
@@ -336,6 +338,7 @@ impl GPUData {
       src_offset: 0,
       dst_offset: 0,
       size: vertex_size,
+      _marker: PhantomData,
     };
     let index_region = vk::BufferCopy2 {
       size: index_size,
@@ -355,6 +358,7 @@ impl GPUData {
             dst_buffer: self.triangle_model.vertex,
             region_count: 1,
             p_regions: &vertex_region,
+            _marker: PhantomData,
           },
           vk::CopyBufferInfo2 {
             s_type: vk::StructureType::COPY_BUFFER_INFO_2,
@@ -363,6 +367,7 @@ impl GPUData {
             dst_buffer: self.triangle_model.index,
             region_count: 1,
             p_regions: &index_region,
+            _marker: PhantomData,
           },
         ],
       )?;
@@ -381,6 +386,7 @@ impl GPUData {
       p_command_buffers: &command_pool.copy_buffers_to_buffers,
       signal_semaphore_count: 0,
       p_signal_semaphores: ptr::null(),
+      _marker: PhantomData,
     };
     unsafe {
       device

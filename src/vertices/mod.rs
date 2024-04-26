@@ -1,21 +1,18 @@
 mod vertex;
 
-use std::{
-  pin::Pin,
-  ptr::{self},
-};
+use std::{marker::PhantomData, pin::Pin, ptr};
 
 use ash::vk;
 
 pub use vertex::Vertex;
 
-pub struct PipelineVertexInputStateCreateInfo {
+pub struct PipelineVertexInputStateCreateInfo<'a> {
   _binding_descriptions: Pin<Box<[vk::VertexInputBindingDescription]>>,
   _attribute_descriptions: Pin<Box<[vk::VertexInputAttributeDescription]>>,
-  creation_info: vk::PipelineVertexInputStateCreateInfo,
+  creation_info: vk::PipelineVertexInputStateCreateInfo<'a>,
 }
 
-impl PipelineVertexInputStateCreateInfo {
+impl<'a> PipelineVertexInputStateCreateInfo<'a> {
   pub fn get(&self) -> &vk::PipelineVertexInputStateCreateInfo {
     &self.creation_info
   }
@@ -34,6 +31,7 @@ impl PipelineVertexInputStateCreateInfo {
       p_vertex_attribute_descriptions: attributes.as_ptr(),
       vertex_binding_description_count: bindings.len() as u32,
       p_vertex_binding_descriptions: bindings.as_ptr(),
+      _marker: PhantomData,
     };
     Self {
       _binding_descriptions: bindings,

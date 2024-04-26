@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -34,6 +34,7 @@ pub fn create_render_pass(device: &ash::Device) -> Result<vk::RenderPass, OutOfM
     p_depth_stencil_attachment: ptr::null(),
     preserve_attachment_count: 0,
     p_preserve_attachments: ptr::null(),
+    _marker: PhantomData,
   };
 
   let dependencies = [
@@ -69,6 +70,7 @@ pub fn create_render_pass(device: &ash::Device) -> Result<vk::RenderPass, OutOfM
     p_subpasses: &image_subpass,
     dependency_count: dependencies.len() as u32,
     p_dependencies: dependencies.as_ptr(),
+    _marker: PhantomData,
   };
   unsafe {
     device
@@ -93,6 +95,7 @@ pub fn create_framebuffer(
     width: extent.width,
     height: extent.height,
     layers: 1,
+    _marker: PhantomData,
   };
   unsafe {
     device

@@ -5,12 +5,12 @@ use std::{
   io::{self, Read, Write},
   mem::{self, size_of},
   os::raw::c_void,
-  ptr::{self, addr_of},
+  ptr::addr_of,
 };
 
 use ash::vk;
 
-use crate::{device::PhysicalDevice, errors::OutOfMemoryError, utility::error_chain_fmt};
+use crate::{device::PhysicalDevice, errors::OutOfMemoryError};
 
 // random number used to identify that the file type is correct
 // this is not that reliable but its better than not having it
@@ -40,17 +40,12 @@ struct PipelineCacheHeader {
   cache_uuid: [u8; vk::UUID_SIZE],
 }
 
-#[derive(thiserror::Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum PipelineCacheError {
   #[error("")]
   IOError(#[source] io::Error),
   #[error("")]
   OutOfMemoryError(#[source] OutOfMemoryError),
-}
-impl std::fmt::Debug for PipelineCacheError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    error_chain_fmt(self, f)
-  }
 }
 impl From<OutOfMemoryError> for PipelineCacheError {
   fn from(value: OutOfMemoryError) -> Self {
@@ -65,7 +60,7 @@ impl From<io::Error> for PipelineCacheError {
 
 impl PipelineCacheHeader {
   pub fn generate(physical_device: &PhysicalDevice, data: &Vec<u8>) -> Self {
-    let props = physical_device.properties.p10;
+    let props = &physical_device.properties;
     Self {
       magic: MAGIC,
       vendor_id: props.vendor_id,
@@ -79,7 +74,7 @@ impl PipelineCacheHeader {
   }
 
   fn is_compatible(&self, physical_device: &PhysicalDevice) -> bool {
-    let props = physical_device.properties.p10;
+    let props = &physical_device.properties;
     self.magic == MAGIC
       && self.vendor_id == props.vendor_id
       && self.device_id == props.device_id
@@ -130,13 +125,7 @@ pub fn create_pipeline_cache(
   // tries to create a pipeline cache from an existing file
   let cache_result = match try_read_pipeline_cache_data_from_file(physical_device) {
     Ok(data) => {
-      let create_info = vk::PipelineCacheCreateInfo {
-        s_type: vk::StructureType::PIPELINE_CACHE_CREATE_INFO,
-        p_next: ptr::null(),
-        flags: vk::PipelineCacheCreateFlags::empty(),
-        initial_data_size: data.len(),
-        p_initial_data: data.as_ptr() as *const c_void,
-      };
+      let create_info = vk::PipelineCacheCreateInfo::default().initial_data(&data);
       let result = unsafe { device.create_pipeline_cache(&create_info, None) };
 
       result.or_else(|err| {
@@ -164,14 +153,7 @@ pub fn create_pipeline_cache(
   match cache_result {
     Ok(cache) => Ok((cache, true)),
     Err(()) => {
-      let create_info = vk::PipelineCacheCreateInfo {
-        s_type: vk::StructureType::PIPELINE_CACHE_CREATE_INFO,
-        p_next: ptr::null(),
-        flags: vk::PipelineCacheCreateFlags::empty(),
-        initial_data_size: 0,
-        p_initial_data: ptr::null(),
-      };
-
+      let create_info = vk::PipelineCacheCreateInfo::default();
       let cache = unsafe {
         device
           .create_pipeline_cache(&create_info, None)

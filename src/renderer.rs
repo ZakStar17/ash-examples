@@ -14,8 +14,7 @@ use crate::{
   errors::{InitializationError, OutOfMemoryError},
   gpu_data::GPUData,
   instance::create_instance,
-  pipeline::GraphicsPipeline,
-  pipeline_cache,
+  pipelines::{self, GraphicsPipeline},
   render_pass::create_render_pass,
   utility::OnErr,
 };
@@ -73,7 +72,7 @@ impl Renderer {
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
-      pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
+      pipelines::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
         destroy!(&device => &render_pass, &device);
         destroy_instance();
       })?;
@@ -92,8 +91,7 @@ impl Renderer {
 
     // no more pipelines will be created, so might as well save and delete the cache
     log::info!("Saving pipeline cache");
-    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
-    {
+    if let Err(err) = pipelines::save_pipeline_cache(&device, &physical_device, pipeline_cache) {
       log::error!("Failed to save pipeline cache: {:?}", err);
     }
     unsafe {

@@ -1,9 +1,22 @@
 use ash::vk;
 
 use crate::{
-  instance::InstanceCreationError, pipeline_cache::PipelineCacheError, shaders::ShaderError,
-  utility::error_chain_fmt,
+  instance::InstanceCreationError,
+  pipelines::{PipelineCacheError, PipelineCreationError},
 };
+
+pub fn error_chain_fmt(
+  e: &impl std::error::Error,
+  f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+  writeln!(f, "{}\nCauses:", e)?;
+  let mut current = e.source();
+  while let Some(cause) = current {
+    writeln!(f, "  {}", cause)?;
+    current = cause.source();
+  }
+  Ok(())
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
@@ -34,7 +47,7 @@ impl From<OutOfMemoryError> for vk::Result {
   }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("Instance creation failed")]
   InstanceCreationFailed(#[source] InstanceCreationError),
@@ -45,8 +58,8 @@ pub enum InitializationError {
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] Option<AllocationError>),
 
-  #[error("Shader compilation failed")]
-  ShaderCompilation,
+  #[error("Failed to create pipelines")]
+  PipelineCreationFailed(#[source] PipelineCreationError),
 
   #[error("Memory map failed: The application was unable to map the require memory")]
   MemoryMapFailed,
@@ -60,10 +73,21 @@ pub enum InitializationError {
   #[error("Unknown")]
   Unknown,
 }
+impl std::fmt::Debug for InitializationError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
+}
 
 impl From<InstanceCreationError> for InitializationError {
   fn from(value: InstanceCreationError) -> Self {
     InitializationError::InstanceCreationFailed(value)
+  }
+}
+
+impl From<PipelineCreationError> for InitializationError {
+  fn from(value: PipelineCreationError) -> Self {
+    InitializationError::PipelineCreationFailed(value)
   }
 }
 
@@ -114,16 +138,6 @@ impl From<PipelineCacheError> for InitializationError {
     match value {
       PipelineCacheError::IOError(err) => InitializationError::IOError(err),
       PipelineCacheError::OutOfMemoryError(err) => InitializationError::from(err),
-    }
-  }
-}
-
-impl From<ShaderError> for InitializationError {
-  fn from(value: ShaderError) -> Self {
-    match value {
-      ShaderError::IO(err) => InitializationError::IOError(err),
-      ShaderError::OutOfMemory(_) => InitializationError::NotEnoughMemory(None),
-      ShaderError::InvalidShader => InitializationError::ShaderCompilation,
     }
   }
 }

@@ -1,4 +1,4 @@
-use std::{ffi::CStr, path::Path, ptr};
+use std::{ffi::CStr, marker::PhantomData, path::Path, ptr};
 
 use ash::vk;
 
@@ -6,8 +6,8 @@ use crate::{cstr, device_destroyable::DeviceManuallyDestroyed};
 
 use super::{load_shader, ShaderError};
 
-const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
-const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
+pub const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
+pub const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
 
 const MAIN_FN_NAME: &'static CStr = cstr!("main");
 
@@ -37,6 +37,7 @@ impl Shader {
         p_name: MAIN_FN_NAME.as_ptr(),
         p_specialization_info: ptr::null(),
         stage: vk::ShaderStageFlags::VERTEX,
+        _marker: PhantomData,
       },
       vk::PipelineShaderStageCreateInfo {
         // Fragment shader
@@ -47,6 +48,7 @@ impl Shader {
         p_name: MAIN_FN_NAME.as_ptr(),
         p_specialization_info: ptr::null(),
         stage: vk::ShaderStageFlags::FRAGMENT,
+        _marker: PhantomData,
       },
     ]
   }

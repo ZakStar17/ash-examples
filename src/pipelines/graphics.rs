@@ -1,14 +1,20 @@
-use std::ptr::{self, addr_of};
+use std::{
+  marker::PhantomData,
+  ptr::{self, addr_of},
+};
 
 use ash::vk;
 
 use crate::{
   device_destroyable::DeviceManuallyDestroyed,
-  shaders::{self, ShaderError},
+  errors::OutOfMemoryError,
+  shaders::{self, shader},
   vertex_input_state_create_info,
   vertices::Vertex,
   IMAGE_HEIGHT, IMAGE_WIDTH,
 };
+
+use super::PipelineCreationError;
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
@@ -20,8 +26,10 @@ impl GraphicsPipeline {
     device: &ash::Device,
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
-  ) -> Result<Self, ShaderError> {
-    let shader = shaders::Shader::load(device)?;
+  ) -> Result<Self, PipelineCreationError> {
+    // todo: change shader path
+    let shader = shaders::Shader::load(device)
+      .map_err(|err| PipelineCreationError::ShaderFailed(err, shader::FRAG_SHADER_PATH))?;
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
     let vertex_input_state = vertex_input_state_create_info!(Vertex);
@@ -52,6 +60,7 @@ impl GraphicsPipeline {
       p_scissors: addr_of!(scissor),
       viewport_count: 1,
       p_viewports: addr_of!(viewport),
+      _marker: PhantomData,
     };
 
     let rasterization_state_ci = no_depth_rasterization_state();
@@ -74,6 +83,7 @@ impl GraphicsPipeline {
       attachment_count: 1,
       p_attachments: addr_of!(attachment_state),
       blend_constants: [0.0, 0.0, 0.0, 0.0],
+      _marker: PhantomData,
     };
 
     // no descriptor sets or push constants
@@ -85,8 +95,10 @@ impl GraphicsPipeline {
       p_set_layouts: ptr::null(),
       push_constant_range_count: 0,
       p_push_constant_ranges: ptr::null(),
+      _marker: PhantomData,
     };
-    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
+    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
+      .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
 
     let create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
@@ -108,11 +120,19 @@ impl GraphicsPipeline {
       subpass: 0,
       base_pipeline_handle: vk::Pipeline::null(),
       base_pipeline_index: -1, // -1 for null
+      _marker: PhantomData,
     };
     let pipeline = unsafe {
       device
         .create_graphics_pipelines(cache, &[create_info], None)
-        .map_err(|(_pipelines, err)| err)?[0]
+        .map_err(|incomplete| incomplete.1)
+        .map_err(|vkerr| match vkerr {
+          vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+            PipelineCreationError::from(OutOfMemoryError::from(vkerr))
+          }
+          vk::Result::ERROR_INVALID_SHADER_NV => PipelineCreationError::CompilationFailed,
+          _ => panic!(),
+        })?[0]
     };
 
     unsafe {
@@ -130,7 +150,7 @@ impl DeviceManuallyDestroyed for GraphicsPipeline {
   }
 }
 
-fn triangle_input_assembly_state() -> vk::PipelineInputAssemblyStateCreateInfo {
+fn triangle_input_assembly_state<'a>() -> vk::PipelineInputAssemblyStateCreateInfo<'a> {
   vk::PipelineInputAssemblyStateCreateInfo {
     s_type: vk::StructureType::PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
     flags: vk::PipelineInputAssemblyStateCreateFlags::empty(),
@@ -138,11 +158,12 @@ fn triangle_input_assembly_state() -> vk::PipelineInputAssemblyStateCreateInfo {
     // defines that there exists a special value that restarts the assembly
     primitive_restart_enable: vk::FALSE,
     topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+    _marker: PhantomData,
   }
 }
 
 // rasterization with no depth and no culling
-fn no_depth_rasterization_state() -> vk::PipelineRasterizationStateCreateInfo {
+fn no_depth_rasterization_state<'a>() -> vk::PipelineRasterizationStateCreateInfo<'a> {
   vk::PipelineRasterizationStateCreateInfo {
     s_type: vk::StructureType::PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
     p_next: ptr::null(),
@@ -157,10 +178,11 @@ fn no_depth_rasterization_state() -> vk::PipelineRasterizationStateCreateInfo {
     depth_bias_constant_factor: 0.0,
     depth_bias_enable: vk::FALSE,
     depth_bias_slope_factor: 0.0,
+    _marker: PhantomData,
   }
 }
 
-fn no_multisample_state() -> vk::PipelineMultisampleStateCreateInfo {
+fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a> {
   // everything off
   vk::PipelineMultisampleStateCreateInfo {
     s_type: vk::StructureType::PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -172,5 +194,6 @@ fn no_multisample_state() -> vk::PipelineMultisampleStateCreateInfo {
     p_sample_mask: ptr::null(),
     alpha_to_one_enable: vk::FALSE,
     alpha_to_coverage_enable: vk::FALSE,
+    _marker: PhantomData,
   }
 }

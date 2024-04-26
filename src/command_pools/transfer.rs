@@ -132,14 +132,9 @@ impl TransferCommandBufferPool {
     copy_infos: &[vk::CopyBufferInfo2],
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.copy_buffers_to_buffers;
-
-    let command_buffer_begin_info = vk::CommandBufferBeginInfo {
-      s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-      p_next: ptr::null(),
-      p_inheritance_info: ptr::null(),
-      flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-    };
-    device.begin_command_buffer(cb, &command_buffer_begin_info)?;
+    let begin_info =
+      vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    device.begin_command_buffer(cb, &begin_info)?;
 
     for copy_info in copy_infos {
       device.cmd_copy_buffer2(cb, copy_info);

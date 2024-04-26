@@ -1,3 +1,5 @@
+#![feature(vec_into_raw_parts)]
+
 mod allocator;
 mod command_pools;
 mod create_objs;
@@ -7,8 +9,7 @@ mod entry;
 mod errors;
 mod gpu_data;
 mod instance;
-mod pipeline;
-mod pipeline_cache;
+mod pipelines;
 mod render_pass;
 mod renderer;
 mod shaders;
