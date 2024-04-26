@@ -8,7 +8,10 @@ use std::{
 use ash::vk;
 
 use crate::{
-  descriptor_sets::DescriptorSets, device_destroyable::DeviceManuallyDestroyed, shaders::Shader,
+  descriptor_sets::DescriptorSets,
+  device_destroyable::DeviceManuallyDestroyed,
+  errors::OutOfMemoryError,
+  shaders::{shader, Shader, ShaderError},
   FOCAL_POINT, MAX_ITERATIONS, SHADER_GROUP_SIZE_X, SHADER_GROUP_SIZE_Y, ZOOM,
 };
 
@@ -64,13 +67,30 @@ impl SpecializationData {
   }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PipelineCreationError {
+  #[error("Out of memory")]
+  OutOfMemory(#[source] OutOfMemoryError),
+  #[error("Failed to load shader \"{1}\"")]
+  ShaderFailed(#[source] ShaderError, &'static str),
+  #[error("Failed to compile or link shaders")]
+  CompilationFailed,
+}
+
+impl From<OutOfMemoryError> for PipelineCreationError {
+  fn from(value: OutOfMemoryError) -> Self {
+    PipelineCreationError::OutOfMemory(value)
+  }
+}
+
 impl ComputePipeline {
   pub fn create(
     device: &ash::Device,
     cache: vk::PipelineCache,
     descriptor_sets: &DescriptorSets,
-  ) -> Result<Self, vk::Result> {
-    let mut shader = Shader::load(device);
+  ) -> Result<Self, PipelineCreationError> {
+    let mut shader = Shader::load(device)
+      .map_err(|err| PipelineCreationError::ShaderFailed(err, shader::SHADER_PATH))?;
     let main_function_name = CString::new("main").unwrap(); // the beginning function name in shader code
 
     let specialization_data = SpecializationData {
@@ -111,7 +131,8 @@ impl ComputePipeline {
       p_push_constant_ranges: ptr::null(),
       _marker: PhantomData,
     };
-    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
+    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
+      .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
 
     let create_info = vk::ComputePipelineCreateInfo {
       s_type: vk::StructureType::COMPUTE_PIPELINE_CREATE_INFO,
@@ -127,7 +148,14 @@ impl ComputePipeline {
     let pipeline = unsafe {
       device
         .create_compute_pipelines(cache, &[create_info], None)
-        .map_err(|incomplete| incomplete.1)?[0]
+        .map_err(|incomplete| incomplete.1)
+        .map_err(|vkerr| match vkerr {
+          vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+            PipelineCreationError::from(OutOfMemoryError::from(vkerr))
+          }
+          vk::Result::ERROR_INVALID_SHADER_NV => PipelineCreationError::CompilationFailed,
+          _ => panic!(),
+        })?[0]
     };
 
     unsafe {

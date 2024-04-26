@@ -1,6 +1,22 @@
 use ash::vk;
 
-use crate::{instance::InstanceCreationError, pipeline_cache::PipelineCacheError};
+use crate::{
+  instance::InstanceCreationError, pipeline::PipelineCreationError,
+  pipeline_cache::PipelineCacheError,
+};
+
+pub fn error_chain_fmt(
+  e: &impl std::error::Error,
+  f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+  writeln!(f, "{}\nCauses:", e)?;
+  let mut current = e.source();
+  while let Some(cause) = current {
+    writeln!(f, "  {}", cause)?;
+    current = cause.source();
+  }
+  Ok(())
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
@@ -31,13 +47,16 @@ impl From<OutOfMemoryError> for vk::Result {
   }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("Instance creation failed")]
   InstanceCreationFailed(#[source] InstanceCreationError),
 
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
+
+  #[error("Failed to create pipelines")]
+  PipelineCreationFailed(#[source] PipelineCreationError),
 
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] Option<AllocationError>),
@@ -51,10 +70,21 @@ pub enum InitializationError {
   #[error("Unknown")]
   Unknown,
 }
+impl std::fmt::Debug for InitializationError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
+}
 
 impl From<InstanceCreationError> for InitializationError {
   fn from(value: InstanceCreationError) -> Self {
     InitializationError::InstanceCreationFailed(value)
+  }
+}
+
+impl From<PipelineCreationError> for InitializationError {
+  fn from(value: PipelineCreationError) -> Self {
+    InitializationError::PipelineCreationFailed(value)
   }
 }
 
