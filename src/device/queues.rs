@@ -1,4 +1,4 @@
-use std::{cmp::min, ptr};
+use std::{cmp::min, marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -66,11 +66,11 @@ impl QueueFamilies {
   }
 }
 
-fn get_queue_create_info(
+fn queue_create_info<'a>(
   index: u32,
   count: u32,
   priorities_ptr: *const f32,
-) -> vk::DeviceQueueCreateInfo {
+) -> vk::DeviceQueueCreateInfo<'a> {
   vk::DeviceQueueCreateInfo {
     s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
     queue_family_index: index,
@@ -78,6 +78,7 @@ fn get_queue_create_info(
     p_queue_priorities: priorities_ptr,
     p_next: ptr::null(),
     flags: vk::DeviceQueueCreateFlags::empty(),
+    _marker: PhantomData,
   }
 }
 
@@ -95,7 +96,7 @@ impl Queues {
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
 
     if let Some(family) = queue_families.transfer.as_ref() {
-      create_infos.push(get_queue_create_info(
+      create_infos.push(queue_create_info(
         family.index,
         1,
         Self::QUEUE_PRIORITIES.as_ptr(),
@@ -103,7 +104,7 @@ impl Queues {
     }
 
     // add graphics queues, these substitute for missing families
-    create_infos.push(get_queue_create_info(
+    create_infos.push(queue_create_info(
       queue_families.get_graphics_index(),
       min(
         queue_families.graphics.queue_count,

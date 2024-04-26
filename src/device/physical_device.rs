@@ -6,14 +6,14 @@ use crate::utility::c_char_array_to_string;
 
 use super::select_physical_device;
 
-use super::{PhysicalDeviceProperties, QueueFamilies};
+use super::QueueFamilies;
 
 // Saves physical device additional information in order to not query it multiple times
 pub struct PhysicalDevice {
   inner: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
   pub mem_properties: vk::PhysicalDeviceMemoryProperties,
-  pub properties: PhysicalDeviceProperties,
+  pub max_memory_allocation_size: u64,
 }
 
 impl Deref for PhysicalDevice {
@@ -25,7 +25,9 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select(instance: &ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
+  pub unsafe fn select<'b>(
+    instance: &'b ash::Instance,
+  ) -> Result<Option<PhysicalDevice>, vk::Result> {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);
@@ -50,7 +52,7 @@ impl PhysicalDevice {
           inner: physical_device,
           queue_families,
           mem_properties,
-          properties,
+          max_memory_allocation_size: properties.p11.max_memory_allocation_size,
         }))
       }
       None => Ok(None),

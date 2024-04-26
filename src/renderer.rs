@@ -1,5 +1,8 @@
 use ash::vk;
-use std::ptr::{self, addr_of};
+use std::{
+  marker::PhantomData,
+  ptr::{self, addr_of},
+};
 
 use crate::{
   command_pools::CommandPools,
@@ -33,35 +36,46 @@ pub struct Renderer {
 }
 
 impl Renderer {
-  #[cfg(feature = "vl")]
   pub fn initialize(
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
     let entry: ash::Entry = unsafe { entry::get_entry() };
-    let (instance, debug_utils) = create_instance(&entry)?;
 
-    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
-      .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?
-    {
-      Some(device) => device,
-      None => {
-        unsafe { destroy!(&debug_utils, &instance) };
-        return Err(InitializationError::NoCompatibleDevices);
-      }
+    #[cfg(feature = "vl")]
+    let (instance, debug_utils) = create_instance(&entry)?;
+    #[cfg(not(feature = "vl"))]
+    let instance = create_instance(&entry)?;
+
+    let destroy_instance = || unsafe {
+      #[cfg(feature = "vl")]
+      destroy!(&debug_utils);
+      destroy!(&instance);
     };
 
-    let (device, queues) = create_logical_device(&instance, &physical_device)
-      .on_err(|_| unsafe { destroy!(&debug_utils, &instance) })?;
+    let physical_device =
+      match unsafe { PhysicalDevice::select(&instance) }.on_err(|_| destroy_instance())? {
+        Some(device) => device,
+        None => {
+          destroy_instance();
+          return Err(InitializationError::NoCompatibleDevices);
+        }
+      };
 
-    let render_pass = create_render_pass(&device)
-      .on_err(|_| unsafe { destroy!(&device, &debug_utils, &instance) })?;
+    let (device, queues) =
+      create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
+
+    let render_pass = create_render_pass(&device).on_err(|_| unsafe {
+      destroy!(&device);
+      destroy_instance();
+    })?;
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
       pipeline_cache::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
-        destroy!(&device => &render_pass, &device, &debug_utils, &instance)
+        destroy!(&device => &render_pass, &device);
+        destroy_instance();
       })?;
     if created_from_file {
       log::info!("Cache successfully created from an existing cache file");
@@ -72,7 +86,8 @@ impl Renderer {
     log::debug!("Creating pipeline");
     let pipeline =
       GraphicsPipeline::create(&device, pipeline_cache, render_pass).on_err(|_| unsafe {
-        destroy!(&device => &pipeline_cache, &render_pass, &device, &debug_utils, &instance)
+        destroy!(&device => &pipeline_cache, &render_pass, &device);
+        destroy_instance();
       })?;
 
     // no more pipelines will be created, so might as well save and delete the cache
@@ -86,7 +101,8 @@ impl Renderer {
     }
 
     let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
-      destroy!(&device => &pipeline, &render_pass, &device, &debug_utils, &instance)
+      destroy!(&device => &pipeline, &render_pass, &device);
+      destroy_instance();
     })?;
 
     let mut gpu_data = GPUData::new(
@@ -100,7 +116,8 @@ impl Renderer {
       buffer_size,
     )
     .on_err(|_| unsafe {
-      destroy!(&device => &command_pools, &pipeline, &render_pass, &device, &debug_utils, &instance)
+      destroy!(&device => &command_pools, &pipeline, &render_pass, &device);
+      destroy_instance();
     })?;
 
     gpu_data.initialize_memory(
@@ -113,95 +130,8 @@ impl Renderer {
     Ok(Self {
       _entry: entry,
       instance,
+      #[cfg(feature = "vl")]
       debug_utils,
-      physical_device,
-      device,
-      queues,
-      command_pools,
-      gpu_data,
-      render_pass,
-      pipeline,
-    })
-  }
-
-  #[cfg(not(feature = "vl"))]
-  pub fn initialize(
-    image_width: u32,
-    image_height: u32,
-    buffer_size: u64,
-  ) -> Result<Self, InitializationError> {
-    let entry: ash::Entry = unsafe { entry::get_entry() };
-    let instance = create_instance(&entry)?;
-
-    let physical_device = match unsafe { PhysicalDevice::select(&instance) }
-      .on_err(|_| unsafe { destroy!(&instance) })?
-    {
-      Some(device) => device,
-      None => {
-        unsafe { destroy!(&instance) };
-        return Err(InitializationError::NoCompatibleDevices);
-      }
-    };
-
-    let (device, queues) = create_logical_device(&instance, &physical_device)
-      .on_err(|_| unsafe { destroy!(&instance) })?;
-
-    let render_pass =
-      create_render_pass(&device).on_err(|_| unsafe { destroy!(&device, &instance) })?;
-
-    log::info!("Creating pipeline cache");
-    let (pipeline_cache, created_from_file) =
-      pipeline_cache::create_pipeline_cache(&device, &physical_device)
-        .on_err(|_| unsafe { destroy!(&device => &render_pass, &device, &instance) })?;
-    if created_from_file {
-      log::info!("Cache successfully created from an existing cache file");
-    } else {
-      log::info!("Cache initialized as empty");
-    }
-
-    log::debug!("Creating pipeline");
-    let pipeline =
-      GraphicsPipeline::create(&device, pipeline_cache, render_pass).on_err(|_| unsafe {
-        destroy!(&device => &pipeline_cache, &render_pass, &device, &instance)
-      })?;
-
-    // no more pipelines will be created, so might as well save and delete the cache
-    log::info!("Saving pipeline cache");
-    if let Err(err) = pipeline_cache::save_pipeline_cache(&device, &physical_device, pipeline_cache)
-    {
-      log::error!("Failed to save pipeline cache: {:?}", err);
-    }
-    unsafe {
-      pipeline_cache.destroy_self(&device);
-    }
-
-    let mut command_pools = CommandPools::new(&device, &physical_device)
-      .on_err(|_| unsafe { destroy!(&device => &pipeline, &render_pass, &device, &instance) })?;
-
-    let mut gpu_data = GPUData::new(
-      &device,
-      &physical_device,
-      render_pass,
-      vk::Extent2D {
-        width: image_width,
-        height: image_height,
-      },
-      buffer_size,
-    )
-    .on_err(|_| unsafe {
-      destroy!(&device => &command_pools, &pipeline, &render_pass, &device, &instance)
-    })?;
-
-    gpu_data.initialize_memory(
-      &device,
-      &physical_device,
-      &queues,
-      &mut command_pools.transfer_pool,
-    )?;
-
-    Ok(Self {
-      _entry: entry,
-      instance,
       physical_device,
       device,
       queues,
@@ -250,6 +180,7 @@ impl Renderer {
       p_command_buffers: addr_of!(self.command_pools.graphics_pool.triangle),
       signal_semaphore_count: 1,
       p_signal_semaphores: addr_of!(image_clear_finished),
+      _marker: PhantomData,
     };
     let wait_for = vk::PipelineStageFlags::TRANSFER;
     let transfer_image_submit = vk::SubmitInfo {
@@ -262,6 +193,7 @@ impl Renderer {
       p_command_buffers: addr_of!(self.command_pools.transfer_pool.copy_image_to_buffer),
       signal_semaphore_count: 0,
       p_signal_semaphores: ptr::null(),
+      _marker: PhantomData,
     };
 
     let destroy_objs = || unsafe { destroy!(&self.device => &image_clear_finished, &all_done) };

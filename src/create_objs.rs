@@ -1,24 +1,16 @@
-use std::ptr;
+use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
 use crate::{errors::OutOfMemoryError, IMAGE_FORMAT};
 
 pub fn create_semaphore(device: &ash::Device) -> Result<vk::Semaphore, OutOfMemoryError> {
-  let create_info = vk::SemaphoreCreateInfo {
-    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::SemaphoreCreateFlags::empty(),
-  };
+  let create_info = vk::SemaphoreCreateInfo::default();
   unsafe { device.create_semaphore(&create_info, None) }.map_err(|err| err.into())
 }
 
 pub fn create_fence(device: &ash::Device) -> Result<vk::Fence, OutOfMemoryError> {
-  let create_info = vk::FenceCreateInfo {
-    s_type: vk::StructureType::FENCE_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::FenceCreateFlags::empty(),
-  };
+  let create_info = vk::FenceCreateInfo::default();
   unsafe { device.create_fence(&create_info, None) }.map_err(|err| err.into())
 }
 
@@ -36,6 +28,7 @@ pub fn create_buffer(
     sharing_mode: vk::SharingMode::EXCLUSIVE,
     queue_family_index_count: 0,
     p_queue_family_indices: ptr::null(),
+    _marker: PhantomData,
   };
   unsafe { device.create_buffer(&create_info, None) }.map_err(|err| err.into())
 }
@@ -67,6 +60,7 @@ pub fn create_image(
     queue_family_index_count: 0,
     p_queue_family_indices: ptr::null(), // ignored if sharing mode is exclusive
     initial_layout: vk::ImageLayout::UNDEFINED,
+    _marker: PhantomData,
   };
 
   unsafe { device.create_image(&create_info, None) }.map_err(|err| err.into())
