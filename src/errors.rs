@@ -1,8 +1,6 @@
 use ash::vk;
 
-use crate::{
-  instance::InstanceCreationError, pipeline_cache::PipelineCacheError, utility::error_chain_fmt,
-};
+use crate::{instance::InstanceCreationError, pipeline_cache::PipelineCacheError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {

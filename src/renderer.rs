@@ -56,7 +56,7 @@ impl Renderer {
     #[cfg(feature = "vl")]
     let (instance, debug_utils) = create_instance(&entry)?;
     #[cfg(not(feature = "vl"))]
-    let instance = create_instance(&entry);
+    let instance = create_instance(&entry)?;
 
     let destroy_instance = || unsafe {
       #[cfg(feature = "vl")]
@@ -132,6 +132,7 @@ impl Renderer {
     Ok(Self {
       _entry: entry,
       instance,
+      #[cfg(feature = "vl")]
       debug_utils,
       physical_device,
       device,

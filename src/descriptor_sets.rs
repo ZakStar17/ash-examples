@@ -1,4 +1,7 @@
-use std::ptr::{self, addr_of};
+use std::{
+  marker::PhantomData,
+  ptr::{self, addr_of},
+};
 
 use ash::vk;
 
@@ -21,6 +24,7 @@ impl DescriptorSets {
       descriptor_pool: pool,
       descriptor_set_count: 1,
       p_set_layouts: addr_of!(layout),
+      _marker: PhantomData,
     };
     let mandelbrot_image = unsafe { device.allocate_descriptor_sets(&allocate_info)?[0] };
 
@@ -49,6 +53,7 @@ impl DescriptorSets {
       p_buffer_info: ptr::null(),
       p_image_info: addr_of!(image_info),
       p_texel_buffer_view: ptr::null(),
+      _marker: PhantomData,
     };
 
     unsafe {
@@ -64,6 +69,7 @@ fn create_layout(device: &ash::Device) -> Result<vk::DescriptorSetLayout, OutOfM
     descriptor_count: 1,
     stage_flags: vk::ShaderStageFlags::COMPUTE,
     p_immutable_samplers: ptr::null(),
+    _marker: PhantomData,
   }];
 
   let create_info = vk::DescriptorSetLayoutCreateInfo {
@@ -72,6 +78,7 @@ fn create_layout(device: &ash::Device) -> Result<vk::DescriptorSetLayout, OutOfM
     flags: vk::DescriptorSetLayoutCreateFlags::empty(),
     binding_count: bindings.len() as u32,
     p_bindings: bindings.as_ptr(),
+    _marker: PhantomData,
   };
 
   unsafe {
@@ -93,6 +100,7 @@ fn create_pool(device: &ash::Device) -> Result<vk::DescriptorPool, OutOfMemoryEr
     p_pool_sizes: sizes.as_ptr(),
     max_sets: 1,
     flags: vk::DescriptorPoolCreateFlags::empty(),
+    _marker: PhantomData,
   };
   unsafe { device.create_descriptor_pool(&pool_create_info, None) }.map_err(|err| err.into())
 }

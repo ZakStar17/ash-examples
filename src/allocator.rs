@@ -64,7 +64,7 @@ pub fn allocate_and_bind_memory(
     buffers_len: buffers.len(),
   };
 
-  if total_size >= physical_device.max_memory_allocation_size {
+  if total_size >= physical_device.properties.max_memory_allocation_size {
     return Err(AllocationError::TotalSizeExceedsAllowed(total_size));
   }
 

@@ -90,6 +90,7 @@ pub fn create_image_view(
       base_array_layer: 0,
       layer_count: 1,
     },
+    _marker: PhantomData,
   };
 
   unsafe {

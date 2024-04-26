@@ -23,17 +23,12 @@ fn read_shader_code(shader_path: &Path) -> Vec<u8> {
 }
 
 fn create_shader_module(device: &ash::Device, code: Vec<u8>) -> vk::ShaderModule {
-  let shader_module_create_info = vk::ShaderModuleCreateInfo {
-    s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
-    p_next: ptr::null(),
-    flags: vk::ShaderModuleCreateFlags::empty(),
-    code_size: code.len(),
-    p_code: code.as_ptr() as *const u32,
-  };
+  let create_info = vk::ShaderModuleCreateInfo::default()
+    .code(unsafe { &*ptr::slice_from_raw_parts(code.as_ptr() as *const u32, code.len() / 4) });
 
   unsafe {
     device
-      .create_shader_module(&shader_module_create_info, None)
+      .create_shader_module(&create_info, None)
       .expect("Failed to create shader module")
   }
 }

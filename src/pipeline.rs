@@ -1,5 +1,6 @@
 use std::{
   ffi::{c_void, CString},
+  marker::PhantomData,
   mem::{offset_of, size_of},
   ptr::{self, addr_of},
 };
@@ -86,6 +87,7 @@ impl ComputePipeline {
       p_map_entries: entries.as_ptr(),
       data_size: size_of::<SpecializationData>(),
       p_data: addr_of!(specialization_data) as *const c_void,
+      _marker: PhantomData,
     };
 
     let stage = vk::PipelineShaderStageCreateInfo {
@@ -96,6 +98,7 @@ impl ComputePipeline {
       p_name: main_function_name.as_ptr(),
       p_specialization_info: addr_of!(specialization_info),
       stage: vk::ShaderStageFlags::COMPUTE,
+      _marker: PhantomData,
     };
 
     let layout_create_info = vk::PipelineLayoutCreateInfo {
@@ -106,6 +109,7 @@ impl ComputePipeline {
       p_set_layouts: addr_of!(descriptor_sets.layout),
       push_constant_range_count: 0,
       p_push_constant_ranges: ptr::null(),
+      _marker: PhantomData,
     };
     let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
 
@@ -117,6 +121,7 @@ impl ComputePipeline {
       layout,
       base_pipeline_handle: vk::Pipeline::null(),
       base_pipeline_index: -1, // -1 for invalid
+      _marker: PhantomData,
     };
 
     let pipeline = unsafe {
