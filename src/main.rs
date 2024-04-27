@@ -3,22 +3,16 @@
 mod allocator;
 mod command_pools;
 mod create_objs;
-mod device;
 mod device_destroyable;
-mod entry;
 mod errors;
 mod gpu_data;
-mod instance;
+mod initialization;
 mod pipelines;
 mod render_pass;
 mod renderer;
 mod shaders;
 mod utility;
 mod vertices;
-
-// validation layers module will only exist if validation layers are enabled
-#[cfg(feature = "vl")]
-mod validation_layers;
 
 use ash::vk;
 use std::ffi::CStr;

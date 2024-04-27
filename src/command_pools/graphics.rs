@@ -3,10 +3,10 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 use crate::{
-  device::QueueFamilies,
   device_destroyable::DeviceManuallyDestroyed,
   errors::OutOfMemoryError,
   gpu_data::{TriangleImage, TriangleModelData},
+  initialization::device::QueueFamilies,
   pipelines::GraphicsPipeline,
   BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
 };

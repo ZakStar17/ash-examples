@@ -8,12 +8,13 @@ use crate::{
   command_pools::CommandPools,
   create_objs::{create_fence, create_semaphore},
   destroy,
-  device::{create_logical_device, PhysicalDevice, Queues},
   device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
-  entry,
   errors::{InitializationError, OutOfMemoryError},
   gpu_data::GPUData,
-  instance::create_instance,
+  initialization::{
+    self, create_instance,
+    device::{create_logical_device, PhysicalDevice, Queues},
+  },
   pipelines::{self, GraphicsPipeline},
   render_pass::create_render_pass,
   utility::OnErr,
@@ -23,7 +24,7 @@ pub struct Renderer {
   _entry: ash::Entry,
   instance: ash::Instance,
   #[cfg(feature = "vl")]
-  debug_utils: crate::validation_layers::DebugUtils,
+  debug_utils: crate::initialization::DebugUtils,
   physical_device: PhysicalDevice,
   device: ash::Device,
   queues: Queues,
@@ -40,7 +41,7 @@ impl Renderer {
     image_height: u32,
     buffer_size: u64,
   ) -> Result<Self, InitializationError> {
-    let entry: ash::Entry = unsafe { entry::get_entry() };
+    let entry: ash::Entry = unsafe { initialization::get_entry() };
 
     #[cfg(feature = "vl")]
     let (instance, debug_utils) = create_instance(&entry)?;

@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::{
-  instance::InstanceCreationError,
+  initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
 

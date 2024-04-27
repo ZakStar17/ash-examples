@@ -69,11 +69,17 @@ fn get_app_info<'a>() -> vk::ApplicationInfo<'a> {
 #[cfg(feature = "vl")]
 pub fn create_instance(
   entry: &ash::Entry,
-) -> Result<(ash::Instance, crate::validation_layers::DebugUtils), InstanceCreationError> {
+) -> Result<
+  (
+    ash::Instance,
+    crate::initialization::validation_layers::DebugUtils,
+  ),
+  InstanceCreationError,
+> {
   use std::ptr::addr_of;
 
   use crate::{
-    validation_layers::{self, DebugUtils},
+    initialization::validation_layers::{self, DebugUtils},
     ADDITIONAL_VALIDATION_FEATURES,
   };
 

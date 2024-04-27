@@ -16,7 +16,7 @@ pub use queues::{QueueFamilies, Queues};
 
 use crate::{
   const_flag_bitor,
-  device::vendor::Vendor,
+  initialization::device::vendor::Vendor,
   utility::{self, c_char_array_to_string, i8_array_as_cstr},
   IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS,
   TARGET_API_VERSION,
