@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::{
+use crate::render::{
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
 };

@@ -1,4 +1,5 @@
 use ash::vk;
+use raw_window_handle::DisplayHandle;
 use std::{
   ffi::{c_char, c_void, CStr},
   marker::PhantomData,
@@ -6,7 +7,8 @@ use std::{
 };
 
 use crate::{
-  errors::OutOfMemoryError, utility, APPLICATION_NAME, APPLICATION_VERSION, TARGET_API_VERSION,
+  render::{errors::OutOfMemoryError, TARGET_API_VERSION},
+  utility, APPLICATION_NAME, APPLICATION_VERSION,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -69,19 +71,12 @@ fn get_app_info<'a>() -> vk::ApplicationInfo<'a> {
 #[cfg(feature = "vl")]
 pub fn create_instance(
   entry: &ash::Entry,
-) -> Result<
-  (
-    ash::Instance,
-    crate::initialization::validation_layers::DebugUtils,
-  ),
-  InstanceCreationError,
-> {
+  display_handle: DisplayHandle,
+) -> Result<(ash::Instance, super::validation_layers::DebugUtils), InstanceCreationError> {
   use std::ptr::addr_of;
 
-  use crate::{
-    initialization::validation_layers::{self, DebugUtils},
-    ADDITIONAL_VALIDATION_FEATURES,
-  };
+  use super::validation_layers::{self, DebugUtils};
+  use crate::render::ADDITIONAL_VALIDATION_FEATURES;
 
   let app_info = get_app_info();
 

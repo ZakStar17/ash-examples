@@ -1,95 +1,203 @@
 #![feature(vec_into_raw_parts)]
 
-mod allocator;
-mod command_pools;
-mod create_objs;
-mod device_destroyable;
-mod errors;
-mod gpu_data;
-mod initialization;
-mod pipelines;
-mod render_pass;
-mod renderer;
-mod shaders;
+mod render;
 mod utility;
-mod vertices;
 
 use ash::vk;
-use std::ffi::CStr;
-use vertices::Vertex;
+use render::RenderInit;
+use std::{
+  ffi::CStr,
+  time::{Duration, Instant},
+};
+use winit::{
+  dpi::PhysicalSize,
+  event::{Event, WindowEvent},
+  event_loop::{ControlFlow, EventLoop},
+  keyboard::{KeyCode, PhysicalKey},
+};
 
-use crate::renderer::Renderer;
-
-// validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
-#[cfg(feature = "vl")]
-const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
-#[cfg(feature = "vl")]
-const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
-  vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
-  vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
-];
-
-const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
-
-const APPLICATION_NAME: &'static CStr = cstr!("Image clear");
+const APPLICATION_NAME: &'static CStr = cstr!("Bouncy Ferris");
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
+const WINDOW_TITLE: &'static str = "Bouncy Ferris";
+const INITIAL_WINDOW_WIDTH: u32 = 800;
+const INITIAL_WINDOW_HEIGHT: u32 = 800;
 
-const IMAGE_WIDTH: u32 = 1920;
-const IMAGE_HEIGHT: u32 = 1080;
+const RESOLUTION: [u32; 2] = [INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT];
 
-const IMAGE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
-const IMAGE_FORMAT_SIZE: u64 = 4;
-const IMAGE_MINIMAL_SIZE: u64 = IMAGE_WIDTH as u64 * IMAGE_HEIGHT as u64 * IMAGE_FORMAT_SIZE;
+// see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
+// FIFO_KHR is required to be supported and functions as vsync
+// IMMEDIATE will be chosen over RELAXED_KHR if the latter is not supported
+// otherwise, presentation mode will fallback to FIFO_KHR
+pub const PREFERRED_PRESENTATION_METHOD: vk::PresentModeKHR = vk::PresentModeKHR::IMMEDIATE;
 
-const IMAGE_SAVE_TYPE: image::ColorType = image::ColorType::Rgba8; // should be equivalent
+// This application doesn't use dynamic pipeline size, so resizing is expensive
+// If a small resize happens (for example while resizing with the mouse) this usually means that
+// more are to come, and recreating objects each frame can make the application unresponsive
+// If enabled, the render function will sleep for some time and wait for more window resize events
+// to be acknowledged
+const WAIT_AFTER_WINDOW_RESIZE_ENABLED: bool = true;
+const WAIT_AFTER_WINDOW_RESIZE_THRESHOLD: u32 = 20;
+const WAIT_AFTER_WINDOW_RESIZE_DURATION: Duration = Duration::from_millis(60);
 
-const IMAGE_SAVE_PATH: &str = "image.png";
+// prints current frame 1 / <time since last frame> every x time
+const PRINT_FPS_EVERY: Duration = Duration::from_millis(1000);
 
-const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
-  float32: [0.01, 0.01, 0.01, 1.0],
-};
-const VERTICES: [Vertex; 3] = [
-  Vertex {
-    pos: [0.7, 0.3],
-    color: [1.0, 0.0, 0.0],
-  },
-  Vertex {
-    pos: [-0.4, 0.9],
-    color: [0.0, 1.0, 0.0],
-  },
-  Vertex {
-    pos: [-0.9, -0.8],
-    color: [0.0, 0.0, 1.0],
-  },
-];
-const INDICES: [u16; 3] = [0, 1, 2];
+enum Status {
+  NotStarted(RenderInit),
+  Running,
+  Paused,
+}
+
+impl PartialEq for Status {
+  fn eq(&self, other: &Self) -> bool {
+    match self {
+      Status::NotStarted(_) => {
+        if let Status::NotStarted(_) = other {
+          return true;
+        }
+      }
+      Status::Running => {
+        if let Status::Running = other {
+          return true;
+        }
+      }
+      Status::Paused => {
+        if let Status::Paused = other {
+          return true;
+        }
+      }
+    }
+    false
+  }
+}
+
+pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
+  let mut status = Status::NotStarted(init);
+
+  let mut wait_for_more_window_resizes = false;
+  let mut cur_window_size = PhysicalSize {
+    width: u32::MAX,
+    height: u32::MAX,
+  };
+
+  let mut last_update_instant = Instant::now();
+  let mut time_since_last_fps_print = Duration::ZERO;
+
+  let mut frame_i: usize = 0;
+  event_loop
+    .run(move |event, target| match event {
+      Event::Suspended => {
+        // should completely pause the application
+        log::debug!("Application suspended");
+        if status == Status::Running {
+          status = Status::Paused;
+        }
+      }
+      Event::Resumed => match status {
+        Status::NotStarted(init) => {
+          log::debug!("Starting application");
+          status = Status::Running;
+        }
+        Status::Paused => status = Status::Running,
+        Status::Running => {}
+      },
+      Event::AboutToWait => {
+        // winit has two events that notify when a frame needs to be rendered:
+        // WindowEvent::RedrawRequested => Useful for applications that don't render often,
+        //  triggers only if the system requests for a rerender (for example during window resize)
+        //  or if a redraw is requested explicitly (using window.request_redraw()).
+        // Event::AboutToWait => Triggered instantly after the previous event once new inputs have
+        // been processed. Useful for applications that draw continuously.
+
+        let now = Instant::now();
+        let time_passed = now - last_update_instant;
+        last_update_instant = now;
+
+        time_since_last_fps_print += time_passed;
+        if time_since_last_fps_print >= PRINT_FPS_EVERY {
+          time_since_last_fps_print -= PRINT_FPS_EVERY;
+          println!("FPS: {}", 1.0 / time_passed.as_secs_f32());
+        }
+
+        if wait_for_more_window_resizes {
+          wait_for_more_window_resizes = false;
+          std::thread::sleep(WAIT_AFTER_WINDOW_RESIZE_DURATION);
+          // return so the loop can register new events
+          return;
+        }
+
+        if status == Status::Running {
+          // if engine
+          //   .render_frame(time_passed.as_secs_f32(), &player.sprite_data())
+          //   .is_err()
+          // {
+          //   log::warn!("Frame failed to render");
+          // }
+        }
+      }
+      Event::WindowEvent { event, .. } => match event {
+        WindowEvent::CloseRequested => {
+          target.exit();
+        }
+        WindowEvent::Occluded(occluded) => match status {
+          Status::NotStarted(init) => {
+            log::debug!("Starting application");
+            status = Status::Running;
+          }
+          Status::Paused => {
+            if !occluded {
+              status = Status::Running;
+            }
+          }
+          Status::Running => {
+            if occluded {
+              status = Status::Paused;
+            }
+          }
+        },
+        WindowEvent::Resized(new_size) => {
+          engine.window_resized(new_size);
+
+          if WAIT_AFTER_WINDOW_RESIZE_ENABLED
+            && (cur_window_size.width.abs_diff(new_size.width)
+              <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD
+              || cur_window_size.height.abs_diff(new_size.height)
+                <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD)
+          {
+            wait_for_more_window_resizes = true;
+          }
+
+          cur_window_size = new_size;
+        }
+        WindowEvent::KeyboardInput { event, .. } => {
+          let pressed = event.state.is_pressed();
+          match event.physical_key {
+            // close on escape
+            PhysicalKey::Code(code) => match code {
+              KeyCode::Escape => target.exit(),
+              KeyCode::Pause => {
+                todo!();
+              }
+              _ => {}
+            },
+            _ => {}
+          }
+        }
+        _ => {}
+      },
+      _ => (),
+    })
+    .expect("Failed to run event loop")
+}
 
 fn main() {
   env_logger::init();
+  let event_loop = EventLoop::new().expect("Failed to initialize event loop");
 
-  let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE)
-    .expect("Failed to initialize");
-  unsafe { renderer.record_work() }.expect("Failed to record work");
+  // make the event loop run continuously even if there is no new user input
+  event_loop.set_control_flow(ControlFlow::Poll);
 
-  println!("Submitting work...");
-  renderer.submit_and_wait().expect("Failed to submit work");
-  println!("GPU finished!");
-
-  println!("Saving file...");
-  unsafe {
-    renderer.get_resulting_data(|data| {
-      image::save_buffer(
-        IMAGE_SAVE_PATH,
-        data,
-        IMAGE_WIDTH,
-        IMAGE_HEIGHT,
-        IMAGE_SAVE_TYPE,
-      )
-      .expect("Failed to save image");
-    })
-  }
-  .expect("Failed to get resulting data");
-  println!("Done!");
+  let init = RenderInit::new(&event_loop).expect("Failed to initialize before window");
+  main_loop(event_loop, init);
 }

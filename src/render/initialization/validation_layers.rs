@@ -2,7 +2,9 @@ use ash::vk::{self};
 
 use std::{ffi::CStr, os::raw::c_void, ptr};
 
-use crate::{device_destroyable::ManuallyDestroyed, errors::OutOfMemoryError, VALIDATION_LAYERS};
+use crate::render::{
+  device_destroyable::ManuallyDestroyed, errors::OutOfMemoryError, VALIDATION_LAYERS,
+};
 
 // returns a list of supported and unsupported instance layers
 fn filter_supported(
