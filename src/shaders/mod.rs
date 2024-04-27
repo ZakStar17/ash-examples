@@ -1,4 +1,8 @@
-use std::{fs::File, io, io::Read, path::Path};
+use std::{
+  fs::File,
+  io::{self, Read},
+  path::Path,
+};
 
 use ash::vk;
 
@@ -10,8 +14,8 @@ use crate::errors::OutOfMemoryError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShaderError {
-  #[error("IO error")]
-  IOError(#[source] io::Error),
+  #[error("\"{1}\" IO error")]
+  IOError(#[source] io::Error, String),
 
   #[error("Failed to compile or link")]
   Invalid,
@@ -20,17 +24,12 @@ pub enum ShaderError {
   NotEnoughMemory(#[source] OutOfMemoryError),
 }
 
-impl From<io::Error> for ShaderError {
-  fn from(value: io::Error) -> Self {
-    ShaderError::IOError(value)
-  }
-}
-
 pub fn load_shader(
   device: &ash::Device,
   shader_path: &Path,
 ) -> Result<vk::ShaderModule, ShaderError> {
-  let code = read_shader_code(shader_path)?;
+  let code = read_shader_code(shader_path)
+    .map_err(|err| ShaderError::IOError(err, format!("{:?}", shader_path)))?;
   create_shader_module(device, &code)
 }
 

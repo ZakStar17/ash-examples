@@ -10,8 +10,8 @@ pub use graphics::GraphicsPipeline;
 pub enum PipelineCreationError {
   #[error("Out of memory")]
   OutOfMemory(#[source] OutOfMemoryError),
-  #[error("Failed to load shader \"{1}\"")]
-  ShaderFailed(#[source] ShaderError, &'static str),
+  #[error("Failed to load shader")]
+  ShaderFailed(#[source] ShaderError),
   #[error("Failed to compile or link shaders")]
   CompilationFailed,
 }

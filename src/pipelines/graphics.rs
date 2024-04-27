@@ -8,7 +8,7 @@ use ash::vk;
 use crate::{
   device_destroyable::DeviceManuallyDestroyed,
   errors::OutOfMemoryError,
-  shaders::{self, shader},
+  shaders::{self},
   vertex_input_state_create_info,
   vertices::Vertex,
   IMAGE_HEIGHT, IMAGE_WIDTH,
@@ -27,9 +27,8 @@ impl GraphicsPipeline {
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
   ) -> Result<Self, PipelineCreationError> {
-    // todo: change shader path
-    let shader = shaders::Shader::load(device)
-      .map_err(|err| PipelineCreationError::ShaderFailed(err, shader::FRAG_SHADER_PATH))?;
+    let shader =
+      shaders::Shader::load(device).map_err(|err| PipelineCreationError::ShaderFailed(err))?;
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
     let vertex_input_state = vertex_input_state_create_info!(Vertex);

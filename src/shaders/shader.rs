@@ -6,8 +6,8 @@ use crate::{cstr, device_destroyable::DeviceManuallyDestroyed};
 
 use super::{load_shader, ShaderError};
 
-pub const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
-pub const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
+const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
+const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
 
 const MAIN_FN_NAME: &'static CStr = cstr!("main");
 
