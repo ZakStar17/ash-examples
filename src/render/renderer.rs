@@ -3,31 +3,44 @@ use std::{
   marker::PhantomData,
   ptr::{self, addr_of},
 };
+use winit::{
+  dpi::PhysicalSize,
+  event_loop::EventLoopWindowTarget,
+  window::{Window, WindowBuilder},
+};
 
 use crate::{
-  command_pools::CommandPools,
-  create_objs::{create_fence, create_semaphore},
   destroy,
-  device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
-  errors::{InitializationError, OutOfMemoryError},
-  gpu_data::GPUData,
-  initialization::{
-    self, create_instance,
-    device::{create_logical_device, PhysicalDevice, Queues},
+  render::{
+    command_pools::CommandPools,
+    create_objs::{create_fence, create_semaphore},
+    device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
+    errors::{InitializationError, OutOfMemoryError},
+    gpu_data::GPUData,
+    initialization::{
+      self, create_instance,
+      device::{create_logical_device, PhysicalDevice, Queues},
+    },
+    pipelines::{self, GraphicsPipeline},
+    render_pass::create_render_pass,
   },
-  pipelines::{self, GraphicsPipeline},
-  render_pass::create_render_pass,
   utility::OnErr,
+  INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
 };
+
+use super::{initialization::Surface, RenderInit};
 
 pub struct Renderer {
   _entry: ash::Entry,
   instance: ash::Instance,
   #[cfg(feature = "vl")]
-  debug_utils: crate::initialization::DebugUtils,
+  debug_utils: initialization::DebugUtils,
   physical_device: PhysicalDevice,
   device: ash::Device,
   queues: Queues,
+
+  _window: Window,
+  surface: Surface,
 
   render_pass: vk::RenderPass,
   pipeline: GraphicsPipeline,
@@ -37,16 +50,22 @@ pub struct Renderer {
 
 impl Renderer {
   pub fn initialize(
-    image_width: u32,
-    image_height: u32,
-    buffer_size: u64,
+    pre_window: RenderInit,
+    target: &EventLoopWindowTarget<()>,
   ) -> Result<Self, InitializationError> {
-    let entry: ash::Entry = unsafe { initialization::get_entry() };
+    // having an error during window creation triggers pre_window drop
+    let window = WindowBuilder::new()
+      .with_title(WINDOW_TITLE)
+      .with_inner_size(PhysicalSize {
+        width: INITIAL_WINDOW_WIDTH,
+        height: INITIAL_WINDOW_HEIGHT,
+      })
+      .build(target)?;
 
     #[cfg(feature = "vl")]
-    let (instance, debug_utils) = create_instance(&entry)?;
+    let (entry, instance, debug_utils) = pre_window.deconstruct();
     #[cfg(not(feature = "vl"))]
-    let instance = create_instance(&entry)?;
+    let (entry, instance) = pre_window.deconstruct();
 
     let destroy_instance = || unsafe {
       #[cfg(feature = "vl")]

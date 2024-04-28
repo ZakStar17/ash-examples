@@ -80,7 +80,11 @@ pub fn create_instance(
 
   let app_info = get_app_info();
 
-  let extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
+  let surface_extensions = ash_window::enumerate_required_extensions(display_handle.as_raw())
+    .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
+  let extensions = Vec::with_capacity(surface_extensions.len() + 1);
+  extensions.extend(surface_extensions.iter());
+  extensions.push(ash::ext::debug_utils::NAME.as_ptr());
 
   let layers_str = validation_layers::get_supported_validation_layers(&entry)
     .map_err(|err| InstanceCreationError::OutOfMemory(err.into()))?;
@@ -118,7 +122,8 @@ pub fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, InstanceCrea
   check_api_version(entry)?;
 
   let app_info = get_app_info();
-  let extensions = [];
+  let extensions = ash_window::enumerate_required_extensions(display_handle.as_raw())
+    .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
   let layers = [];
   create_instance_checked(entry, app_info, &extensions, &layers, ptr::null())
 }

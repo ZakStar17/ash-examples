@@ -13,18 +13,18 @@ impl<T: ManuallyDestroyed> DeviceManuallyDestroyed for T {
   }
 }
 
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! destroy {
   ($($obj:expr),+) => {
     {
-      use crate::device_destroyable::ManuallyDestroyed;
+      use crate::render::device_destroyable::ManuallyDestroyed;
       $(ManuallyDestroyed::destroy_self($obj);)+
     }
   };
 
   ($device:expr => $($obj:expr),+) => {
     {
-      use crate::device_destroyable::DeviceManuallyDestroyed;
+      use crate::render::device_destroyable::DeviceManuallyDestroyed;
       $(DeviceManuallyDestroyed::destroy_self($obj, $device);)+
     }
   };

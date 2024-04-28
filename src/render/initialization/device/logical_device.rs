@@ -5,7 +5,7 @@ use std::{
   ptr::{self, addr_of},
 };
 
-use crate::REQUIRED_DEVICE_EXTENSIONS;
+use crate::render::REQUIRED_DEVICE_EXTENSIONS;
 
 use super::{PhysicalDevice, Queues};
 

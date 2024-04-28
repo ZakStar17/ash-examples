@@ -1,6 +1,8 @@
 use raw_window_handle::{HandleError, HasDisplayHandle};
 use winit::event_loop::EventLoop;
 
+use crate::render::device_destroyable::ManuallyDestroyed;
+
 use super::{DebugUtils, InstanceCreationError};
 
 pub struct RenderInit {
@@ -44,5 +46,31 @@ impl RenderInit {
       #[cfg(feature = "vl")]
       debug_utils,
     })
+  }
+
+  #[cfg(feature = "vl")]
+  pub fn deconstruct(self) -> (ash::Entry, ash::Instance, DebugUtils) {
+    use std::mem;
+
+    mem::forget(self);
+    (self.entry, self.instance, self.debug_utils)
+  }
+
+  #[cfg(not(feature = "vl"))]
+  pub fn deconstruct(self) -> (ash::Entry, ash::Instance) {
+    use std::mem;
+
+    mem::forget(self);
+    (self.entry, self.instance)
+  }
+}
+
+impl Drop for RenderInit {
+  fn drop(&mut self) {
+    unsafe {
+      self.instance.destroy_self();
+      #[cfg(feature = "vl")]
+      self.debug_utils.destroy_self();
+    }
   }
 }

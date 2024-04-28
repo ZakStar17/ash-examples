@@ -15,24 +15,13 @@ pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
 use crate::{
-  const_flag_bitor,
-  initialization::device::vendor::Vendor,
+  render::{
+    initialization::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+  },
   utility::{self, c_char_array_to_string, i8_array_as_cstr},
-  IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS,
-  TARGET_API_VERSION,
 };
 
-const REQUIRED_IMAGE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
-  vk::FormatFeatureFlags,
-  vk::FormatFeatureFlags::TRANSFER_SRC,
-  vk::FormatFeatureFlags::COLOR_ATTACHMENT
-);
-
-const REQUIRED_IMAGE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
-  vk::ImageUsageFlags,
-  vk::ImageUsageFlags::TRANSFER_SRC,
-  vk::ImageUsageFlags::COLOR_ATTACHMENT
-);
+use super::{Surface, SurfaceError};
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
@@ -78,55 +67,21 @@ fn supports_required_extensions(
   Ok(true)
 }
 
-fn supports_required_image_formats(
-  instance: &ash::Instance,
-  physical_device: vk::PhysicalDevice,
-) -> bool {
-  let properties =
-    unsafe { instance.get_physical_device_format_properties(physical_device, IMAGE_FORMAT) };
+fn supports_swapchain(device: vk::PhysicalDevice, surface: &Surface) -> Result<bool, SurfaceError> {
+  let formats = unsafe { surface.get_formats(device) }?;
+  let present_modes = unsafe { surface.get_present_modes(device) }?;
 
-  if !properties
-    .optimal_tiling_features
-    .contains(REQUIRED_IMAGE_FORMAT_FEATURES)
-  {
-    return false;
-  }
-
-  true
+  Ok(!formats.is_empty() && !present_modes.is_empty())
 }
 
-fn supports_image_dimensions(
-  instance: &ash::Instance,
-  physical_device: vk::PhysicalDevice,
-  tiling: vk::ImageTiling,
-  usage: vk::ImageUsageFlags,
-) -> Result<bool, vk::Result> {
-  let properties = unsafe {
-    instance.get_physical_device_image_format_properties(
-      physical_device,
-      IMAGE_FORMAT,
-      vk::ImageType::TYPE_2D,
-      tiling,
-      usage,
-      vk::ImageCreateFlags::empty(),
-    )?
-  };
-  log::debug!("image {:?} properties: {:#?}", IMAGE_FORMAT, properties);
-
-  Ok(
-    IMAGE_WIDTH <= properties.max_extent.width
-      && IMAGE_HEIGHT <= properties.max_extent.height
-      && IMAGE_MINIMAL_SIZE <= properties.max_resource_size,
-  )
-}
-
-unsafe fn select_physical_device(
-  instance: &ash::Instance,
+unsafe fn select_physical_device<'a>(
+  instance: &'a ash::Instance,
+  surface: &'a Surface,
 ) -> Result<
   Option<(
     vk::PhysicalDevice,
-    PhysicalDeviceProperties,
-    PhysicalDeviceFeatures,
+    PhysicalDeviceProperties<'a>,
+    PhysicalDeviceFeatures<'a>,
     QueueFamilies,
   )>,
   vk::Result,
@@ -165,27 +120,9 @@ unsafe fn select_physical_device(
           }
         }
 
-        if !supports_required_image_formats(instance, physical_device) {
-          log::warn!("Skipped physical device: Device does not support all required image formats");
-          return None;
-        }
-
-        match supports_image_dimensions(
-          instance,
-          physical_device,
-          vk::ImageTiling::OPTIMAL,
-          REQUIRED_IMAGE_USAGES,
-        ) {
-          Ok(supports_dimensions) => {
-            if !supports_dimensions {
-              log::error!("Skipped physical device: Device does not required image dimensions");
-              return None;
-            }
-          }
-          Err(err) => {
-            log::error!("Device selection error: {:?}", err);
-            return None;
-          }
+        if !supports_swapchain(physical_device, surface) {
+          log::warn!("Skipped physical device: Device does not support swapchain");
+          return false;
         }
 
         if features.f12.timeline_semaphore != vk::TRUE {
@@ -202,7 +139,7 @@ unsafe fn select_physical_device(
       })
       .filter_map(|(physical_device, properties, features)| {
         // filter devices that do not have required queue families
-        match QueueFamilies::get_from_physical_device(instance, physical_device) {
+        match QueueFamilies::get_from_physical_device(instance, physical_device, surface) {
           Err(()) => {
             log::info!("Skipped physical device: Device does not contain required queue families");
             None
