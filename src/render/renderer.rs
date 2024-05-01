@@ -1,7 +1,7 @@
 use ash::vk;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
-  marker::PhantomData,
-  ptr::{self, addr_of},
+  marker::PhantomData, mem::MaybeUninit, ptr::{self, addr_of}
 };
 use winit::{
   dpi::PhysicalSize,
@@ -18,7 +18,7 @@ use crate::{
     errors::{InitializationError, OutOfMemoryError},
     gpu_data::GPUData,
     initialization::{
-      self, create_instance,
+      self,
       device::{create_logical_device, PhysicalDevice, Queues},
     },
     pipelines::{self, GraphicsPipeline},
@@ -28,7 +28,7 @@ use crate::{
   INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
 };
 
-use super::{initialization::Surface, RenderInit};
+use super::{descriptor_sets::DescriptorPool, initialization::Surface, swapchain::Swapchains, RenderInit, FRAMES_IN_FLIGHT};
 
 pub struct Renderer {
   _entry: ash::Entry,
@@ -42,11 +42,43 @@ pub struct Renderer {
   _window: Window,
   surface: Surface,
 
+  pub swapchains: Swapchains,
   render_pass: vk::RenderPass,
+  framebuffers: [vk::Framebuffer; FRAMES_IN_FLIGHT],
+
+  descriptor_pool: DescriptorPool,
   pipeline: GraphicsPipeline,
   command_pools: CommandPools,
+
   gpu_data: GPUData,
 }
+
+const DESTROYABLE_COUNT: usize = 10;
+struct Destructor {
+  objs: [*const dyn DeviceManuallyDestroyed; DESTROYABLE_COUNT],
+  len: usize
+}
+
+impl Destructor {
+  pub fn new() -> Self {
+    Self {
+      objs: unsafe {MaybeUninit::uninit().assume_init()},
+      len: 0
+    }
+  }
+
+  pub fn push(&mut self, ptr: *const dyn DeviceManuallyDestroyed) {
+    self.i += 1;
+    self.objs[self.i] = ptr;
+  }
+
+  pub unsafe fn fire(self, device: &ash::Device) {
+    for i in (0..self.len).rev() {
+      self.objs[i].as_ref().unwrap().destroy_self(device);
+    }
+  }
+}
+
 
 impl Renderer {
   pub fn initialize(
@@ -62,6 +94,8 @@ impl Renderer {
       })
       .build(target)?;
 
+    let mut destructor = Destructor::new();
+
     #[cfg(feature = "vl")]
     let (entry, instance, debug_utils) = pre_window.deconstruct();
     #[cfg(not(feature = "vl"))]
@@ -72,6 +106,12 @@ impl Renderer {
       destroy!(&debug_utils);
       destroy!(&instance);
     };
+    destructor.push(instance);
+    #[cfg(feature = "vl")]
+    destructor.push(debug_utils);
+
+    let surface = Surface::new(&entry, &instance, target.display_handle(), window.window_handle()).on_err(|_| destroy_instance())?;
+    destructor.push(surface);
 
     let physical_device =
       match unsafe { PhysicalDevice::select(&instance) }.on_err(|_| destroy_instance())? {
@@ -109,15 +149,6 @@ impl Renderer {
         destroy_instance();
       })?;
 
-    // no more pipelines will be created, so might as well save and delete the cache
-    log::info!("Saving pipeline cache");
-    if let Err(err) = pipelines::save_pipeline_cache(&device, &physical_device, pipeline_cache) {
-      log::error!("Failed to save pipeline cache: {:?}", err);
-    }
-    unsafe {
-      pipeline_cache.destroy_self(&device);
-    }
-
     let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
       destroy!(&device => &pipeline, &render_pass, &device);
       destroy_instance();
@@ -127,11 +158,6 @@ impl Renderer {
       &device,
       &physical_device,
       render_pass,
-      vk::Extent2D {
-        width: image_width,
-        height: image_height,
-      },
-      buffer_size,
     )
     .on_err(|_| unsafe {
       destroy!(&device => &command_pools, &pipeline, &render_pass, &device);
@@ -146,6 +172,8 @@ impl Renderer {
     )?;
 
     Ok(Self {
+      _window: window,
+      surface,
       _entry: entry,
       instance,
       #[cfg(feature = "vl")]
@@ -157,6 +185,9 @@ impl Renderer {
       gpu_data,
       render_pass,
       pipeline,
+      swapchains,
+      descriptor_pool,
+      framebuffers
     })
   }
 

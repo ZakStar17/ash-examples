@@ -2,7 +2,7 @@ use std::{ffi::CStr, marker::PhantomData, path::Path, ptr};
 
 use ash::vk;
 
-use crate::{cstr, device_destroyable::DeviceManuallyDestroyed};
+use crate::{cstr, render::device_destroyable::DeviceManuallyDestroyed};
 
 use super::{load_shader, ShaderError};
 

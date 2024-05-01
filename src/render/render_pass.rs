@@ -2,12 +2,12 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::{errors::OutOfMemoryError, IMAGE_FORMAT};
+use crate::render::{errors::OutOfMemoryError};
 
-pub fn create_render_pass(device: &ash::Device) -> Result<vk::RenderPass, OutOfMemoryError> {
+pub fn create_render_pass(device: &ash::Device, format: vk::Format) -> Result<vk::RenderPass, OutOfMemoryError> {
   let image_attachment = vk::AttachmentDescription {
     flags: vk::AttachmentDescriptionFlags::empty(),
-    format: IMAGE_FORMAT,
+    format,
     samples: vk::SampleCountFlags::TYPE_1,
     load_op: vk::AttachmentLoadOp::CLEAR,
     store_op: vk::AttachmentStoreOp::STORE,

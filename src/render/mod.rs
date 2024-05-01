@@ -9,13 +9,17 @@ mod pipelines;
 mod render_pass;
 mod renderer;
 mod shaders;
+mod swapchain;
 mod vertices;
+mod descriptor_sets;
 
 use crate::cstr;
 use ash::vk;
 use std::ffi::CStr;
 
 pub use initialization::RenderInit;
+
+const FRAMES_IN_FLIGHT: usize = 2;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]

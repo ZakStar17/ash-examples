@@ -5,14 +5,13 @@ use std::{
 
 use ash::vk;
 
-use crate::{
+use crate::render::{
   device_destroyable::DeviceManuallyDestroyed,
   errors::OutOfMemoryError,
   shaders::{self},
-  vertex_input_state_create_info,
   vertices::Vertex,
-  IMAGE_HEIGHT, IMAGE_WIDTH,
 };
+use crate::vertex_input_state_create_info;
 
 use super::PipelineCreationError;
 

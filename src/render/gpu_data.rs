@@ -52,8 +52,6 @@ impl GPUData {
     device: &ash::Device,
     physical_device: &PhysicalDevice,
     render_pass: vk::RenderPass,
-    image_extent: vk::Extent2D,
-    buffer_size: u64,
   ) -> Result<Self, AllocationError> {
     let triangle_image = create_image(
       &device,

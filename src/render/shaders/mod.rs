@@ -10,7 +10,7 @@ pub mod shader;
 
 pub use shader::Shader;
 
-use crate::errors::OutOfMemoryError;
+use crate::render::errors::OutOfMemoryError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShaderError {

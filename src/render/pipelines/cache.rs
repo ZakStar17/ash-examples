@@ -10,7 +10,7 @@ use std::{
 
 use ash::vk;
 
-use crate::{errors::OutOfMemoryError, initialization::device::PhysicalDevice};
+use crate::render::{errors::OutOfMemoryError, initialization::device::PhysicalDevice};
 
 // random number used to identify that the file type is correct
 // this is not that reliable but its better than not having it
