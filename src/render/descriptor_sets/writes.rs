@@ -21,7 +21,7 @@ fn write_set<'a>(
     p_buffer_info: ptr::null(),
     p_image_info: ptr::null(),
     p_texel_buffer_view: ptr::null(),
-    _marker: PhantomPinned
+    _marker: PhantomPinned,
   }
 }
 

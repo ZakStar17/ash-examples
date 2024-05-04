@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::render::{errors::OutOfMemoryError};
+use crate::render::errors::OutOfMemoryError;
 
 fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemoryError> {
   let sampler_create_info = vk::SamplerCreateInfo {
@@ -26,10 +26,7 @@ fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemo
     min_lod: 0.0,
     _marker: PhantomData,
   };
-  unsafe {
-    device
-      .create_sampler(&sampler_create_info, None)
-  }
+  unsafe { device.create_sampler(&sampler_create_info, None) }
 }
 
 pub struct DescriptorPool {
@@ -44,12 +41,10 @@ pub struct DescriptorPool {
 impl DescriptorPool {
   const SET_COUNT: u32 = 3;
 
-  const SIZES: [vk::DescriptorPoolSize; 2] = [
-    vk::DescriptorPoolSize {
-      ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-      descriptor_count: 1,
-    },
-  ];
+  const SIZES: [vk::DescriptorPoolSize; 2] = [vk::DescriptorPoolSize {
+    ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+    descriptor_count: 1,
+  }];
 
   fn graphics_layout_bindings<'a>(
     texture_sampler: *const vk::Sampler,
@@ -60,7 +55,7 @@ impl DescriptorPool {
       descriptor_count: 1,
       stage_flags: vk::ShaderStageFlags::FRAGMENT,
       p_immutable_samplers: texture_sampler,
-      _marker: PhantomData
+      _marker: PhantomData,
     }]
   }
 
@@ -78,12 +73,9 @@ impl DescriptorPool {
         p_pool_sizes: Self::SIZES.as_ptr(),
         max_sets: Self::SET_COUNT,
         flags: vk::DescriptorPoolCreateFlags::empty(),
-        _marker: PhantomData
+        _marker: PhantomData,
       };
-      unsafe {
-        device
-          .create_descriptor_pool(&pool_create_info, None)
-      }
+      unsafe { device.create_descriptor_pool(&pool_create_info, None) }
     }?;
 
     Ok(Self {
@@ -105,7 +97,7 @@ impl DescriptorPool {
       descriptor_pool: self.pool,
       descriptor_set_count: layouts.len() as u32,
       p_set_layouts: layouts.as_ptr(),
-      _marker: PhantomData
+      _marker: PhantomData,
     };
     unsafe { device.allocate_descriptor_sets(&allocate_info) }
   }
@@ -142,10 +134,7 @@ fn create_layout(
     flags: vk::DescriptorSetLayoutCreateFlags::empty(),
     binding_count: bindings.len() as u32,
     p_bindings: bindings.as_ptr(),
-    _marker: PhantomData
+    _marker: PhantomData,
   };
-  unsafe {
-    device
-      .create_descriptor_set_layout(&create_info, None)
-  }
+  unsafe { device.create_descriptor_set_layout(&create_info, None) }
 }

@@ -1,6 +1,7 @@
 mod allocator;
 mod command_pools;
 mod create_objs;
+mod descriptor_sets;
 mod device_destroyable;
 mod errors;
 mod gpu_data;
@@ -11,7 +12,6 @@ mod renderer;
 mod shaders;
 mod swapchain;
 mod vertices;
-mod descriptor_sets;
 
 use crate::cstr;
 use ash::vk;

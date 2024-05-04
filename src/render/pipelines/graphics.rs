@@ -1,76 +1,198 @@
 use std::{
   marker::PhantomData,
+  mem::{self, size_of},
   ptr::{self, addr_of},
 };
 
 use ash::vk;
 
-use crate::render::{
-  device_destroyable::DeviceManuallyDestroyed,
-  errors::OutOfMemoryError,
-  shaders::{self},
-  vertices::Vertex,
+use crate::{
+  render::{
+    descriptor_sets::DescriptorPool,
+    device_destroyable::DeviceManuallyDestroyed,
+    errors::OutOfMemoryError,
+    shaders::{self, Shader},
+    vertices::Vertex,
+  },
+  vertex_input_state_create_info,
 };
-use crate::vertex_input_state_create_info;
 
 use super::PipelineCreationError;
+
+// represents a position of the object that will be rendered
+#[repr(C)]
+pub struct RenderPosition {
+  position: [f32; 2],
+  ratio: [f32; 2], // width and height in relation to the surface
+}
+
+impl RenderPosition {
+  pub fn new(position: [f32; 2], ratio: [f32; 2]) -> Self {
+    Self { position, ratio }
+  }
+}
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
   pub pipeline: vk::Pipeline,
+
+  shader: Shader,
+  old: Option<vk::Pipeline>,
 }
 
 impl GraphicsPipeline {
-  pub fn create(
+  pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
+    descriptor_pool: &DescriptorPool,
+    extent: vk::Extent2D,
   ) -> Result<Self, PipelineCreationError> {
+    let layout = Self::create_layout(device, descriptor_pool)?;
     let shader =
       shaders::Shader::load(device).map_err(|err| PipelineCreationError::ShaderFailed(err))?;
+
+    let initial = Self::create_with_base(
+      device,
+      layout,
+      &shader,
+      cache,
+      vk::Pipeline::null(),
+      render_pass,
+      extent,
+    );
+
+    Ok(Self {
+      layout,
+      pipeline: initial,
+      shader,
+      old: None,
+    })
+  }
+
+  // create a new pipeline and mark the other as old
+  pub fn recreate(
+    &mut self,
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    render_pass: vk::RenderPass,
+    extent: vk::Extent2D,
+  ) {
+    assert!(self.old.is_none());
+
+    let mut new = Self::create_with_base(
+      device,
+      self.layout,
+      &self.shader,
+      cache,
+      self.vk_obj,
+      render_pass,
+      extent,
+    );
+
+    let old = {
+      mem::swap(&mut self.vk_obj, &mut new);
+      new
+    };
+
+    self.old = Some(old);
+  }
+
+  // destroy old pipeline once it stops being used
+  pub unsafe fn destroy_old(&mut self, device: &ash::Device) {
+    if let Some(old) = self.old {
+      device.destroy_pipeline(old, None);
+      self.old = None;
+    }
+  }
+
+  fn create_layout(
+    device: &ash::Device,
+    descriptor_pool: &DescriptorPool,
+  ) -> Result<vk::PipelineLayout, OutOfMemoryError> {
+    let push_constant_range = vk::PushConstantRange {
+      stage_flags: vk::ShaderStageFlags::VERTEX,
+      offset: 0,
+      size: size_of::<RenderPosition>() as u32,
+    };
+    let layout_create_info = vk::PipelineLayoutCreateInfo {
+      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+      p_next: ptr::null(),
+      flags: vk::PipelineLayoutCreateFlags::empty(),
+      set_layout_count: 1,
+      p_set_layouts: &descriptor_pool.layout,
+      push_constant_range_count: 1,
+      p_push_constant_ranges: &push_constant_range,
+      _marker: PhantomData,
+    };
+    let layout_create_info = vk::PipelineLayoutCreateInfo {
+      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
+      p_next: ptr::null(),
+      flags: vk::PipelineLayoutCreateFlags::empty(),
+      set_layout_count: 0,
+      p_set_layouts: ptr::null(),
+      push_constant_range_count: 0,
+      p_push_constant_ranges: ptr::null(),
+      _marker: PhantomData,
+    };
+    Ok(
+      unsafe { device.create_pipeline_layout(&layout_create_info, None) }
+        .map_err(|vkerr| OutOfMemoryError::from(vkerr))?,
+    )
+  }
+
+  fn create_with_base(
+    device: &ash::Device,
+    layout: vk::PipelineLayout,
+    shader: &Shader,
+    cache: vk::PipelineCache,
+    base: vk::Pipeline,
+    render_pass: vk::RenderPass,
+    extent: vk::Extent2D,
+  ) -> Result<vk::Pipeline, PipelineCreationError> {
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
     let vertex_input_state = vertex_input_state_create_info!(Vertex);
 
-    let input_assembly_state_ci = triangle_input_assembly_state();
+    let input_assembly_state = triangle_input_assembly_state();
 
     // full image viewport and scissor
     let viewport = vk::Viewport {
       x: 0.0,
       y: 0.0,
-      width: IMAGE_WIDTH as f32,
-      height: IMAGE_HEIGHT as f32,
+      width: extent.width as f32,
+      height: extent.height as f32,
       min_depth: 0.0,
       max_depth: 1.0,
     };
     let scissor = vk::Rect2D {
       offset: vk::Offset2D { x: 0, y: 0 },
       extent: vk::Extent2D {
-        width: IMAGE_WIDTH,
-        height: IMAGE_HEIGHT,
+        width: extent.width,
+        height: extent.height,
       },
     };
-    let viewport_state = vk::PipelineViewportStateCreateInfo {
-      s_type: vk::StructureType::PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::PipelineViewportStateCreateFlags::empty(),
-      scissor_count: 1,
-      p_scissors: addr_of!(scissor),
-      viewport_count: 1,
-      p_viewports: addr_of!(viewport),
-      _marker: PhantomData,
-    };
+    let viewport_state = vk::PipelineViewportStateCreateInfo::default()
+      .scissors(&[scissor])
+      .viewports(&[viewport]);
 
     let rasterization_state_ci = no_depth_rasterization_state();
     let multisample_state_ci = no_multisample_state();
 
     let attachment_state = vk::PipelineColorBlendAttachmentState {
-      // no blend state
-      blend_enable: vk::FALSE,
+      // blend by opacity
+      blend_enable: vk::TRUE,
       color_write_mask: vk::ColorComponentFlags::RGBA,
 
-      // everything else doesn't matter
-      ..Default::default()
+      // final_color = (src_alpha * src_color) + ((1 - src_alpha) * dst_color)
+      src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+      dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+      color_blend_op: vk::BlendOp::ADD,
+
+      // final_alpha = src_alpha
+      src_alpha_blend_factor: vk::BlendFactor::ONE,
+      dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+      alpha_blend_op: vk::BlendOp::ADD,
     };
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo {
       s_type: vk::StructureType::PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -84,28 +206,14 @@ impl GraphicsPipeline {
       _marker: PhantomData,
     };
 
-    // no descriptor sets or push constants
-    let layout_create_info = vk::PipelineLayoutCreateInfo {
-      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::PipelineLayoutCreateFlags::empty(),
-      set_layout_count: 0,
-      p_set_layouts: ptr::null(),
-      push_constant_range_count: 0,
-      p_push_constant_ranges: ptr::null(),
-      _marker: PhantomData,
-    };
-    let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
-      .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
-
     let create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
       p_next: ptr::null(),
       flags: vk::PipelineCreateFlags::empty(),
       stage_count: shader_stages.len() as u32,
       p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: vertex_input_state.get(),
-      p_input_assembly_state: &input_assembly_state_ci,
+      p_vertex_input_state: vertex_input_state.as_ptr(),
+      p_input_assembly_state: &input_assembly_state,
       p_tessellation_state: ptr::null(),
       p_viewport_state: &viewport_state,
       p_rasterization_state: &rasterization_state_ci,
@@ -116,11 +224,11 @@ impl GraphicsPipeline {
       layout,
       render_pass,
       subpass: 0,
-      base_pipeline_handle: vk::Pipeline::null(),
+      base_pipeline_handle: base,
       base_pipeline_index: -1, // -1 for null
       _marker: PhantomData,
     };
-    let pipeline = unsafe {
+    Ok(unsafe {
       device
         .create_graphics_pipelines(cache, &[create_info], None)
         .map_err(|incomplete| incomplete.1)
@@ -131,24 +239,11 @@ impl GraphicsPipeline {
           vk::Result::ERROR_INVALID_SHADER_NV => PipelineCreationError::CompilationFailed,
           _ => panic!(),
         })?[0]
-    };
-
-    unsafe {
-      shader.destroy_self(device);
-    }
-
-    Ok(Self { layout, pipeline })
+    })
   }
 }
 
-impl DeviceManuallyDestroyed for GraphicsPipeline {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    device.destroy_pipeline(self.pipeline, None);
-    device.destroy_pipeline_layout(self.layout, None);
-  }
-}
-
-fn triangle_input_assembly_state<'a>() -> vk::PipelineInputAssemblyStateCreateInfo<'a> {
+const fn triangle_input_assembly_state<'a>() -> vk::PipelineInputAssemblyStateCreateInfo<'a> {
   vk::PipelineInputAssemblyStateCreateInfo {
     s_type: vk::StructureType::PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
     flags: vk::PipelineInputAssemblyStateCreateFlags::empty(),
@@ -161,7 +256,7 @@ fn triangle_input_assembly_state<'a>() -> vk::PipelineInputAssemblyStateCreateIn
 }
 
 // rasterization with no depth and no culling
-fn no_depth_rasterization_state<'a>() -> vk::PipelineRasterizationStateCreateInfo<'a> {
+const fn no_depth_rasterization_state<'a>() -> vk::PipelineRasterizationStateCreateInfo<'a> {
   vk::PipelineRasterizationStateCreateInfo {
     s_type: vk::StructureType::PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
     p_next: ptr::null(),
@@ -180,7 +275,7 @@ fn no_depth_rasterization_state<'a>() -> vk::PipelineRasterizationStateCreateInf
   }
 }
 
-fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a> {
+const fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a> {
   // everything off
   vk::PipelineMultisampleStateCreateInfo {
     s_type: vk::StructureType::PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -193,5 +288,16 @@ fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a> {
     alpha_to_one_enable: vk::FALSE,
     alpha_to_coverage_enable: vk::FALSE,
     _marker: PhantomData,
+  }
+}
+
+impl DeviceManuallyDestroyed for GraphicsPipeline {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    self.destroy_old(device);
+    device.destroy_pipeline(self.vk_obj, None);
+    device.destroy_pipeline_layout(self.layout, None);
+
+    // can be unloaded any time
+    self.shader.destroy_self(device);
   }
 }

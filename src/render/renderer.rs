@@ -1,7 +1,9 @@
 use ash::vk;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
-  marker::PhantomData, mem::MaybeUninit, ptr::{self, addr_of}
+  marker::PhantomData,
+  mem::MaybeUninit,
+  ptr::{self, addr_of},
 };
 use winit::{
   dpi::PhysicalSize,
@@ -28,7 +30,10 @@ use crate::{
   INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
 };
 
-use super::{descriptor_sets::DescriptorPool, initialization::Surface, swapchain::Swapchains, RenderInit, FRAMES_IN_FLIGHT};
+use super::{
+  descriptor_sets::DescriptorPool, initialization::Surface, swapchain::Swapchains, RenderInit,
+  FRAMES_IN_FLIGHT,
+};
 
 pub struct Renderer {
   _entry: ash::Entry,
@@ -56,14 +61,14 @@ pub struct Renderer {
 const DESTROYABLE_COUNT: usize = 10;
 struct Destructor {
   objs: [*const dyn DeviceManuallyDestroyed; DESTROYABLE_COUNT],
-  len: usize
+  len: usize,
 }
 
 impl Destructor {
   pub fn new() -> Self {
     Self {
-      objs: unsafe {MaybeUninit::uninit().assume_init()},
-      len: 0
+      objs: unsafe { MaybeUninit::uninit().assume_init() },
+      len: 0,
     }
   }
 
@@ -78,7 +83,6 @@ impl Destructor {
     }
   }
 }
-
 
 impl Renderer {
   pub fn initialize(
@@ -110,7 +114,13 @@ impl Renderer {
     #[cfg(feature = "vl")]
     destructor.push(debug_utils);
 
-    let surface = Surface::new(&entry, &instance, target.display_handle(), window.window_handle()).on_err(|_| destroy_instance())?;
+    let surface = Surface::new(
+      &entry,
+      &instance,
+      target.display_handle(),
+      window.window_handle(),
+    )
+    .on_err(|_| destroy_instance())?;
     destructor.push(surface);
 
     let physical_device =
@@ -124,11 +134,10 @@ impl Renderer {
 
     let (device, queues) =
       create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
+    destructor.push(device);
 
-    let render_pass = create_render_pass(&device).on_err(|_| unsafe {
-      destroy!(&device);
-      destroy_instance();
-    })?;
+    let render_pass =
+      create_render_pass(&device).on_err(|_| unsafe { destructor.fire(&device) })?;
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
@@ -143,23 +152,15 @@ impl Renderer {
     }
 
     log::debug!("Creating pipeline");
-    let pipeline =
-      GraphicsPipeline::create(&device, pipeline_cache, render_pass).on_err(|_| unsafe {
-        destroy!(&device => &pipeline_cache, &render_pass, &device);
-        destroy_instance();
-      })?;
+    let pipeline = GraphicsPipeline::create(&device, pipeline_cache, render_pass)
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
 
     let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
       destroy!(&device => &pipeline, &render_pass, &device);
       destroy_instance();
     })?;
 
-    let mut gpu_data = GPUData::new(
-      &device,
-      &physical_device,
-      render_pass,
-    )
-    .on_err(|_| unsafe {
+    let mut gpu_data = GPUData::new(&device, &physical_device, render_pass).on_err(|_| unsafe {
       destroy!(&device => &command_pools, &pipeline, &render_pass, &device);
       destroy_instance();
     })?;
@@ -187,7 +188,7 @@ impl Renderer {
       pipeline,
       swapchains,
       descriptor_pool,
-      framebuffers
+      framebuffers,
     })
   }
 

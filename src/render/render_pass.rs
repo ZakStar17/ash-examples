@@ -2,19 +2,23 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::render::{errors::OutOfMemoryError};
+use crate::render::errors::OutOfMemoryError;
 
-pub fn create_render_pass(device: &ash::Device, format: vk::Format) -> Result<vk::RenderPass, OutOfMemoryError> {
+pub fn create_render_pass(
+  device: &ash::Device,
+  format: vk::Format,
+  surface_format: vk::Format,
+) -> Result<vk::RenderPass, OutOfMemoryError> {
   let image_attachment = vk::AttachmentDescription {
     flags: vk::AttachmentDescriptionFlags::empty(),
-    format,
+    format: surface_format,
     samples: vk::SampleCountFlags::TYPE_1,
     load_op: vk::AttachmentLoadOp::CLEAR,
     store_op: vk::AttachmentStoreOp::STORE,
     stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
     stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
     initial_layout: vk::ImageLayout::UNDEFINED,
-    final_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL, // layout after render pass finishes
+    final_layout: vk::ImageLayout::PRESENT_SRC_KHR, // layout after render pass finishes
   };
 
   let attachment_ref = vk::AttachmentReference {
@@ -22,20 +26,9 @@ pub fn create_render_pass(device: &ash::Device, format: vk::Format) -> Result<vk
     layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
   };
 
-  let image_subpass = vk::SubpassDescription {
-    flags: vk::SubpassDescriptionFlags::empty(),
-    pipeline_bind_point: vk::PipelineBindPoint::GRAPHICS,
-    input_attachment_count: 0,
-    p_input_attachments: ptr::null(),
-    // output attachments
-    color_attachment_count: 1,
-    p_color_attachments: &attachment_ref,
-    p_resolve_attachments: ptr::null(),
-    p_depth_stencil_attachment: ptr::null(),
-    preserve_attachment_count: 0,
-    p_preserve_attachments: ptr::null(),
-    _marker: PhantomData,
-  };
+  let image_subpass = vk::SubpassDescription::default()
+    .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+    .color_attachments(&[attachment_ref]);
 
   let dependencies = [
     // change access flags to attachment before subpass begins
@@ -48,30 +41,12 @@ pub fn create_render_pass(device: &ash::Device, format: vk::Format) -> Result<vk
       dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
       dependency_flags: vk::DependencyFlags::empty(),
     },
-    // wait for subpass to finish before doing any transfer
-    vk::SubpassDependency {
-      src_subpass: 0,
-      dst_subpass: vk::SUBPASS_EXTERNAL,
-      src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-      dst_stage_mask: vk::PipelineStageFlags::TRANSFER,
-      src_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-      dst_access_mask: vk::AccessFlags::NONE,
-      dependency_flags: vk::DependencyFlags::empty(),
-    },
   ];
 
-  let create_info = vk::RenderPassCreateInfo {
-    s_type: vk::StructureType::RENDER_PASS_CREATE_INFO,
-    flags: vk::RenderPassCreateFlags::empty(),
-    p_next: ptr::null(),
-    attachment_count: 1,
-    p_attachments: &image_attachment,
-    subpass_count: 1,
-    p_subpasses: &image_subpass,
-    dependency_count: dependencies.len() as u32,
-    p_dependencies: dependencies.as_ptr(),
-    _marker: PhantomData,
-  };
+  let create_info = vk::RenderPassCreateInfo::default()
+    .attachments(&[image_attachment])
+    .subpasses(&[image_subpass])
+    .dependencies(&dependencies);
   unsafe {
     device
       .create_render_pass(&create_info, None)

@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::{
+use crate::render::{
   errors::{AllocationError, OutOfMemoryError},
   initialization::device::PhysicalDevice,
 };
