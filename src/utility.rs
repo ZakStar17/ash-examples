@@ -25,6 +25,10 @@ pub unsafe fn i8_array_as_cstr<'a>(arr: &'a [i8]) -> Result<&'a CStr, FromBytesU
   CStr::from_bytes_until_nul(std::mem::transmute(arr))
 }
 
+pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+  std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
+}
+
 pub trait OnErr<T, E> {
   fn on_err<O: FnOnce(&E)>(self: Self, op: O) -> Result<T, E>
   where

@@ -136,8 +136,18 @@ impl Renderer {
       create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
     destructor.push(device);
 
-    let render_pass =
-      create_render_pass(&device).on_err(|_| unsafe { destructor.fire(&device) })?;
+    // todo: add error handling
+    let swapchains = Swapchains::new(
+      &instance,
+      &physical_device,
+      &device,
+      &surface,
+      window.inner_size(),
+    );
+    destructor.push(swapchains);
+
+    let render_pass = create_render_pass(&device, swapchains.get_format())
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
@@ -155,10 +165,9 @@ impl Renderer {
     let pipeline = GraphicsPipeline::create(&device, pipeline_cache, render_pass)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
 
-    let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
-      destroy!(&device => &pipeline, &render_pass, &device);
-      destroy_instance();
-    })?;
+    let mut command_pools = CommandPools::new(&device, &physical_device)
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(command_pools);
 
     let mut gpu_data = GPUData::new(&device, &physical_device, render_pass).on_err(|_| unsafe {
       destroy!(&device => &command_pools, &pipeline, &render_pass, &device);

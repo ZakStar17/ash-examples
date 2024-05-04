@@ -23,13 +23,17 @@ const WINDOW_TITLE: &'static str = "Bouncy Ferris";
 const INITIAL_WINDOW_WIDTH: u32 = 800;
 const INITIAL_WINDOW_HEIGHT: u32 = 800;
 
-const RESOLUTION: [u32; 2] = [INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT];
+const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  float32: [0.01, 0.01, 0.01, 1.0],
+};
+
+const TEXTURE_PATH: &'static str = "./ferris.png";
 
 // see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
 // FIFO_KHR is required to be supported and functions as vsync
 // IMMEDIATE will be chosen over RELAXED_KHR if the latter is not supported
 // otherwise, presentation mode will fallback to FIFO_KHR
-pub const PREFERRED_PRESENTATION_METHOD: vk::PresentModeKHR = vk::PresentModeKHR::IMMEDIATE;
+const PREFERRED_PRESENTATION_METHOD: vk::PresentModeKHR = vk::PresentModeKHR::IMMEDIATE;
 
 // This application doesn't use dynamic pipeline size, so resizing is expensive
 // If a small resize happens (for example while resizing with the mouse) this usually means that

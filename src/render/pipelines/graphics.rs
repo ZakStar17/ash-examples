@@ -11,6 +11,7 @@ use crate::{
     descriptor_sets::DescriptorPool,
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,
+    render_object::RenderPosition,
     shaders::{self, Shader},
     vertices::Vertex,
   },
@@ -18,19 +19,6 @@ use crate::{
 };
 
 use super::PipelineCreationError;
-
-// represents a position of the object that will be rendered
-#[repr(C)]
-pub struct RenderPosition {
-  position: [f32; 2],
-  ratio: [f32; 2], // width and height in relation to the surface
-}
-
-impl RenderPosition {
-  pub fn new(position: [f32; 2], ratio: [f32; 2]) -> Self {
-    Self { position, ratio }
-  }
-}
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,

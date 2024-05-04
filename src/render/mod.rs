@@ -7,6 +7,7 @@ mod errors;
 mod gpu_data;
 mod initialization;
 mod pipelines;
+mod render_object;
 mod render_pass;
 mod renderer;
 mod shaders;

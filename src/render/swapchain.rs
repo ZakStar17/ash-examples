@@ -93,6 +93,10 @@ impl Swapchains {
     self.current.destroy_self(device, &self.loader);
   }
 
+  pub fn get_format(&self) -> vk::Format {
+    self.current.format
+  }
+
   pub fn get_extent(&self) -> vk::Extent2D {
     self.current.extent
   }

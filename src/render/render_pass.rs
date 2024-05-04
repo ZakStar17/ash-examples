@@ -6,7 +6,6 @@ use crate::render::errors::OutOfMemoryError;
 
 pub fn create_render_pass(
   device: &ash::Device,
-  format: vk::Format,
   surface_format: vk::Format,
 ) -> Result<vk::RenderPass, OutOfMemoryError> {
   let image_attachment = vk::AttachmentDescription {

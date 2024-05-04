@@ -3,15 +3,17 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 use crate::{
-  device_destroyable::DeviceManuallyDestroyed,
-  errors::OutOfMemoryError,
-  gpu_data::{TriangleImage, TriangleModelData},
-  initialization::device::QueueFamilies,
-  pipelines::GraphicsPipeline,
-  BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
+  render::{
+    descriptor_sets::DescriptorPool,
+    device_destroyable::DeviceManuallyDestroyed,
+    errors::OutOfMemoryError,
+    gpu_data::TriangleModelData,
+    initialization::device::QueueFamilies,
+    pipelines::GraphicsPipeline,
+    render_object::{RenderPosition, INDICES},
+  },
+  utility, BACKGROUND_COLOR,
 };
-
-use super::dependency_info;
 
 pub struct GraphicsCommandBufferPool {
   pool: vk::CommandPool,
@@ -37,11 +39,13 @@ impl GraphicsCommandBufferPool {
     device: &ash::Device,
     queue_families: &QueueFamilies,
     render_pass: vk::RenderPass,
+    descriptors: &DescriptorPool,
+    extent: vk::Extent2D,
+    framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
-    // contains image, image_view and framebuffer
-    triangle_image: &TriangleImage,
     // contains index and vertex buffer
     triangle_model: &TriangleModelData,
+    position: &RenderPosition, // Ferris's position
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.triangle;
     let begin_info =
@@ -56,14 +60,11 @@ impl GraphicsCommandBufferPool {
         s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
         p_next: ptr::null(),
         render_pass,
-        framebuffer: triangle_image.framebuffer,
+        framebuffer,
         // whole image
         render_area: vk::Rect2D {
           offset: vk::Offset2D { x: 0, y: 0 },
-          extent: vk::Extent2D {
-            width: IMAGE_WIDTH,
-            height: IMAGE_HEIGHT,
-          },
+          extent,
         },
         clear_value_count: 1,
         p_clear_values: &clear_value,
@@ -71,6 +72,21 @@ impl GraphicsCommandBufferPool {
       };
       device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
 
+      device.cmd_bind_descriptor_sets(
+        cb,
+        vk::PipelineBindPoint::GRAPHICS,
+        pipeline.layout,
+        0,
+        &[descriptors.texture],
+        &[],
+      );
+      device.cmd_push_constants(
+        cb,
+        pipeline.layout,
+        vk::ShaderStageFlags::VERTEX,
+        0,
+        utility::any_as_u8_slice(position),
+      );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
       device.cmd_bind_vertex_buffers(cb, 0, &[triangle_model.vertex], &[0]);
       device.cmd_bind_index_buffer(cb, triangle_model.index, 0, vk::IndexType::UINT16);
@@ -87,27 +103,6 @@ impl GraphicsCommandBufferPool {
       base_array_layer: 0,
       layer_count: 1,
     };
-
-    // After the render pass finishes the image will already have the correct layout, so only a
-    // queue ownership transfer is necessary
-    if queue_families.get_graphics_index() != queue_families.get_transfer_index() {
-      let release = vk::ImageMemoryBarrier2 {
-        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
-        p_next: ptr::null(),
-        src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from render pass
-        dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
-        src_access_mask: vk::AccessFlags2::NONE, // from render pass
-        dst_access_mask: vk::AccessFlags2::NONE, // NONE for ownership release
-        old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-        new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-        src_queue_family_index: queue_families.get_graphics_index(),
-        dst_queue_family_index: queue_families.get_transfer_index(),
-        image: triangle_image.image,
-        subresource_range,
-        _marker: PhantomData,
-      };
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[release]));
-    }
 
     device.end_command_buffer(self.triangle)?;
 
