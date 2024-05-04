@@ -5,6 +5,8 @@ use crate::render::{
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
 
+use super::swapchain::SwapchainCreationError;
+
 pub fn error_chain_fmt(
   e: &impl std::error::Error,
   f: &mut std::fmt::Formatter<'_>,
@@ -58,6 +60,9 @@ pub enum InitializationError {
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] Option<AllocationError>),
 
+  #[error("Failed to create swapchain")]
+  SwapchainCreationFailed(#[source] SwapchainCreationError),
+
   #[error("Failed to create pipelines")]
   PipelineCreationFailed(#[source] PipelineCreationError),
 
@@ -88,6 +93,12 @@ impl From<InstanceCreationError> for InitializationError {
 impl From<PipelineCreationError> for InitializationError {
   fn from(value: PipelineCreationError) -> Self {
     InitializationError::PipelineCreationFailed(value)
+  }
+}
+
+impl From<SwapchainCreationError> for InitializationError {
+  fn from(value: SwapchainCreationError) -> Self {
+    InitializationError::SwapchainCreationFailed(value)
   }
 }
 

@@ -5,10 +5,51 @@ use winit::dpi::PhysicalSize;
 
 use crate::PREFERRED_PRESENTATION_METHOD;
 
-use super::initialization::{
-  device::{PhysicalDevice, QueueFamilies},
-  Surface,
+use super::{
+  errors::OutOfMemoryError,
+  initialization::{
+    device::{PhysicalDevice, QueueFamilies},
+    Surface,
+  },
 };
+
+// VK_ERROR_NATIVE_WINDOW_IN_USE_KHR shouldn't happen unless some other program somehow hijacks
+//    the created window other API
+// VK_ERROR_COMPRESSION_EXHAUSTED_EXT shouldn't happen because there are no compressed image that
+//    are requested
+#[derive(Debug, thiserror::Error)]
+pub enum SwapchainCreationError {
+  #[error("Out of memory")]
+  OutOfMemory(#[source] OutOfMemoryError),
+
+  #[error("Device is lost (https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#devsandqueues-lost-device)")]
+  DeviceIsLost,
+  #[error("Surface is lost and no longer available")]
+  SurfaceIsLost,
+  #[error("Creation failed because of some other error")]
+  GenericInitializationError,
+}
+
+impl From<vk::Result> for SwapchainCreationError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        SwapchainCreationError::OutOfMemory(value.into())
+      }
+      vk::Result::ERROR_DEVICE_LOST => SwapchainCreationError::DeviceIsLost,
+      vk::Result::ERROR_SURFACE_LOST_KHR => SwapchainCreationError::SurfaceIsLost,
+      vk::Result::ERROR_INITIALIZATION_FAILED => SwapchainCreationError::GenericInitializationError,
+
+      vk::Result::ERROR_NATIVE_WINDOW_IN_USE_KHR => {
+        panic!("Swapchain creation returned VK_ERROR_NATIVE_WINDOW_IN_USE_KHR")
+      }
+      vk::Result::VK_ERROR_COMPRESSION_EXHAUSTED_EXT => {
+        panic!("Swapchain creation returned VK_ERROR_COMPRESSION_EXHAUSTED_EXT")
+      }
+      _ => panic!(),
+    }
+  }
+}
 
 pub struct Swapchains {
   loader: ash::khr::swapchain::Device,
@@ -23,16 +64,16 @@ impl Swapchains {
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
-  ) -> Self {
+  ) -> Result<Self, SwapchainCreationError> {
     let loader = ash::khr::swapchain::Device::new(instance, device);
 
-    let current = Swapchain::create(physical_device, device, surface, &loader, window_size);
+    let current = Swapchain::create(physical_device, device, surface, &loader, window_size)?;
 
-    Self {
+    Ok(Self {
       loader,
       current,
       old: None,
-    }
+    })
   }
 
   pub unsafe fn acquire_next_image(
@@ -48,14 +89,14 @@ impl Swapchains {
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
-  ) -> RecreationChanges {
+  ) -> Result<RecreationChanges, SwapchainCreationError> {
     let (old, changes) =
       self
         .current
-        .recreate(physical_device, device, surface, &self.loader, window_size);
+        .recreate(physical_device, device, surface, &self.loader, window_size)?;
 
     self.old = Some(old);
-    changes
+    Ok(changes)
   }
 
   pub unsafe fn queue_present(
@@ -134,7 +175,7 @@ impl Swapchain {
     surface: &Surface,
     swapchain_loader: &ash::khr::swapchain::Device,
     window_size: PhysicalSize<u32>,
-  ) -> Self {
+  ) -> Result<Self, SwapchainCreationError> {
     let capabilities = unsafe { surface.get_capabilities(**physical_device) };
     let image_format = select_swapchain_image_format(**physical_device, surface);
     let present_mode = select_swapchain_present_mode(**physical_device, surface);
@@ -168,7 +209,7 @@ impl Swapchain {
     surface: &Surface,
     swapchain_loader: &ash::khr::swapchain::Device,
     window_size: PhysicalSize<u32>,
-  ) -> (Self, RecreationChanges) {
+  ) -> Result<(Self, RecreationChanges), SwapchainCreationError> {
     let capabilities = unsafe { surface.get_capabilities(**physical_device) };
     let image_format = select_swapchain_image_format(**physical_device, surface);
     let present_mode = select_swapchain_present_mode(**physical_device, surface);
@@ -197,14 +238,14 @@ impl Swapchain {
       present_mode,
       extent,
       self.vk_obj,
-    );
+    )?;
 
     let old = {
       std::mem::swap(&mut new, self);
       new
     };
 
-    (old, changes)
+    Ok((old, changes))
   }
 
   fn create_with(
@@ -217,7 +258,7 @@ impl Swapchain {
     present_mode: vk::PresentModeKHR,
     extent: vk::Extent2D,
     old_swapchain: vk::SwapchainKHR,
-  ) -> Self {
+  ) -> Result<Self, SwapchainCreationError> {
     // it is usually recommended to use one more than the minimum number of images
     let image_count = if capabilities.max_image_count > 0 {
       (capabilities.min_image_count + 1).min(capabilities.max_image_count)
@@ -236,7 +277,7 @@ impl Swapchain {
       image_format: image_format.format,
       image_extent: extent,
       image_array_layers: 1,
-      image_usage: vk::ImageUsageFlags::TRANSFER_DST,
+      image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
 
       image_sharing_mode: vk::SharingMode::EXCLUSIVE,
       // ignored when SharingMode is EXCLUSIVE
@@ -268,25 +309,18 @@ impl Swapchain {
         None
       };
 
-    let swapchain = unsafe {
-      swapchain_loader
-        .create_swapchain(&create_info, None)
-        .expect("Failed to create Swapchain!")
-    };
+    let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }?;
 
-    let images = unsafe {
-      swapchain_loader
-        .get_swapchain_images(swapchain)
-        .expect("Failed to get Swapchain Images.")
-        .into_boxed_slice()
-    };
+    let images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
+      .map_err(|vkerr| OutOfMemoryError::from(vkerr))?
+      .into_boxed_slice();
 
-    Self {
+    Ok(Self {
       vk_obj: swapchain,
       images,
       format: image_format.format,
       extent,
-    }
+    })
   }
 
   pub unsafe fn acquire_next_image(

@@ -136,14 +136,13 @@ impl Renderer {
       create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
     destructor.push(device);
 
-    // todo: add error handling
     let swapchains = Swapchains::new(
       &instance,
       &physical_device,
       &device,
       &surface,
       window.inner_size(),
-    );
+    )?;
     destructor.push(swapchains);
 
     let render_pass = create_render_pass(&device, swapchains.get_format())
