@@ -16,7 +16,9 @@ pub use queues::{QueueFamilies, Queues};
 
 use crate::{
   render::{
-    initialization::device::vendor::Vendor, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+    errors::OutOfMemoryError,
+    initialization::device::{queues::QueueFamilyError, vendor::Vendor},
+    REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
   },
   utility::{self, c_char_array_to_string, i8_array_as_cstr},
 };
@@ -52,7 +54,7 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
 fn supports_required_extensions(
   instance: &ash::Instance,
   device: vk::PhysicalDevice,
-) -> Result<bool, vk::Result> {
+) -> Result<bool, OutOfMemoryError> {
   let properties = unsafe { instance.enumerate_device_extension_properties(device)? };
 
   for req in REQUIRED_DEVICE_EXTENSIONS {
@@ -72,6 +74,48 @@ fn supports_swapchain(device: vk::PhysicalDevice, surface: &Surface) -> Result<b
   let present_modes = unsafe { surface.get_present_modes(device) }?;
 
   Ok(!formats.is_empty() && !present_modes.is_empty())
+}
+
+fn check_physical_device_capabilities(
+  instance: &ash::Instance,
+  surface: &Surface,
+  physical_device: vk::PhysicalDevice,
+  properties: &PhysicalDeviceProperties,
+  features: &PhysicalDeviceFeatures,
+) -> Result<bool, SurfaceError> {
+  // Filter devices that are strictly not supported
+  // Check for any features or limits required by the application
+
+  if properties.p10.api_version < TARGET_API_VERSION {
+    log::info!(
+      "Skipped physical device: Device API version is less than targeted by the application"
+    );
+    return Ok(false);
+  }
+
+  if !supports_required_extensions(instance, physical_device)
+    .map_err(|err| SurfaceError::OutOfMemory(err))?
+  {
+    log::info!("Skipped physical device: Device does not support all required extensions");
+    return Ok(false);
+  }
+
+  if !supports_swapchain(physical_device, surface)? {
+    log::warn!("Skipped physical device: Device does not support swapchain");
+    return Ok(false);
+  }
+
+  if features.f12.timeline_semaphore != vk::TRUE {
+    log::warn!("Skipped physical device: Device does not support timeline semaphores");
+    return Ok(false);
+  }
+
+  if features.f13.synchronization2 != vk::TRUE {
+    log::warn!("Skipped physical device: Device does not support synchronization features");
+    return Ok(false);
+  }
+
+  Ok(true)
 }
 
 unsafe fn select_physical_device<'a>(
@@ -98,58 +142,39 @@ unsafe fn select_physical_device<'a>(
         log_device_properties(&properties.p10);
         let features = get_extended_features(instance, physical_device);
 
-        if properties.p10.api_version < TARGET_API_VERSION {
-          log::info!(
-            "Skipped physical device: Device API version is less than targeted by the application"
-          );
-          return None;
-        }
-
-        match supports_required_extensions(instance, physical_device) {
-          Ok(supports_extensions) => {
-            if !supports_extensions {
-              log::info!(
-                "Skipped physical device: Device does not support all required extensions"
-              );
-              return None;
+        match check_physical_device_capabilities(
+          &instance,
+          &surface,
+          physical_device,
+          &properties,
+          &features,
+        ) {
+          Ok(all_good) => {
+            if all_good {
+              Some((physical_device, properties, features))
+            } else {
+              None
             }
           }
           Err(err) => {
             log::error!("Device selection error: {:?}", err);
-            return None;
+            None
           }
         }
-
-        match supports_swapchain(physical_device, surface) {
-          Ok(supports) => {
-            if !supports {
-              log::warn!("Skipped physical device: Device does not support swapchain");
-              return None;
-            }
-          }
-          Err(err) => {
-            log::error!("Device selection error: {:?}", err);
-            return None;
-          }
-        }
-
-        if features.f12.timeline_semaphore != vk::TRUE {
-          log::warn!("Skipped physical device: Device does not support timeline semaphores");
-          return None;
-        }
-
-        if features.f13.synchronization2 != vk::TRUE {
-          log::warn!("Skipped physical device: Device does not support synchronization features");
-          return None;
-        }
-
-        Some((physical_device, properties, features))
       })
       .filter_map(|(physical_device, properties, features)| {
         // filter devices that do not have required queue families
         match QueueFamilies::get_from_physical_device(instance, physical_device, surface) {
-          Err(()) => {
-            log::info!("Skipped physical device: Device does not contain required queue families");
+          Err(err) => {
+            match err {
+              QueueFamilyError::DoesNotSupportRequiredQueueFamilies => log::info!(
+                "Skipped physical device: Device does not contain required queue families"
+              ),
+              QueueFamilyError::SurfaceError(err) => log::error!(
+                "Device selection error during queue family retrieval: {:?}",
+                err
+              ),
+            }
             None
           }
           Ok(families) => Some((physical_device, properties, features, families)),

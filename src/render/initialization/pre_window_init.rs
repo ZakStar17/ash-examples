@@ -2,6 +2,7 @@ use raw_window_handle::{HandleError, HasDisplayHandle};
 use winit::event_loop::EventLoop;
 
 use crate::render::device_destroyable::ManuallyDestroyed;
+use std::mem;
 
 use super::{DebugUtils, InstanceCreationError};
 
@@ -48,20 +49,33 @@ impl RenderInit {
     })
   }
 
+  // take values out without calling drop
   #[cfg(feature = "vl")]
-  pub fn deconstruct(self) -> (ash::Entry, ash::Instance, DebugUtils) {
-    use std::mem;
+  pub fn deconstruct(mut self) -> (ash::Entry, ash::Instance, DebugUtils) {
+    unsafe {
+      // there is probably a way better way of doing this,
+      //  but I could't get it to work with ManuallyDrop or without creating uninit copies
+      let a = mem::replace(&mut self.entry, mem::MaybeUninit::uninit().assume_init());
+      let b = mem::replace(&mut self.instance, mem::MaybeUninit::uninit().assume_init());
+      let c = mem::replace(
+        &mut self.debug_utils,
+        mem::MaybeUninit::uninit().assume_init(),
+      );
+      mem::forget(self);
 
-    mem::forget(self);
-    (self.entry, self.instance, self.debug_utils)
+      (a, b, c)
+    }
   }
 
   #[cfg(not(feature = "vl"))]
   pub fn deconstruct(self) -> (ash::Entry, ash::Instance) {
-    use std::mem;
+    unsafe {
+      let a = mem::replace(&mut self.entry, mem::MaybeUninit::uninit().assume_init());
+      let b = mem::replace(&mut self.instance, mem::MaybeUninit::uninit().assume_init());
+      mem::forget(self);
 
-    mem::forget(self);
-    (self.entry, self.instance)
+      (a, b)
+    }
   }
 }
 

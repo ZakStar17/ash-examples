@@ -8,7 +8,7 @@ pub fn create_render_pass(
   device: &ash::Device,
   surface_format: vk::Format,
 ) -> Result<vk::RenderPass, OutOfMemoryError> {
-  let image_attachment = vk::AttachmentDescription {
+  let image_attachment = [vk::AttachmentDescription {
     flags: vk::AttachmentDescriptionFlags::empty(),
     format: surface_format,
     samples: vk::SampleCountFlags::TYPE_1,
@@ -18,16 +18,16 @@ pub fn create_render_pass(
     stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
     initial_layout: vk::ImageLayout::UNDEFINED,
     final_layout: vk::ImageLayout::PRESENT_SRC_KHR, // layout after render pass finishes
-  };
+  }];
 
-  let attachment_ref = vk::AttachmentReference {
+  let attachment_ref = [vk::AttachmentReference {
     attachment: 0,
     layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-  };
+  }];
 
-  let image_subpass = vk::SubpassDescription::default()
+  let image_subpass = [vk::SubpassDescription::default()
     .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-    .color_attachments(&[attachment_ref]);
+    .color_attachments(&attachment_ref)];
 
   let dependencies = [
     // change access flags to attachment before subpass begins
@@ -43,8 +43,8 @@ pub fn create_render_pass(
   ];
 
   let create_info = vk::RenderPassCreateInfo::default()
-    .attachments(&[image_attachment])
-    .subpasses(&[image_subpass])
+    .attachments(&image_attachment)
+    .subpasses(&image_subpass)
     .dependencies(&dependencies);
   unsafe {
     device

@@ -9,7 +9,7 @@ use super::{
   errors::OutOfMemoryError,
   initialization::{
     device::{PhysicalDevice, QueueFamilies},
-    Surface,
+    Surface, SurfaceError,
   },
 };
 
@@ -43,10 +43,25 @@ impl From<vk::Result> for SwapchainCreationError {
       vk::Result::ERROR_NATIVE_WINDOW_IN_USE_KHR => {
         panic!("Swapchain creation returned VK_ERROR_NATIVE_WINDOW_IN_USE_KHR")
       }
-      vk::Result::VK_ERROR_COMPRESSION_EXHAUSTED_EXT => {
+      vk::Result::ERROR_COMPRESSION_EXHAUSTED_EXT => {
         panic!("Swapchain creation returned VK_ERROR_COMPRESSION_EXHAUSTED_EXT")
       }
       _ => panic!(),
+    }
+  }
+}
+
+impl From<OutOfMemoryError> for SwapchainCreationError {
+  fn from(value: OutOfMemoryError) -> Self {
+    SwapchainCreationError::OutOfMemory(value)
+  }
+}
+
+impl From<SurfaceError> for SwapchainCreationError {
+  fn from(value: SurfaceError) -> Self {
+    match value {
+      SurfaceError::OutOfMemory(err) => SwapchainCreationError::OutOfMemory(err),
+      SurfaceError::SurfaceIsLost => SwapchainCreationError::SurfaceIsLost,
     }
   }
 }
@@ -176,9 +191,9 @@ impl Swapchain {
     swapchain_loader: &ash::khr::swapchain::Device,
     window_size: PhysicalSize<u32>,
   ) -> Result<Self, SwapchainCreationError> {
-    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
-    let image_format = select_swapchain_image_format(**physical_device, surface);
-    let present_mode = select_swapchain_present_mode(**physical_device, surface);
+    let capabilities = unsafe { surface.get_capabilities(**physical_device) }?;
+    let image_format = select_swapchain_image_format(**physical_device, surface)?;
+    let present_mode = select_swapchain_present_mode(**physical_device, surface)?;
     let extent = get_swapchain_extent(&capabilities, window_size);
 
     log::info!(
@@ -210,9 +225,9 @@ impl Swapchain {
     swapchain_loader: &ash::khr::swapchain::Device,
     window_size: PhysicalSize<u32>,
   ) -> Result<(Self, RecreationChanges), SwapchainCreationError> {
-    let capabilities = unsafe { surface.get_capabilities(**physical_device) };
-    let image_format = select_swapchain_image_format(**physical_device, surface);
-    let present_mode = select_swapchain_present_mode(**physical_device, surface);
+    let capabilities = unsafe { surface.get_capabilities(**physical_device) }?;
+    let image_format = select_swapchain_image_format(**physical_device, surface)?;
+    let present_mode = select_swapchain_present_mode(**physical_device, surface)?;
     let extent = get_swapchain_extent(&capabilities, window_size);
 
     log::info!(
@@ -343,37 +358,37 @@ impl Swapchain {
 fn select_swapchain_image_format(
   physical_device: vk::PhysicalDevice,
   surface: &Surface,
-) -> vk::SurfaceFormatKHR {
-  let formats = unsafe { surface.get_formats(physical_device) };
+) -> Result<vk::SurfaceFormatKHR, SurfaceError> {
+  let formats = unsafe { surface.get_formats(physical_device) }?;
   for available_format in formats.iter() {
     // commonly available
     if available_format.format == vk::Format::B8G8R8A8_SRGB
       && available_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
     {
-      return *available_format;
+      return Ok(*available_format);
     }
   }
 
-  formats[0]
+  Ok(formats[0])
 }
 
 fn select_swapchain_present_mode(
   physical_device: vk::PhysicalDevice,
   surface: &Surface,
-) -> vk::PresentModeKHR {
-  let present_modes = unsafe { surface.get_present_modes(physical_device) };
+) -> Result<vk::PresentModeKHR, SurfaceError> {
+  let present_modes = unsafe { surface.get_present_modes(physical_device) }?;
   if present_modes.contains(&PREFERRED_PRESENTATION_METHOD) {
-    return PREFERRED_PRESENTATION_METHOD;
+    return Ok(PREFERRED_PRESENTATION_METHOD);
   }
 
   if PREFERRED_PRESENTATION_METHOD == vk::PresentModeKHR::FIFO_RELAXED
     && present_modes.contains(&vk::PresentModeKHR::IMMEDIATE)
   {
-    return vk::PresentModeKHR::IMMEDIATE;
+    return Ok(vk::PresentModeKHR::IMMEDIATE);
   }
 
   // required to be available
-  vk::PresentModeKHR::FIFO
+  Ok(vk::PresentModeKHR::FIFO)
 }
 
 fn get_swapchain_extent(

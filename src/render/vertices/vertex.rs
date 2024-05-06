@@ -12,7 +12,7 @@ pub struct Vertex {
 impl Vertex {
   const ATTRIBUTE_SIZE: usize = 2;
 
-  const fn get_binding_description(binding: u32) -> vk::VertexInputBindingDescription {
+  pub const fn get_binding_description(binding: u32) -> vk::VertexInputBindingDescription {
     vk::VertexInputBindingDescription {
       binding,
       stride: size_of::<Self>() as u32,
@@ -20,7 +20,7 @@ impl Vertex {
     }
   }
 
-  const fn get_attribute_descriptions(
+  pub const fn get_attribute_descriptions(
     offset: u32,
     binding: u32,
   ) -> [vk::VertexInputAttributeDescription; Self::ATTRIBUTE_SIZE] {

@@ -14,11 +14,9 @@ use winit::{
 use crate::{
   destroy,
   render::{
-    command_pools::CommandPools,
     create_objs::{create_fence, create_semaphore},
     device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
     errors::{InitializationError, OutOfMemoryError},
-    gpu_data::GPUData,
     initialization::{
       self,
       device::{create_logical_device, PhysicalDevice, Queues},

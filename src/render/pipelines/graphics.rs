@@ -22,7 +22,7 @@ use super::PipelineCreationError;
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
-  pub pipeline: vk::Pipeline,
+  pub inner: vk::Pipeline,
 
   shader: Shader,
   old: Option<vk::Pipeline>,
@@ -48,11 +48,11 @@ impl GraphicsPipeline {
       vk::Pipeline::null(),
       render_pass,
       extent,
-    );
+    )?;
 
     Ok(Self {
       layout,
-      pipeline: initial,
+      inner: initial,
       shader,
       old: None,
     })
@@ -65,7 +65,7 @@ impl GraphicsPipeline {
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
-  ) {
+  ) -> Result<(), PipelineCreationError> {
     assert!(self.old.is_none());
 
     let mut new = Self::create_with_base(
@@ -73,17 +73,18 @@ impl GraphicsPipeline {
       self.layout,
       &self.shader,
       cache,
-      self.vk_obj,
+      self.inner,
       render_pass,
       extent,
-    );
+    )?;
 
     let old = {
-      mem::swap(&mut self.vk_obj, &mut new);
+      mem::swap(&mut self.inner, &mut new);
       new
     };
 
     self.old = Some(old);
+    Ok(())
   }
 
   // destroy old pipeline once it stops being used
@@ -108,19 +109,9 @@ impl GraphicsPipeline {
       p_next: ptr::null(),
       flags: vk::PipelineLayoutCreateFlags::empty(),
       set_layout_count: 1,
-      p_set_layouts: &descriptor_pool.layout,
+      p_set_layouts: &descriptor_pool.texture_layout,
       push_constant_range_count: 1,
       p_push_constant_ranges: &push_constant_range,
-      _marker: PhantomData,
-    };
-    let layout_create_info = vk::PipelineLayoutCreateInfo {
-      s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
-      p_next: ptr::null(),
-      flags: vk::PipelineLayoutCreateFlags::empty(),
-      set_layout_count: 0,
-      p_set_layouts: ptr::null(),
-      push_constant_range_count: 0,
-      p_push_constant_ranges: ptr::null(),
       _marker: PhantomData,
     };
     Ok(
@@ -141,28 +132,29 @@ impl GraphicsPipeline {
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
     let vertex_input_state = vertex_input_state_create_info!(Vertex);
+    let vertex_input_state = vertex_input_state.get();
 
     let input_assembly_state = triangle_input_assembly_state();
 
     // full image viewport and scissor
-    let viewport = vk::Viewport {
+    let viewport = [vk::Viewport {
       x: 0.0,
       y: 0.0,
       width: extent.width as f32,
       height: extent.height as f32,
       min_depth: 0.0,
       max_depth: 1.0,
-    };
-    let scissor = vk::Rect2D {
+    }];
+    let scissor = [vk::Rect2D {
       offset: vk::Offset2D { x: 0, y: 0 },
       extent: vk::Extent2D {
         width: extent.width,
         height: extent.height,
       },
-    };
+    }];
     let viewport_state = vk::PipelineViewportStateCreateInfo::default()
-      .scissors(&[scissor])
-      .viewports(&[viewport]);
+      .scissors(&scissor)
+      .viewports(&viewport);
 
     let rasterization_state_ci = no_depth_rasterization_state();
     let multisample_state_ci = no_multisample_state();
@@ -200,7 +192,7 @@ impl GraphicsPipeline {
       flags: vk::PipelineCreateFlags::empty(),
       stage_count: shader_stages.len() as u32,
       p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: vertex_input_state.as_ptr(),
+      p_vertex_input_state: &*vertex_input_state,
       p_input_assembly_state: &input_assembly_state,
       p_tessellation_state: ptr::null(),
       p_viewport_state: &viewport_state,
@@ -281,8 +273,10 @@ const fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a
 
 impl DeviceManuallyDestroyed for GraphicsPipeline {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.destroy_old(device);
-    device.destroy_pipeline(self.vk_obj, None);
+    if let Some(old) = self.old {
+      device.destroy_pipeline(old, None);
+    }
+    device.destroy_pipeline(self.inner, None);
     device.destroy_pipeline_layout(self.layout, None);
 
     // can be unloaded any time
