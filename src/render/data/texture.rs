@@ -113,7 +113,7 @@ impl Texture {
 
   pub unsafe fn populate_staging_buffer(
     mem_ptr: *mut u8,
-    alloc: StagingMemoryAllocation,
+    alloc: &StagingMemoryAllocation,
     buffer_bytes: &[u8],
   ) {
     copy_nonoverlapping(

@@ -10,10 +10,6 @@ pub use graphics::GraphicsCommandBufferPool;
 pub use temporary_graphics::TemporaryGraphicsCommandPool;
 pub use transfer::TransferCommandBufferPool;
 
-use crate::render::{
-  device_destroyable::DeviceManuallyDestroyed, initialization::device::PhysicalDevice,
-};
-
 pub fn create_command_pool(
   device: &ash::Device,
   flags: vk::CommandPoolCreateFlags,
@@ -64,38 +60,5 @@ fn dependency_info<'a>(
     image_memory_barrier_count: image.len() as u32,
     p_image_memory_barriers: image.as_ptr(),
     _marker: PhantomData,
-  }
-}
-
-pub struct CommandPools {
-  pub graphics_pool: GraphicsCommandBufferPool,
-  pub transfer_pool: TransferCommandBufferPool,
-}
-
-impl CommandPools {
-  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let graphics_pool =
-      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families)?;
-    let transfer_pool =
-      match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
-        Ok(pool) => pool,
-        Err(err) => {
-          unsafe {
-            graphics_pool.destroy_self(device);
-          }
-          return Err(err);
-        }
-      };
-    Ok(Self {
-      graphics_pool,
-      transfer_pool,
-    })
-  }
-}
-
-impl DeviceManuallyDestroyed for CommandPools {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.graphics_pool.destroy_self(device);
-    self.transfer_pool.destroy_self(device);
   }
 }

@@ -26,14 +26,12 @@ fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemo
     min_lod: 0.0,
     _marker: PhantomData,
   };
-  unsafe { device.create_sampler(&sampler_create_info, None) }
+  unsafe { device.create_sampler(&sampler_create_info, None) }.map_err(|err| err.into())
 }
 
 pub struct DescriptorPool {
   pub texture_layout: vk::DescriptorSetLayout,
   texture_sampler: vk::Sampler,
-
-  pub compute_layout: vk::DescriptorSetLayout,
 
   pool: vk::DescriptorPool,
 }
@@ -41,7 +39,7 @@ pub struct DescriptorPool {
 impl DescriptorPool {
   const SET_COUNT: u32 = 3;
 
-  const SIZES: [vk::DescriptorPoolSize; 2] = [vk::DescriptorPoolSize {
+  const SIZES: [vk::DescriptorPoolSize; 1] = [vk::DescriptorPoolSize {
     ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
     descriptor_count: 1,
   }];
@@ -60,10 +58,9 @@ impl DescriptorPool {
   }
 
   pub fn new(device: &ash::Device) -> Result<Self, OutOfMemoryError> {
-    let texture_sampler = create_texture_sampler(device);
+    let texture_sampler = create_texture_sampler(device)?;
 
-    let texture_layout = Self::create_graphics_layout(device, texture_sampler);
-    let compute_layout = Self::create_compute_layout(device);
+    let texture_layout = Self::create_graphics_layout(device, texture_sampler)?;
 
     let pool = {
       let pool_create_info = vk::DescriptorPoolCreateInfo {
@@ -81,7 +78,6 @@ impl DescriptorPool {
     Ok(Self {
       texture_sampler,
       texture_layout,
-      compute_layout,
       pool,
     })
   }
@@ -105,21 +101,16 @@ impl DescriptorPool {
   fn create_graphics_layout(
     device: &ash::Device,
     texture_sampler: vk::Sampler,
-  ) -> vk::DescriptorSetLayout {
+  ) -> Result<vk::DescriptorSetLayout, OutOfMemoryError> {
     let ptr = &texture_sampler;
     let bindings = Self::graphics_layout_bindings(ptr);
     create_layout(device, &bindings)
-  }
-
-  fn create_compute_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-    create_layout(device, &Self::COMPUTE_LAYOUT_BINDINGS)
   }
 
   pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
     device.destroy_descriptor_pool(self.pool, None);
 
     device.destroy_descriptor_set_layout(self.texture_layout, None);
-    device.destroy_descriptor_set_layout(self.compute_layout, None);
     device.destroy_sampler(self.texture_sampler, None);
   }
 }
@@ -136,5 +127,5 @@ fn create_layout(
     p_bindings: bindings.as_ptr(),
     _marker: PhantomData,
   };
-  unsafe { device.create_descriptor_set_layout(&create_info, None) }
+  unsafe { device.create_descriptor_set_layout(&create_info, None) }.map_err(|err| err.into())
 }

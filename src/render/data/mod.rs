@@ -3,9 +3,8 @@ mod texture;
 
 use std::{
   marker::PhantomData,
-  mem::size_of,
   ops::BitOr,
-  ptr::{self, addr_of, copy_nonoverlapping},
+  ptr::{self},
 };
 
 use ash::vk;
@@ -15,24 +14,22 @@ use crate::{
   render::{
     allocator::allocate_and_bind_memory,
     command_pools::TransferCommandBufferPool,
-    create_objs::{create_buffer, create_fence, create_image, create_image_view},
+    create_objs::create_fence,
     device_destroyable::DeviceManuallyDestroyed,
     errors::{AllocationError, OutOfMemoryError},
     initialization::device::{PhysicalDevice, Queues},
-    render_pass::create_framebuffer,
-    vertices::Vertex,
   },
   utility::OnErr,
 };
 
-use self::{
-  ferris_model::FerrisModel,
-  texture::{LoadedImage, Texture},
+use self::texture::{LoadedImage, Texture};
+
+use super::{
+  command_pools::TemporaryGraphicsCommandPool, create_objs::create_semaphore,
+  descriptor_sets::DescriptorPool, errors::InitializationError,
 };
 
-use super::errors::InitializationError;
-
-pub use self::texture::ImageLoadError;
+pub use self::{ferris_model::FerrisModel, texture::ImageLoadError};
 
 pub struct GPUData {
   pub texture: Texture,
@@ -51,20 +48,23 @@ impl GPUData {
   pub fn new(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
-    render_pass: vk::RenderPass,
+    queues: &Queues,
+    descriptor_pool: &mut DescriptorPool,
+    transfer_pool: &mut TransferCommandBufferPool,
+    graphics_pool: &mut TemporaryGraphicsCommandPool,
   ) -> Result<Self, InitializationError> {
     let texture_image = Texture::create_image(device)?;
-    let (vertex_buffer, index_buffer) = FerrisModel::create_buffers(device)?;
+    let (vertex_final, index_final) = FerrisModel::create_buffers(device)?;
 
     let destroy_device_objects =
-      || unsafe { destroy!(device => &texture_image, &vertex_buffer, &index_buffer) };
+      || unsafe { destroy!(device => &texture_image, &vertex_final, &index_final) };
 
     let (texture_memory, ferris_memory) = Self::allocate_device_memory(
       device,
       physical_device,
       texture_image.image,
-      vertex_buffer,
-      index_buffer,
+      vertex_final,
+      index_final,
     )
     .on_err(|_| destroy_device_objects())?;
     let free_device_memory = || unsafe {
@@ -74,19 +74,51 @@ impl GPUData {
       ferris_memory.destroy_self(device);
     };
 
-    let (staging_memory, staging_texture_buffer, staging_vertex_buffer, staging_index_buffer) =
+    let (staging_memory, texture_staging, vertex_staging, index_staging) =
       Self::create_and_populate_staging_objects(device, physical_device, &texture_image).on_err(
         |_| {
           destroy_device_objects();
           free_device_memory();
         },
       )?;
+    let destroy_all = || unsafe {
+      destroy_device_objects();
+      free_device_memory();
 
-    Ok(Self {
-      triangle_image,
-      triangle_model,
-      final_buffer,
-    })
+      destroy!(device => &texture_staging, &vertex_staging, &index_staging);
+      staging_memory.memory.destroy_self(device);
+    };
+
+    Self::record_command_buffers_and_dispatch(
+      device,
+      physical_device,
+      queues,
+      transfer_pool,
+      graphics_pool,
+      texture_staging,
+      texture_image.image,
+      vk::Extent2D {
+        width: texture_image.width,
+        height: texture_image.height,
+      },
+      vertex_staging,
+      vertex_final,
+      FerrisModel::VERTEX_SIZE,
+      index_staging,
+      index_final,
+      FerrisModel::INDEX_SIZE,
+    )
+    .on_err(|_| destroy_all())?;
+
+    let texture_set = descriptor_pool
+      .allocate_sets(device, &[descriptor_pool.texture_layout])
+      .unwrap()[0];
+    let texture = Texture::new(device, texture_image.image, texture_memory, texture_set)
+      .on_err(|_| destroy_all())?;
+
+    let ferris = FerrisModel::new(vertex_final, index_final, ferris_memory);
+
+    Ok(Self { texture, ferris })
   }
 
   fn allocate_device_memory(
@@ -260,8 +292,8 @@ impl GPUData {
         )
         .on_err(|_| destroy_and_exit())? as *mut u8;
 
-      Texture::populate_staging_buffer(mem_ptr, staging_alloc, &texture_image.bytes);
-      FerrisModel::populate_staging_buffers(mem_ptr, staging_alloc);
+      Texture::populate_staging_buffer(mem_ptr, &staging_alloc, &texture_image.bytes);
+      FerrisModel::populate_staging_buffers(mem_ptr, &staging_alloc);
     }
 
     Ok((staging_alloc, texture_buffer, vertex_buffer, index_buffer))
@@ -307,105 +339,35 @@ impl GPUData {
     )
   }
 
-  // todo
-  pub fn initialize_memory(
-    &mut self,
+  fn record_command_buffers_and_dispatch(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
     queues: &Queues,
-    command_pool: &mut TransferCommandBufferPool,
-  ) -> Result<(), AllocationError> {
-    let vertex_size = (size_of::<Vertex>() * VERTICES.len()) as u64;
-    let index_size = (size_of::<u16>() * INDICES.len()) as u64;
+    transfer_pool: &mut TransferCommandBufferPool,
+    graphics_pool: &mut TemporaryGraphicsCommandPool,
 
-    log::info!("Creating, allocating and populating staging buffers");
-    let vertex_src = create_buffer(device, vertex_size, vk::BufferUsageFlags::TRANSFER_SRC)?;
-    let index_src = create_buffer(device, index_size, vk::BufferUsageFlags::TRANSFER_SRC)
-      .on_err(|_| unsafe { vertex_src.destroy_self(device) })?;
-    let destroy_created_objs = || unsafe { destroy!(device => &vertex_src, &index_src) };
-
-    let vertex_src_requirements = unsafe { device.get_buffer_memory_requirements(vertex_src) };
-    let index_src_requirements = unsafe { device.get_buffer_memory_requirements(index_src) };
-
-    let staging_alloc = allocate_and_bind_memory(
-      device,
-      physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE,
-      &[vertex_src, index_src],
-      &[vertex_src_requirements, index_src_requirements],
-      &[],
-      &[],
-    )
-    .on_err(|_| destroy_created_objs())?;
-    let vertex_offset = staging_alloc.offsets.buffer_offsets()[0];
-    let index_offset = staging_alloc.offsets.buffer_offsets()[1];
-
+    texture_staging: vk::Buffer,
+    texture_final: vk::Image,
+    texture_dimensions: vk::Extent2D,
+    vertex_staging: vk::Buffer,
+    vertex_final: vk::Buffer,
+    vertex_size: u64,
+    index_staging: vk::Buffer,
+    index_final: vk::Buffer,
+    index_size: u64,
+  ) -> Result<(), OutOfMemoryError> {
+    let vertex_region = vk::BufferCopy2::default().size(vertex_size);
+    let index_region = vk::BufferCopy2::default().size(index_size);
     unsafe {
-      let mem_ptr = device
-        .map_memory(
-          staging_alloc.memory,
-          0,
-          vk::WHOLE_SIZE,
-          vk::MemoryMapFlags::empty(),
-        )
-        .on_err(|_| destroy_created_objs())? as *mut u8;
-
-      let vertices = VERTICES;
-      let indices = INDICES;
-      copy_nonoverlapping(
-        addr_of!(vertices) as *const u8,
-        mem_ptr.byte_add(vertex_offset as usize) as *mut u8,
-        vertex_size as usize,
-      );
-      copy_nonoverlapping(
-        addr_of!(indices) as *const u8,
-        mem_ptr.byte_add(index_offset as usize) as *mut u8,
-        index_size as usize,
-      );
-
-      let mem_type = physical_device.get_memory_type(staging_alloc.memory_type);
-      if !mem_type
-        .property_flags
-        .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
-      {
-        let range = vk::MappedMemoryRange {
-          s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
-          p_next: ptr::null(),
-          memory: staging_alloc.memory,
-          offset: 0,
-          size: vk::WHOLE_SIZE,
-          _marker: PhantomData,
-        };
-        device
-          .flush_mapped_memory_ranges(&[range])
-          .on_err(|_| destroy_created_objs())?;
-      }
-    }
-
-    let vertex_region = vk::BufferCopy2 {
-      s_type: vk::StructureType::BUFFER_COPY_2,
-      p_next: ptr::null(),
-      src_offset: 0,
-      dst_offset: 0,
-      size: vertex_size,
-      _marker: PhantomData,
-    };
-    let index_region = vk::BufferCopy2 {
-      size: index_size,
-      ..vertex_region
-    };
-    unsafe {
-      command_pool
-        .reset(device)
-        .on_err(|_| destroy_created_objs())?;
-      command_pool.record_copy_buffers_to_buffers(
+      transfer_pool.reset(device)?;
+      transfer_pool.record_copy_buffers_to_buffers(
         device,
         &[
           vk::CopyBufferInfo2 {
             s_type: vk::StructureType::COPY_BUFFER_INFO_2,
             p_next: ptr::null(),
-            src_buffer: vertex_src,
-            dst_buffer: self.triangle_model.vertex,
+            src_buffer: vertex_staging,
+            dst_buffer: vertex_final,
             region_count: 1,
             p_regions: &vertex_region,
             _marker: PhantomData,
@@ -413,42 +375,88 @@ impl GPUData {
           vk::CopyBufferInfo2 {
             s_type: vk::StructureType::COPY_BUFFER_INFO_2,
             p_next: ptr::null(),
-            src_buffer: index_src,
-            dst_buffer: self.triangle_model.index,
+            src_buffer: index_staging,
+            dst_buffer: index_final,
             region_count: 1,
             p_regions: &index_region,
             _marker: PhantomData,
           },
         ],
       )?;
+
+      transfer_pool.record_load_texture(
+        device,
+        &physical_device.queue_families,
+        texture_staging,
+        texture_final,
+        texture_dimensions.width,
+        texture_dimensions.height,
+      )?;
+
+      if physical_device.queue_families.get_graphics_index()
+        != physical_device.queue_families.get_transfer_index()
+      {
+        graphics_pool.reset(device)?;
+        graphics_pool.record_acquire_texture(
+          device,
+          &physical_device.queue_families,
+          texture_final,
+        )?;
+      }
     }
 
-    let fence = create_fence(device).on_err(|_| destroy_created_objs())?;
-    let destroy_created_objs =
-      || unsafe { destroy!(device => &fence, &vertex_src, &index_src, &staging_alloc.memory) };
-    let submit_info = vk::SubmitInfo {
-      s_type: vk::StructureType::SUBMIT_INFO,
-      p_next: ptr::null(),
-      wait_semaphore_count: 0,
-      p_wait_semaphores: ptr::null(),
-      p_wait_dst_stage_mask: ptr::null(),
-      command_buffer_count: 1,
-      p_command_buffers: &command_pool.copy_buffers_to_buffers,
-      signal_semaphore_count: 0,
-      p_signal_semaphores: ptr::null(),
-      _marker: PhantomData,
-    };
-    unsafe {
-      device
-        .queue_submit(queues.transfer, &[submit_info], fence)
-        .on_err(|_| destroy_created_objs())?;
-      device
-        .wait_for_fences(&[fence], true, u64::MAX)
-        .on_err(|_| destroy_created_objs())?;
+    let copy_buffers_to_buffers = [transfer_pool.copy_buffers_to_buffers];
+    let load_texture = [transfer_pool.load_texture];
+    let acquire_texture = [graphics_pool.acquire_texture];
+
+    let ferris_submit_info = vk::SubmitInfo::default().command_buffers(&copy_buffers_to_buffers);
+
+    if physical_device.queue_families.get_graphics_index()
+      != physical_device.queue_families.get_transfer_index()
+    {
+      let texture_finished = create_fence(device)?;
+      let ferris_finished =
+        create_fence(device).on_err(|_| unsafe { texture_finished.destroy_self(device) })?;
+      let wait_texture_transfer = create_semaphore(device)
+        .on_err(|_| unsafe { destroy!(device => &texture_finished, &ferris_finished) })?;
+      let destroy_objects = || unsafe {
+        destroy!(device => &texture_finished, &ferris_finished, &wait_texture_transfer);
+      };
+
+      let wait_texture_transfer_arr = [wait_texture_transfer];
+      let texture_submit_info_a = vk::SubmitInfo::default()
+        .command_buffers(&load_texture)
+        .signal_semaphores(&wait_texture_transfer_arr);
+      let texture_submit_info_b = vk::SubmitInfo::default()
+        .command_buffers(&acquire_texture)
+        .wait_semaphores(&wait_texture_transfer_arr)
+        .wait_dst_stage_mask(&[vk::PipelineStageFlags::TRANSFER]);
+
+      unsafe {
+        device.queue_submit(queues.transfer, &[ferris_submit_info], ferris_finished)?;
+        device.queue_submit(queues.transfer, &[texture_submit_info_a], vk::Fence::null())?;
+        device.queue_submit(queues.graphics, &[texture_submit_info_b], texture_finished)?;
+
+        device.wait_for_fences(&[ferris_finished, texture_finished], true, u64::MAX)?;
+
+        destroy_objects();
+      }
+    } else {
+      let all_finished = create_fence(device)?;
+
+      let texture_submit_info = vk::SubmitInfo::default().command_buffers(&load_texture);
+
+      unsafe {
+        device.queue_submit(
+          queues.graphics,
+          &[ferris_submit_info, texture_submit_info],
+          all_finished,
+        )?;
+        device.wait_for_fences(&[all_finished], true, u64::MAX)?;
+
+        all_finished.destroy_self(device);
+      }
     }
-
-    destroy_created_objs();
-
     Ok(())
   }
 }

@@ -32,8 +32,10 @@ impl TransferCommandBufferPool {
     })
   }
 
-  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
-    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), OutOfMemoryError> {
+    device
+      .reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+      .map_err(|err| err.into())
   }
 
   // copy texture buffer data to an image

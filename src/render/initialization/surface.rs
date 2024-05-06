@@ -14,7 +14,7 @@ impl Deref for Surface {
   type Target = vk::SurfaceKHR;
 
   fn deref(&self) -> &Self::Target {
-    &self.vk_obj
+    &self.inner
   }
 }
 
@@ -33,6 +33,7 @@ impl From<vk::Result> for SurfaceError {
         SurfaceError::OutOfMemory(OutOfMemoryError::from(value))
       }
       vk::Result::ERROR_SURFACE_LOST_KHR => SurfaceError::SurfaceIsLost,
+      _ => panic!(),
     }
   }
 }
@@ -45,8 +46,15 @@ impl Surface {
     window_handle: WindowHandle,
   ) -> Result<Self, OutOfMemoryError> {
     let loader = ash::khr::surface::Instance::new(&entry, &instance);
-    let inner =
-      unsafe { ash_window::create_surface(entry, instance, display_handle, window_handle, None) }?;
+    let inner = unsafe {
+      ash_window::create_surface(
+        entry,
+        instance,
+        display_handle.as_raw(),
+        window_handle.as_raw(),
+        None,
+      )
+    }?;
 
     Ok(Self { inner, loader })
   }
@@ -58,7 +66,7 @@ impl Surface {
   ) -> Result<bool, SurfaceError> {
     self
       .loader
-      .get_physical_device_surface_support(physical_device, family_index as u32, self.vk_obj)
+      .get_physical_device_surface_support(physical_device, family_index as u32, self.inner)
       .map_err(|err| err.into())
   }
 
@@ -68,7 +76,7 @@ impl Surface {
   ) -> Result<Vec<vk::SurfaceFormatKHR>, SurfaceError> {
     self
       .loader
-      .get_physical_device_surface_formats(physical_device, self.vk_obj)
+      .get_physical_device_surface_formats(physical_device, self.inner)
       .map_err(|err| err.into())
   }
 
@@ -78,7 +86,7 @@ impl Surface {
   ) -> Result<Vec<vk::PresentModeKHR>, SurfaceError> {
     self
       .loader
-      .get_physical_device_surface_present_modes(physical_device, self.vk_obj)
+      .get_physical_device_surface_present_modes(physical_device, self.inner)
       .map_err(|err| err.into())
   }
 
@@ -88,7 +96,7 @@ impl Surface {
   ) -> Result<vk::SurfaceCapabilitiesKHR, SurfaceError> {
     self
       .loader
-      .get_physical_device_surface_capabilities(physical_device, self.vk_obj)
+      .get_physical_device_surface_capabilities(physical_device, self.inner)
       .map_err(|err| err.into())
   }
 
@@ -105,6 +113,6 @@ impl Surface {
 
 impl ManuallyDestroyed for Surface {
   unsafe fn destroy_self(self: &Self) {
-    self.loader.destroy_surface(self.vk_obj, None);
+    self.loader.destroy_surface(self.inner, None);
   }
 }

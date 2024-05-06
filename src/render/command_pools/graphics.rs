@@ -4,13 +4,12 @@ use ash::vk;
 
 use crate::{
   render::{
-    descriptor_sets::DescriptorPool,
+    data::{FerrisModel, GPUData},
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,
-    gpu_data::FerrisModelData,
     initialization::device::QueueFamilies,
     pipelines::GraphicsPipeline,
-    render_object::{RenderPosition, INDICES},
+    render_object::RenderPosition,
   },
   utility, BACKGROUND_COLOR,
 };
@@ -30,21 +29,20 @@ impl GraphicsCommandBufferPool {
     Ok(Self { pool, triangle })
   }
 
-  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
-    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), OutOfMemoryError> {
+    device
+      .reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+      .map_err(|err| err.into())
   }
 
   pub unsafe fn record_triangle(
     &mut self,
     device: &ash::Device,
-    queue_families: &QueueFamilies,
     render_pass: vk::RenderPass,
-    descriptors: &DescriptorPool,
     extent: vk::Extent2D,
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
-    // contains index and vertex buffer
-    ferris_model: &FerrisModelData,
+    gpu_data: &GPUData,
     position: &RenderPosition, // Ferris's position
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.triangle;
@@ -77,7 +75,7 @@ impl GraphicsCommandBufferPool {
         vk::PipelineBindPoint::GRAPHICS,
         pipeline.layout,
         0,
-        &[descriptors.texture],
+        &[gpu_data.texture.descriptor],
         &[],
       );
       device.cmd_push_constants(
@@ -88,21 +86,12 @@ impl GraphicsCommandBufferPool {
         utility::any_as_u8_slice(position),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
-      device.cmd_bind_vertex_buffers(cb, 0, &[ferris_model.vertex], &[0]);
-      device.cmd_bind_index_buffer(cb, ferris_model.index, 0, vk::IndexType::UINT16);
-      device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
+      device.cmd_bind_vertex_buffers(cb, 0, &[gpu_data.ferris.vertex], &[0]);
+      device.cmd_bind_index_buffer(cb, gpu_data.ferris.index, 0, vk::IndexType::UINT16);
+      device.cmd_draw_indexed(cb, FerrisModel::INDEX_COUNT, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);
     }
-
-    // image has 1 mip_level / 1 array layer
-    let subresource_range = vk::ImageSubresourceRange {
-      aspect_mask: vk::ImageAspectFlags::COLOR,
-      base_mip_level: 0,
-      level_count: 1,
-      base_array_layer: 0,
-      layer_count: 1,
-    };
 
     device.end_command_buffer(self.triangle)?;
 

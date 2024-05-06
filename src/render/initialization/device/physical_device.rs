@@ -2,8 +2,7 @@ use std::ops::Deref;
 
 use ash::vk;
 
-use crate::render::initialization::Surface;
-use crate::utility::c_char_array_to_string;
+use crate::{render::initialization::Surface, utility::c_char_array_to_string};
 
 use super::select_physical_device;
 
@@ -39,7 +38,7 @@ impl Deref for PhysicalDevice {
 impl PhysicalDevice {
   pub unsafe fn select<'b>(
     instance: &'b ash::Instance,
-    surface: &Surface
+    surface: &Surface,
   ) -> Result<Option<PhysicalDevice>, vk::Result> {
     match select_physical_device(instance, surface)? {
       Some((physical_device, properties, _features, queue_families)) => {

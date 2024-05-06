@@ -82,7 +82,7 @@ pub fn create_instance(
 
   let surface_extensions = ash_window::enumerate_required_extensions(display_handle.as_raw())
     .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
-  let extensions = Vec::with_capacity(surface_extensions.len() + 1);
+  let mut extensions = Vec::with_capacity(surface_extensions.len() + 1);
   extensions.extend(surface_extensions.iter());
   extensions.push(ash::ext::debug_utils::NAME.as_ptr());
 

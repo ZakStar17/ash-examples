@@ -23,6 +23,10 @@ pub struct FerrisModel {
 }
 
 impl FerrisModel {
+  pub const VERTEX_SIZE: u64 = QUAD_VERTICES_SIZE as u64;
+  pub const INDEX_SIZE: u64 = QUAD_INDICES_SIZE as u64;
+  pub const INDEX_COUNT: u32 = QUAD_INDICES.len() as u32;
+
   pub fn new(vertex: vk::Buffer, index: vk::Buffer, memory: vk::DeviceMemory) -> Self {
     Self {
       vertex,
@@ -67,7 +71,7 @@ impl FerrisModel {
     Ok((vertex, index))
   }
 
-  pub unsafe fn populate_staging_buffers(mem_ptr: *mut u8, alloc: StagingMemoryAllocation) {
+  pub unsafe fn populate_staging_buffers(mem_ptr: *mut u8, alloc: &StagingMemoryAllocation) {
     let vertices = QUAD_VERTICES;
     let indices = QUAD_INDICES;
     copy_nonoverlapping(
