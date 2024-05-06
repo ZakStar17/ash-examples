@@ -6,13 +6,13 @@ use ash::vk;
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Vertex {
   pub pos: [f32; 2],
-  pub color: [f32; 3],
+  pub tex_coords: [f32; 2],
 }
 
 impl Vertex {
   const ATTRIBUTE_SIZE: usize = 2;
 
-  pub const fn get_binding_description(binding: u32) -> vk::VertexInputBindingDescription {
+  const fn get_binding_description(binding: u32) -> vk::VertexInputBindingDescription {
     vk::VertexInputBindingDescription {
       binding,
       stride: size_of::<Self>() as u32,
@@ -20,7 +20,7 @@ impl Vertex {
     }
   }
 
-  pub const fn get_attribute_descriptions(
+  const fn get_attribute_descriptions(
     offset: u32,
     binding: u32,
   ) -> [vk::VertexInputAttributeDescription; Self::ATTRIBUTE_SIZE] {
@@ -34,8 +34,8 @@ impl Vertex {
       vk::VertexInputAttributeDescription {
         location: offset + 1,
         binding,
-        format: vk::Format::R32G32B32_SFLOAT,
-        offset: offset_of!(Self, color) as u32,
+        format: vk::Format::R32G32_SFLOAT,
+        offset: offset_of!(Self, tex_coords) as u32,
       },
     ]
   }

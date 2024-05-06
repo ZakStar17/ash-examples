@@ -66,8 +66,8 @@ impl TransferCommandBufferPool {
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::NONE,
       dst_stage_mask: vk::PipelineStageFlags2::COPY,
-      src_access_mask: vk::AccessFlags::NONE,
-      dst_access_mask: vk::AccessFlags::NONE,
+      src_access_mask: vk::AccessFlags2::NONE,
+      dst_access_mask: vk::AccessFlags2::NONE,
       old_layout: vk::ImageLayout::UNDEFINED,
       new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -108,8 +108,8 @@ impl TransferCommandBufferPool {
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::COPY,
       dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
-      src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-      dst_access_mask: vk::AccessFlags::SHADER_READ,
+      src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+      dst_access_mask: vk::AccessFlags2::SHADER_SAMPLED_READ,
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -126,7 +126,7 @@ impl TransferCommandBufferPool {
     }
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[shader_read_layout]));
 
-    device.end_command_buffer(self.triangle)?;
+    device.end_command_buffer(cb)?;
     Ok(())
   }
 

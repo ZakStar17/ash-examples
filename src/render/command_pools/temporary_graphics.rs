@@ -15,16 +15,16 @@ pub struct TemporaryGraphicsCommandPool {
 }
 
 impl TemporaryGraphicsCommandPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Self {
+  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.graphics.index);
+    let pool = super::create_command_pool(device, flags, queue_families.graphics.index)?;
 
-    let buffers = super::allocate_primary_command_buffers(device, pool, 1);
+    let buffers = super::allocate_primary_command_buffers(device, pool, 1)?;
 
-    Self {
+    Ok(Self {
       pool,
       acquire_texture: buffers[0],
-    }
+    })
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
@@ -55,8 +55,8 @@ impl TemporaryGraphicsCommandPool {
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::TRANSFER,
       dst_stage_mask: vk::PipelineStageFlags2::FRAGMENT_SHADER,
-      src_access_mask: vk::AccessFlags::NONE, // NONE for ownership acquire
-      dst_access_mask: vk::AccessFlags::SHADER_READ,
+      src_access_mask: vk::AccessFlags2::NONE, // NONE for ownership acquire
+      dst_access_mask: vk::AccessFlags2::SHADER_SAMPLED_READ,
       old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
       src_queue_family_index: queue_families.get_transfer_index(),
@@ -67,7 +67,7 @@ impl TemporaryGraphicsCommandPool {
     };
     device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[acquire_to_shader_read]));
 
-    device.end_command_buffer(self.triangle)?;
+    device.end_command_buffer(cb)?;
     Ok(())
   }
 }

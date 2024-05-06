@@ -120,9 +120,17 @@ unsafe fn select_physical_device<'a>(
           }
         }
 
-        if !supports_swapchain(physical_device, surface) {
-          log::warn!("Skipped physical device: Device does not support swapchain");
-          return false;
+        match supports_swapchain(physical_device, surface) {
+          Ok(supports) => {
+            if !supports {
+              log::warn!("Skipped physical device: Device does not support swapchain");
+              return None;
+            }
+          }
+          Err(err) => {
+            log::error!("Device selection error: {:?}", err);
+            return None;
+          }
         }
 
         if features.f12.timeline_semaphore != vk::TRUE {

@@ -1,3 +1,6 @@
+mod ferris_model;
+mod texture;
+
 use std::{
   marker::PhantomData,
   mem::size_of,
@@ -8,43 +11,40 @@ use std::{
 use ash::vk;
 
 use crate::{
-  allocator::allocate_and_bind_memory,
-  command_pools::TransferCommandBufferPool,
-  create_objs::{create_buffer, create_fence, create_image, create_image_view},
   destroy,
-  device_destroyable::DeviceManuallyDestroyed,
-  errors::{AllocationError, OutOfMemoryError},
-  initialization::device::{PhysicalDevice, Queues},
-  render_pass::create_framebuffer,
+  render::{
+    allocator::allocate_and_bind_memory,
+    command_pools::TransferCommandBufferPool,
+    create_objs::{create_buffer, create_fence, create_image, create_image_view},
+    device_destroyable::DeviceManuallyDestroyed,
+    errors::{AllocationError, OutOfMemoryError},
+    initialization::device::{PhysicalDevice, Queues},
+    render_pass::create_framebuffer,
+    vertices::Vertex,
+  },
   utility::OnErr,
-  vertices::Vertex,
-  INDICES, VERTICES,
 };
 
-pub struct TriangleImage {
-  pub image: vk::Image,
-  pub memory: vk::DeviceMemory,
+use self::{
+  ferris_model::FerrisModel,
+  texture::{LoadedImage, Texture},
+};
 
-  pub image_view: vk::ImageView,
-  pub framebuffer: vk::Framebuffer,
-}
+use super::errors::InitializationError;
 
-pub struct TriangleModelData {
-  pub vertex: vk::Buffer,
-  pub index: vk::Buffer,
-  pub memory: vk::DeviceMemory,
-}
-
-pub struct FinalBuffer {
-  pub buffer: vk::Buffer,
-  memory: vk::DeviceMemory,
-  size: u64,
-}
+pub use self::texture::ImageLoadError;
 
 pub struct GPUData {
-  pub triangle_image: TriangleImage,
-  pub triangle_model: TriangleModelData,
-  pub final_buffer: FinalBuffer,
+  pub texture: Texture,
+  pub ferris: FerrisModel,
+}
+
+struct StagingMemoryAllocation {
+  pub memory: vk::DeviceMemory,
+  pub memory_type: u32,
+  pub texture_offset: u64,
+  pub vertex_offset: u64,
+  pub index_offset: u64,
 }
 
 impl GPUData {
@@ -52,70 +52,35 @@ impl GPUData {
     device: &ash::Device,
     physical_device: &PhysicalDevice,
     render_pass: vk::RenderPass,
-  ) -> Result<Self, AllocationError> {
-    let triangle_image = create_image(
-      &device,
-      image_extent.width,
-      image_extent.height,
-      vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::COLOR_ATTACHMENT),
-    )?;
-    let vertex_buffer = create_buffer(
-      device,
-      (size_of::<Vertex>() * VERTICES.len()) as u64,
-      vk::BufferUsageFlags::VERTEX_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_DST),
-    )
-    .on_err(|_| unsafe { triangle_image.destroy_self(device) })?;
-    let index_buffer = create_buffer(
-      device,
-      (size_of::<u16>() * INDICES.len()) as u64,
-      vk::BufferUsageFlags::INDEX_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_DST),
-    )
-    .on_err(|_| unsafe { destroy!(device => &vertex_buffer, &triangle_image) })?;
+  ) -> Result<Self, InitializationError> {
+    let texture_image = Texture::create_image(device)?;
+    let (vertex_buffer, index_buffer) = FerrisModel::create_buffers(device)?;
 
-    let final_buffer = create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)?;
+    let destroy_device_objects =
+      || unsafe { destroy!(device => &texture_image, &vertex_buffer, &index_buffer) };
 
-    let destroy_created_objects = || unsafe {
-      destroy!(device => &final_buffer, &index_buffer, &vertex_buffer, &triangle_image)
-    };
-
-    let (triangle_image_memory, triangle_model_memory) = Self::allocate_device_memory(
+    let (texture_memory, ferris_memory) = Self::allocate_device_memory(
       device,
       physical_device,
-      triangle_image,
+      texture_image.image,
       vertex_buffer,
       index_buffer,
     )
-    .on_err(|_| destroy_created_objects())?;
-    let final_buffer_memory = Self::allocate_host_memory(device, physical_device, final_buffer)
-      .on_err(|_| unsafe {
-        destroy_created_objects();
-
-        triangle_image_memory.destroy_self(device);
-        if triangle_model_memory != triangle_image_memory {
-          triangle_model_memory.destroy_self(device);
-        }
-      })?;
-    let free_memories = || unsafe {
-      triangle_image_memory.destroy_self(device);
-      if triangle_model_memory != triangle_image_memory {
-        triangle_model_memory.destroy_self(device);
+    .on_err(|_| destroy_device_objects())?;
+    let free_device_memory = || unsafe {
+      if texture_memory != ferris_memory {
+        texture_memory.destroy_self(device);
       }
-      final_buffer_memory.destroy_self(device);
+      ferris_memory.destroy_self(device);
     };
 
-    let triangle_image = TriangleImage::new(
-      device,
-      triangle_image,
-      triangle_image_memory,
-      render_pass,
-      image_extent,
-    )
-    .on_err(|_| {
-      destroy_created_objects();
-      free_memories();
-    })?;
-    let triangle_model = TriangleModelData::new(vertex_buffer, index_buffer, triangle_model_memory);
-    let final_buffer = FinalBuffer::new(final_buffer, final_buffer_memory, buffer_size);
+    let (staging_memory, staging_texture_buffer, staging_vertex_buffer, staging_index_buffer) =
+      Self::create_and_populate_staging_objects(device, physical_device, &texture_image).on_err(
+        |_| {
+          destroy_device_objects();
+          free_device_memory();
+        },
+      )?;
 
     Ok(Self {
       triangle_image,
@@ -127,12 +92,12 @@ impl GPUData {
   fn allocate_device_memory(
     device: &ash::Device,
     physical_device: &PhysicalDevice,
-    triangle_image: vk::Image,
+    texture_image: vk::Image,
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
   ) -> Result<(vk::DeviceMemory, vk::DeviceMemory), AllocationError> {
-    let triangle_memory_requirements =
-      unsafe { device.get_image_memory_requirements(triangle_image) };
+    let texture_memory_requirements =
+      unsafe { device.get_image_memory_requirements(texture_image) };
     let vertex_memory_requirements =
       unsafe { device.get_buffer_memory_requirements(vertex_buffer) };
     let index_memory_requirements = unsafe { device.get_buffer_memory_requirements(index_buffer) };
@@ -144,8 +109,8 @@ impl GPUData {
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       &[vertex_buffer, index_buffer],
       &[vertex_memory_requirements, index_memory_requirements],
-      &[triangle_image],
-      &[triangle_memory_requirements],
+      &[texture_image],
+      &[texture_memory_requirements],
     ) {
       Ok(alloc) => {
         log::debug!("Allocated full memory block");
@@ -157,17 +122,17 @@ impl GPUData {
       ),
     }
 
-    let triangle_memory = match allocate_and_bind_memory(
+    let texture_memory = match allocate_and_bind_memory(
       device,
       physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       &[],
       &[],
-      &[triangle_image],
-      &[triangle_memory_requirements],
+      &[texture_image],
+      &[texture_memory_requirements],
     ) {
       Ok(alloc) => {
-        log::debug!("Triangle image memory allocated successfully");
+        log::debug!("Texture image memory allocated successfully");
         alloc.memory
       }
       Err(_) => {
@@ -177,10 +142,10 @@ impl GPUData {
           vk::MemoryPropertyFlags::empty(),
           &[],
           &[],
-          &[triangle_image],
-          &[triangle_memory_requirements],
+          &[texture_image],
+          &[texture_memory_requirements],
         )?;
-        log::debug!("Triangle image memory allocated suboptimally");
+        log::debug!("Texture image memory allocated suboptimally");
         alloc.memory
       }
     };
@@ -195,7 +160,7 @@ impl GPUData {
       &[],
     ) {
       Ok(alloc) => {
-        log::debug!("Triangle buffers memory allocated successfully");
+        log::debug!("Texture buffers memory allocated successfully");
         alloc.memory
       }
       Err(_) => {
@@ -208,12 +173,98 @@ impl GPUData {
           &[],
           &[],
         )?;
-        log::debug!("Triangle buffers memory allocated suboptimally");
+        log::debug!("Texture buffers memory allocated suboptimally");
         alloc.memory
       }
     };
 
-    Ok((triangle_memory, buffers_memory))
+    Ok((texture_memory, buffers_memory))
+  }
+
+  // this function allocates everything in a big block
+  // a more concrete way of doing this would be (in a case which a big allocation isn't possible)
+  //    to allocate, dispatch and free each object separately to not use much memory
+  fn allocate_staging_memory(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    texture_buffer: vk::Buffer,
+    vertex_buffer: vk::Buffer,
+    index_buffer: vk::Buffer,
+  ) -> Result<StagingMemoryAllocation, AllocationError> {
+    let texture_memory_requirements =
+      unsafe { device.get_buffer_memory_requirements(texture_buffer) };
+    let vertex_memory_requirements =
+      unsafe { device.get_buffer_memory_requirements(vertex_buffer) };
+    let index_memory_requirements = unsafe { device.get_buffer_memory_requirements(index_buffer) };
+
+    log::debug!("Allocating staging memory");
+    let allocation = allocate_and_bind_memory(
+      device,
+      physical_device,
+      vk::MemoryPropertyFlags::HOST_VISIBLE,
+      &[texture_buffer, vertex_buffer, index_buffer],
+      &[
+        texture_memory_requirements,
+        vertex_memory_requirements,
+        index_memory_requirements,
+      ],
+      &[],
+      &[],
+    )?;
+    let mut offsets_iter = allocation.offsets.buffer_offsets().iter();
+
+    Ok(StagingMemoryAllocation {
+      memory: allocation.memory,
+      memory_type: allocation.memory_type,
+      texture_offset: *offsets_iter.next().unwrap(),
+      vertex_offset: *offsets_iter.next().unwrap(),
+      index_offset: *offsets_iter.next().unwrap(),
+    })
+  }
+
+  fn create_and_populate_staging_objects(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    texture_image: &LoadedImage,
+  ) -> Result<(StagingMemoryAllocation, vk::Buffer, vk::Buffer, vk::Buffer), AllocationError> {
+    let texture_buffer = Texture::create_staging_buffer(device, texture_image)?;
+    let (vertex_buffer, index_buffer) =
+      FerrisModel::create_staging_buffers(device).on_err(|_| unsafe {
+        destroy!(&device => &texture_buffer);
+      })?;
+    let destroy_staging_objects = || unsafe {
+      destroy!(&device => &texture_buffer, &vertex_buffer, &index_buffer);
+    };
+
+    let staging_alloc = Self::allocate_staging_memory(
+      device,
+      physical_device,
+      texture_buffer,
+      vertex_buffer,
+      index_buffer,
+    )
+    .on_err(|_| destroy_staging_objects())?;
+    let destroy_and_exit = || unsafe {
+      destroy_staging_objects();
+      staging_alloc.memory.destroy_self(device);
+    };
+
+    unsafe {
+      // memory could be mapped into smaller sizes in case of an error
+      let mem_ptr = device
+        .map_memory(
+          staging_alloc.memory,
+          0,
+          vk::WHOLE_SIZE,
+          vk::MemoryMapFlags::empty(),
+        )
+        .on_err(|_| destroy_and_exit())? as *mut u8;
+
+      Texture::populate_staging_buffer(mem_ptr, staging_alloc, &texture_image.bytes);
+      FerrisModel::populate_staging_buffers(mem_ptr, staging_alloc);
+    }
+
+    Ok((staging_alloc, texture_buffer, vertex_buffer, index_buffer))
   }
 
   fn allocate_host_memory(
@@ -256,6 +307,7 @@ impl GPUData {
     )
   }
 
+  // todo
   pub fn initialize_memory(
     &mut self,
     device: &ash::Device,
@@ -399,106 +451,16 @@ impl GPUData {
 
     Ok(())
   }
-
-  // map can fail with vk::Result::ERROR_MEMORY_MAP_FAILED
-  // in most cases it may be possible to try mapping again a smaller range
-  pub unsafe fn get_buffer_data<F: FnOnce(&[u8])>(
-    &self,
-    device: &ash::Device,
-    f: F,
-  ) -> Result<(), vk::Result> {
-    let ptr = device.map_memory(
-      self.final_buffer.memory,
-      0,
-      // if size is not vk::WHOLE_SIZE, mapping should follow alignments
-      vk::WHOLE_SIZE,
-      vk::MemoryMapFlags::empty(),
-    )? as *const u8;
-    let data = std::slice::from_raw_parts(ptr, self.final_buffer.size as usize);
-
-    f(data);
-
-    unsafe {
-      device.unmap_memory(self.final_buffer.memory);
-    }
-
-    Ok(())
-  }
 }
 
 impl DeviceManuallyDestroyed for GPUData {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.triangle_image.destroy_self(device);
-    self.triangle_model.destroy_self(device);
-    self.final_buffer.destroy_self(device);
+    self.texture.destroy_self(device);
+    self.ferris.destroy_self(device);
 
-    self.triangle_image.memory.destroy_self(device);
-    if self.triangle_model.memory != self.triangle_image.memory {
-      self.triangle_model.memory.destroy_self(device);
+    if self.texture.memory != self.ferris.memory {
+      self.texture.memory.destroy_self(device);
     }
-    self.final_buffer.memory.destroy_self(device);
-  }
-}
-
-impl TriangleImage {
-  pub fn new(
-    device: &ash::Device,
-    image: vk::Image,
-    memory: vk::DeviceMemory,
-    render_pass: vk::RenderPass,
-    extent: vk::Extent2D,
-  ) -> Result<Self, OutOfMemoryError> {
-    let image_view =
-      create_image_view(device, image).on_err(|_| unsafe { image.destroy_self(device) })?;
-    let framebuffer = create_framebuffer(device, render_pass, image_view, extent)
-      .on_err(|_| unsafe { image_view.destroy_self(device) })?;
-    Ok(Self {
-      image,
-      memory,
-      image_view,
-      framebuffer,
-    })
-  }
-}
-
-// memory must be freed manually
-impl DeviceManuallyDestroyed for TriangleImage {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.framebuffer.destroy_self(device);
-    self.image_view.destroy_self(device);
-    self.image.destroy_self(device);
-  }
-}
-
-impl TriangleModelData {
-  pub fn new(vertex: vk::Buffer, index: vk::Buffer, memory: vk::DeviceMemory) -> Self {
-    Self {
-      vertex,
-      index,
-      memory,
-    }
-  }
-}
-
-impl DeviceManuallyDestroyed for TriangleModelData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.vertex.destroy_self(device);
-    self.index.destroy_self(device);
-  }
-}
-
-impl FinalBuffer {
-  pub fn new(buffer: vk::Buffer, memory: vk::DeviceMemory, size: u64) -> Self {
-    Self {
-      buffer,
-      memory,
-      size,
-    }
-  }
-}
-
-impl DeviceManuallyDestroyed for FinalBuffer {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
-    self.buffer.destroy_self(device);
+    self.ferris.memory.destroy_self(device);
   }
 }

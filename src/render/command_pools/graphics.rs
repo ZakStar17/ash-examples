@@ -7,7 +7,7 @@ use crate::{
     descriptor_sets::DescriptorPool,
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,
-    gpu_data::TriangleModelData,
+    gpu_data::FerrisModelData,
     initialization::device::QueueFamilies,
     pipelines::GraphicsPipeline,
     render_object::{RenderPosition, INDICES},
@@ -44,7 +44,7 @@ impl GraphicsCommandBufferPool {
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
     // contains index and vertex buffer
-    triangle_model: &TriangleModelData,
+    ferris_model: &FerrisModelData,
     position: &RenderPosition, // Ferris's position
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.triangle;
@@ -88,8 +88,8 @@ impl GraphicsCommandBufferPool {
         utility::any_as_u8_slice(position),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
-      device.cmd_bind_vertex_buffers(cb, 0, &[triangle_model.vertex], &[0]);
-      device.cmd_bind_index_buffer(cb, triangle_model.index, 0, vk::IndexType::UINT16);
+      device.cmd_bind_vertex_buffers(cb, 0, &[ferris_model.vertex], &[0]);
+      device.cmd_bind_index_buffer(cb, ferris_model.index, 0, vk::IndexType::UINT16);
       device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);

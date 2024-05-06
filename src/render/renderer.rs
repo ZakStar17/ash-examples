@@ -73,8 +73,8 @@ impl Destructor {
   }
 
   pub fn push(&mut self, ptr: *const dyn DeviceManuallyDestroyed) {
-    self.i += 1;
-    self.objs[self.i] = ptr;
+    self.len += 1;
+    self.objs[self.len] = ptr;
   }
 
   pub unsafe fn fire(self, device: &ash::Device) {

@@ -5,7 +5,7 @@ use crate::render::{
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
 
-use super::swapchain::SwapchainCreationError;
+use super::{data::ImageLoadError, swapchain::SwapchainCreationError};
 
 pub fn error_chain_fmt(
   e: &impl std::error::Error,
@@ -72,6 +72,9 @@ pub enum InitializationError {
   #[error("IO error")]
   IOError(#[source] std::io::Error),
 
+  #[error("Image error")]
+  ImageError(#[source] ImageLoadError),
+
   // undefined behavior / driver or application bug (see vl)
   #[error("Device is lost")]
   DeviceLost,
@@ -99,6 +102,12 @@ impl From<PipelineCreationError> for InitializationError {
 impl From<SwapchainCreationError> for InitializationError {
   fn from(value: SwapchainCreationError) -> Self {
     InitializationError::SwapchainCreationFailed(value)
+  }
+}
+
+impl From<ImageLoadError> for InitializationError {
+  fn from(value: ImageLoadError) -> Self {
+    InitializationError::ImageError(value)
   }
 }
 

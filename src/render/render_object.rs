@@ -1,7 +1,8 @@
-use super::vertex::Vertex;
+use std::mem::size_of;
 
-// square
-pub const VERTICES: [Vertex; 4] = [
+use super::vertices::Vertex;
+
+pub const QUAD_VERTICES: [Vertex; 4] = [
   // top left
   Vertex {
     pos: [0.0, 0.0],
@@ -23,7 +24,10 @@ pub const VERTICES: [Vertex; 4] = [
     tex_coords: [1.0, 1.0],
   },
 ];
-pub const INDICES: [u16; 6] = [0, 1, 2, 3, 2, 1];
+pub const QUAD_VERTICES_SIZE: usize = size_of::<Vertex>() * 4;
+
+pub const QUAD_INDICES: [u16; 6] = [0, 1, 2, 3, 2, 1];
+pub const QUAD_INDICES_SIZE: usize = size_of::<u16>() * 6;
 
 // represents a position of the object that will be rendered
 #[repr(C)]

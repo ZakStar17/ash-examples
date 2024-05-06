@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::{errors::OutOfMemoryError, IMAGE_FORMAT};
+use crate::render::errors::OutOfMemoryError;
 
 pub fn create_semaphore(device: &ash::Device) -> Result<vk::Semaphore, OutOfMemoryError> {
   let create_info = vk::SemaphoreCreateInfo::default();
@@ -35,6 +35,7 @@ pub fn create_buffer(
 
 pub fn create_image(
   device: &ash::Device,
+  format: vk::Format,
   width: u32,
   height: u32,
   usage: vk::ImageUsageFlags,
@@ -45,7 +46,7 @@ pub fn create_image(
     p_next: ptr::null(),
     flags: vk::ImageCreateFlags::empty(),
     image_type: vk::ImageType::TYPE_2D,
-    format: IMAGE_FORMAT,
+    format,
     extent: vk::Extent3D {
       width,
       height,
@@ -69,6 +70,7 @@ pub fn create_image(
 pub fn create_image_view(
   device: &ash::Device,
   image: vk::Image,
+  format: vk::Format,
 ) -> Result<vk::ImageView, OutOfMemoryError> {
   let create_info = vk::ImageViewCreateInfo {
     s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
@@ -76,7 +78,7 @@ pub fn create_image_view(
     flags: vk::ImageViewCreateFlags::empty(),
     image,
     view_type: vk::ImageViewType::TYPE_2D,
-    format: IMAGE_FORMAT,
+    format,
     components: vk::ComponentMapping {
       r: vk::ComponentSwizzle::IDENTITY,
       g: vk::ComponentSwizzle::IDENTITY,
