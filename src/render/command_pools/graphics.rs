@@ -16,7 +16,7 @@ use crate::{
 
 pub struct GraphicsCommandBufferPool {
   pool: vk::CommandPool,
-  pub triangle: vk::CommandBuffer,
+  pub main: vk::CommandBuffer,
 }
 
 impl GraphicsCommandBufferPool {
@@ -24,9 +24,9 @@ impl GraphicsCommandBufferPool {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
     let pool = super::create_command_pool(device, flags, queue_families.get_graphics_index())?;
 
-    let triangle = super::allocate_primary_command_buffers(device, pool, 1)?[0];
+    let main = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
-    Ok(Self { pool, triangle })
+    Ok(Self { pool, main })
   }
 
   pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), OutOfMemoryError> {
@@ -35,7 +35,7 @@ impl GraphicsCommandBufferPool {
       .map_err(|err| err.into())
   }
 
-  pub unsafe fn record_triangle(
+  pub unsafe fn record_main(
     &mut self,
     device: &ash::Device,
     render_pass: vk::RenderPass,
@@ -45,7 +45,7 @@ impl GraphicsCommandBufferPool {
     gpu_data: &GPUData,
     position: &RenderPosition, // Ferris's position
   ) -> Result<(), OutOfMemoryError> {
-    let cb = self.triangle;
+    let cb = self.main;
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
@@ -93,8 +93,7 @@ impl GraphicsCommandBufferPool {
       device.cmd_end_render_pass(cb);
     }
 
-    device.end_command_buffer(self.triangle)?;
-
+    device.end_command_buffer(cb)?;
     Ok(())
   }
 }

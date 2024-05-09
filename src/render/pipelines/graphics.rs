@@ -22,7 +22,7 @@ use super::PipelineCreationError;
 
 pub struct GraphicsPipeline {
   pub layout: vk::PipelineLayout,
-  pub inner: vk::Pipeline,
+  pub current: vk::Pipeline,
 
   shader: Shader,
   old: Option<vk::Pipeline>,
@@ -52,7 +52,7 @@ impl GraphicsPipeline {
 
     Ok(Self {
       layout,
-      inner: initial,
+      current: initial,
       shader,
       old: None,
     })
@@ -73,18 +73,27 @@ impl GraphicsPipeline {
       self.layout,
       &self.shader,
       cache,
-      self.inner,
+      self.current,
       render_pass,
       extent,
     )?;
 
     let old = {
-      mem::swap(&mut self.inner, &mut new);
+      mem::swap(&mut self.current, &mut new);
       new
     };
 
     self.old = Some(old);
     Ok(())
+  }
+
+  pub fn revert_recreate(&mut self, device: &ash::Device) {
+    unsafe {
+      self.current.destroy_self(device);
+    }
+    let mut temp = None;
+    mem::swap(&mut self.old, &mut temp);
+    self.current = temp.unwrap();
   }
 
   // destroy old pipeline once it stops being used
@@ -276,7 +285,7 @@ impl DeviceManuallyDestroyed for GraphicsPipeline {
     if let Some(old) = self.old {
       device.destroy_pipeline(old, None);
     }
-    device.destroy_pipeline(self.inner, None);
+    device.destroy_pipeline(self.current, None);
     device.destroy_pipeline_layout(self.layout, None);
 
     // can be unloaded any time

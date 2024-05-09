@@ -30,6 +30,22 @@ macro_rules! destroy {
   };
 }
 
+impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    for value in self.iter() {
+      value.destroy_self(device);
+    }
+  }
+}
+
+impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for [T] {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    for value in self.iter() {
+      value.destroy_self(device);
+    }
+  }
+}
+
 impl ManuallyDestroyed for ash::Instance {
   unsafe fn destroy_self(self: &Self) {
     self.destroy_instance(None);
@@ -93,5 +109,11 @@ impl DeviceManuallyDestroyed for vk::ImageView {
 impl DeviceManuallyDestroyed for vk::Framebuffer {
   unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     device.destroy_framebuffer(*self, None);
+  }
+}
+
+impl DeviceManuallyDestroyed for vk::Pipeline {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+    device.destroy_pipeline(*self, None);
   }
 }

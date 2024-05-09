@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::render::errors::OutOfMemoryError;
+use crate::render::{device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError};
 
 fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemoryError> {
   let sampler_create_info = vk::SamplerCreateInfo {
@@ -106,8 +106,10 @@ impl DescriptorPool {
     let bindings = Self::graphics_layout_bindings(ptr);
     create_layout(device, &bindings)
   }
+}
 
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
+impl DeviceManuallyDestroyed for DescriptorPool {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     device.destroy_descriptor_pool(self.pool, None);
 
     device.destroy_descriptor_set_layout(self.texture_layout, None);

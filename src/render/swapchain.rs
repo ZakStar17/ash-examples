@@ -1,11 +1,13 @@
-use std::{marker::PhantomData, ops::Deref, ptr};
+use std::{marker::PhantomData, mem, ops::Deref, ptr};
 
 pub use ash::vk;
 use winit::dpi::PhysicalSize;
 
-use crate::PREFERRED_PRESENTATION_METHOD;
+use crate::{utility::OnErr, PREFERRED_PRESENTATION_METHOD};
 
 use super::{
+  create_objs::create_image_view,
+  device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
   errors::OutOfMemoryError,
   initialization::{
     device::{PhysicalDevice, QueueFamilies},
@@ -98,7 +100,7 @@ impl Swapchains {
     self.current.acquire_next_image(semaphore, &self.loader)
   }
 
-  pub unsafe fn recreate_swapchain(
+  pub unsafe fn recreate(
     &mut self,
     physical_device: &PhysicalDevice,
     device: &ash::Device,
@@ -112,6 +114,15 @@ impl Swapchains {
 
     self.old = Some(old);
     Ok(changes)
+  }
+
+  pub fn revert_recreate(&mut self) {
+    unsafe {
+      self.current.destroy_self(&self.loader);
+    }
+    let mut temp = None;
+    mem::swap(&mut self.old, &mut temp);
+    self.current = temp.unwrap();
   }
 
   pub unsafe fn queue_present(
@@ -135,18 +146,13 @@ impl Swapchains {
     unsafe { self.loader.queue_present(present_queue, &present_info) }
   }
 
-  pub fn destroy_old(&mut self, device: &ash::Device) {
+  pub fn destroy_old(&mut self) {
     if let Some(old) = &mut self.old {
       unsafe {
-        old.destroy_self(device, &self.loader);
+        old.destroy_self(&self.loader);
       }
       self.old = None;
     }
-  }
-
-  pub unsafe fn destroy_self(&mut self, device: &ash::Device) {
-    self.destroy_old(device);
-    self.current.destroy_self(device, &self.loader);
   }
 
   pub fn get_format(&self) -> vk::Format {
@@ -157,15 +163,25 @@ impl Swapchains {
     self.current.extent
   }
 
-  pub fn get_images(&self) -> &[vk::Image] {
-    &self.current.images
+  pub fn get_image_views(&self) -> &[vk::ImageView] {
+    &self.current.image_views
+  }
+}
+
+impl ManuallyDestroyed for Swapchains {
+  unsafe fn destroy_self(self: &Self) {
+    if let Some(old) = &self.old {
+      old.destroy_self(&self.loader);
+    }
+    self.current.destroy_self(&self.loader);
   }
 }
 
 #[derive(Debug)]
 struct Swapchain {
-  vk_obj: vk::SwapchainKHR,
-  images: Box<[vk::Image]>, // are owned by the swapchain
+  inner: vk::SwapchainKHR,
+  images: Box<[vk::Image]>, // owned by the swapchain
+  pub image_views: Box<[vk::ImageView]>,
   pub format: vk::Format,
   pub extent: vk::Extent2D,
 }
@@ -174,7 +190,7 @@ impl Deref for Swapchain {
   type Target = vk::SwapchainKHR;
 
   fn deref(&self) -> &Self::Target {
-    &self.vk_obj
+    &self.inner
   }
 }
 
@@ -252,7 +268,7 @@ impl Swapchain {
       image_format,
       present_mode,
       extent,
-      self.vk_obj,
+      self.inner,
     )?;
 
     let old = {
@@ -264,7 +280,7 @@ impl Swapchain {
   }
 
   fn create_with(
-    _device: &ash::Device,
+    device: &ash::Device,
     queue_families: &QueueFamilies,
     surface: &Surface,
     swapchain_loader: &ash::khr::swapchain::Device,
@@ -326,13 +342,36 @@ impl Swapchain {
 
     let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }?;
 
+    // todo: destroy swapchain
     let images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
-      .map_err(|vkerr| OutOfMemoryError::from(vkerr))?
+      .map_err(|vkerr| OutOfMemoryError::from(vkerr))
+      .on_err(|_| unsafe { swapchain_loader.destroy_swapchain(swapchain, None) })?
       .into_boxed_slice();
 
+    let image_views = {
+      let mut image_views: Vec<vk::ImageView> = Vec::with_capacity(images.len());
+      for &image in images.iter() {
+        image_views.push(
+          match create_image_view(device, image, image_format.format) {
+            Ok(view) => view,
+            Err(err) => unsafe {
+              for view in image_views {
+                view.destroy_self(device);
+              }
+              swapchain_loader.destroy_swapchain(swapchain, None);
+              return Err(err.into());
+            },
+          },
+        )
+      }
+
+      image_views.into_boxed_slice()
+    };
+
     Ok(Self {
-      vk_obj: swapchain,
+      inner: swapchain,
       images,
+      image_views,
       format: image_format.format,
       extent,
     })
@@ -343,15 +382,11 @@ impl Swapchain {
     semaphore: vk::Semaphore,
     loader: &ash::khr::swapchain::Device,
   ) -> Result<(u32, bool), vk::Result> {
-    loader.acquire_next_image(self.vk_obj, std::u64::MAX, semaphore, vk::Fence::null())
+    loader.acquire_next_image(self.inner, std::u64::MAX, semaphore, vk::Fence::null())
   }
 
-  pub unsafe fn destroy_self(
-    &mut self,
-    _device: &ash::Device,
-    loader: &ash::khr::swapchain::Device,
-  ) {
-    loader.destroy_swapchain(self.vk_obj, None);
+  pub unsafe fn destroy_self(&self, loader: &ash::khr::swapchain::Device) {
+    loader.destroy_swapchain(self.inner, None);
   }
 }
 

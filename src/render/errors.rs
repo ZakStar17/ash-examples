@@ -1,4 +1,5 @@
 use ash::vk;
+use raw_window_handle::HandleError;
 
 use crate::render::{
   initialization::InstanceCreationError,
@@ -49,6 +50,14 @@ impl From<OutOfMemoryError> for vk::Result {
   }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum WindowError {
+  #[error("OS error")]
+  OsError(#[source] winit::error::OsError),
+  #[error("Failed to get handle")]
+  HandleError(#[source] HandleError),
+}
+
 #[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("Instance creation failed")]
@@ -56,6 +65,9 @@ pub enum InitializationError {
 
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
+
+  #[error("Window error")]
+  WindowError(#[source] WindowError),
 
   #[error("Not enough memory")]
   NotEnoughMemory(#[source] Option<AllocationError>),
@@ -90,6 +102,18 @@ impl std::fmt::Debug for InitializationError {
 impl From<InstanceCreationError> for InitializationError {
   fn from(value: InstanceCreationError) -> Self {
     InitializationError::InstanceCreationFailed(value)
+  }
+}
+
+impl From<winit::error::OsError> for InitializationError {
+  fn from(value: winit::error::OsError) -> Self {
+    InitializationError::WindowError(WindowError::OsError(value))
+  }
+}
+
+impl From<HandleError> for InitializationError {
+  fn from(value: HandleError) -> Self {
+    InitializationError::WindowError(WindowError::HandleError(value))
   }
 }
 

@@ -4,6 +4,8 @@ use ash::vk;
 
 use crate::render::errors::OutOfMemoryError;
 
+use super::{device_destroyable::DeviceManuallyDestroyed, swapchain::Swapchains};
+
 pub fn create_render_pass(
   device: &ash::Device,
   surface_format: vk::Format,
@@ -76,4 +78,29 @@ pub fn create_framebuffer(
       .create_framebuffer(&create_info, None)
       .map_err(|err| err.into())
   }
+}
+
+pub fn create_framebuffers_from_swapchain_images(
+  device: &ash::Device,
+  swapchains: &Swapchains,
+  render_pass: vk::RenderPass,
+) -> Result<Box<[vk::Framebuffer]>, OutOfMemoryError> {
+  let mut framebuffers: Vec<vk::Framebuffer> =
+    Vec::with_capacity(swapchains.get_image_views().len());
+
+  for &view in swapchains.get_image_views().iter() {
+    framebuffers.push(
+      match create_framebuffer(&device, render_pass, view, swapchains.get_extent()) {
+        Ok(value) => value,
+        Err(err) => unsafe {
+          for framebuffer in framebuffers {
+            framebuffer.destroy_self(device);
+          }
+          return Err(err);
+        },
+      },
+    )
+  }
+
+  Ok(framebuffers.into_boxed_slice())
 }
