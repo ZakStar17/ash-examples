@@ -1,7 +1,7 @@
 use raw_window_handle::{HandleError, HasDisplayHandle};
-use winit::event_loop::EventLoop;
+use winit::event_loop::{EventLoop, EventLoopWindowTarget};
 
-use crate::render::device_destroyable::ManuallyDestroyed;
+use crate::render::{device_destroyable::ManuallyDestroyed, renderer::Renderer, SyncRenderer};
 use std::mem;
 
 use super::{DebugUtils, InstanceCreationError};
@@ -47,6 +47,14 @@ impl RenderInit {
       #[cfg(feature = "vl")]
       debug_utils,
     })
+  }
+
+  pub fn start(self, event_loop: &EventLoopWindowTarget<()>) -> SyncRenderer {
+    // todo: error handling
+    let renderer = Renderer::initialize(self, event_loop).unwrap();
+    let sync_renderer = SyncRenderer::new(renderer).unwrap();
+
+    sync_renderer
   }
 
   // take values out without calling drop

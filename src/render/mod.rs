@@ -12,6 +12,7 @@ mod render_pass;
 mod renderer;
 mod shaders;
 mod swapchain;
+mod sync_renderer;
 mod vertices;
 
 use crate::cstr;
@@ -19,6 +20,7 @@ use ash::vk;
 use std::ffi::CStr;
 
 pub use initialization::RenderInit;
+pub use sync_renderer::SyncRenderer;
 
 const FRAMES_IN_FLIGHT: usize = 2;
 

@@ -70,10 +70,10 @@ pub struct Renderer {
   #[cfg(feature = "vl")]
   debug_utils: initialization::DebugUtils,
   physical_device: PhysicalDevice,
-  device: ash::Device,
-  queues: Queues,
+  pub device: ash::Device,
+  pub queues: Queues,
 
-  _window: Window,
+  window: Window,
   surface: Surface,
 
   pub swapchains: Swapchains,
@@ -84,12 +84,12 @@ pub struct Renderer {
   descriptor_pool: DescriptorPool,
   pipeline_cache: vk::PipelineCache,
   pipeline: GraphicsPipeline,
-  command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
+  pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
 
   gpu_data: GPUData,
 }
 
-const DESTROYABLE_COUNT: usize = 10;
+const DESTROYABLE_COUNT: usize = 69; // todo
 struct Destructor {
   objs: [*const dyn DeviceManuallyDestroyed; DESTROYABLE_COUNT],
   len: usize,
@@ -260,7 +260,7 @@ impl Renderer {
     };
 
     Ok(Self {
-      _window: window,
+      window,
       surface,
       _entry: entry,
       instance,
@@ -286,7 +286,8 @@ impl Renderer {
     frame_i: usize,
     image_i: usize,
     position: &RenderPosition,
-  ) {
+  ) -> Result<(), OutOfMemoryError> {
+    self.command_pools[frame_i].reset(&self.device)?;
     self.command_pools[frame_i].record_main(
       &self.device,
       self.render_pass,
@@ -295,14 +296,11 @@ impl Renderer {
       &self.pipeline,
       &self.gpu_data,
       position,
-    );
+    )?;
+    Ok(())
   }
 
-  pub unsafe fn recreate_swapchain(
-    &mut self,
-    surface: &Surface,
-    window_size: PhysicalSize<u32>,
-  ) -> Result<(), SwapchainRecreationError> {
+  pub unsafe fn recreate_swapchain(&mut self) -> Result<(), SwapchainRecreationError> {
     // most of this function is just cleanup in case of an error
 
     // it is possible to use more than two frames in flight, but it would require having more than one old swapchain and pipeline
@@ -312,10 +310,12 @@ impl Renderer {
     assert!(!self.old_framebuffers.0);
 
     // old swapchain becomes retired
-    let changes =
-      self
-        .swapchains
-        .recreate(&self.physical_device, &self.device, surface, window_size)?;
+    let changes = self.swapchains.recreate(
+      &self.physical_device,
+      &self.device,
+      &self.surface,
+      self.window.inner_size(),
+    )?;
 
     let mut new_render_pass = None;
 

@@ -85,7 +85,7 @@ impl GraphicsCommandBufferPool {
         0,
         utility::any_as_u8_slice(position),
       );
-      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.inner);
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.current);
       device.cmd_bind_vertex_buffers(cb, 0, &[gpu_data.ferris.vertex], &[0]);
       device.cmd_bind_index_buffer(cb, gpu_data.ferris.index, 0, vk::IndexType::UINT16);
       device.cmd_draw_indexed(cb, FerrisModel::INDEX_COUNT, 1, 0, 0, 0);

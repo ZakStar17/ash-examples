@@ -4,15 +4,16 @@ mod render;
 mod utility;
 
 use ash::vk;
-use render::RenderInit;
+use render::{RenderInit, SyncRenderer};
 use std::{
   ffi::CStr,
+  mem::{self, MaybeUninit},
   time::{Duration, Instant},
 };
 use winit::{
   dpi::PhysicalSize,
   event::{Event, WindowEvent},
-  event_loop::{ControlFlow, EventLoop},
+  event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
   keyboard::{KeyCode, PhysicalKey},
 };
 
@@ -47,10 +48,48 @@ const WAIT_AFTER_WINDOW_RESIZE_DURATION: Duration = Duration::from_millis(60);
 // prints current frame 1 / <time since last frame> every x time
 const PRINT_FPS_EVERY: Duration = Duration::from_millis(1000);
 
+enum RenderStatus {
+  Initialized(RenderInit),
+  Started(SyncRenderer),
+}
 enum Status {
   NotStarted(RenderInit),
-  Running,
-  Paused,
+  Running(SyncRenderer),
+  Paused(SyncRenderer),
+}
+
+impl Status {
+  pub fn running(&self) -> bool {
+    if let Self::Running(_) = self {
+      true
+    } else {
+      false
+    }
+  }
+
+  pub fn start(&mut self, event_loop: &EventLoopWindowTarget<()>) {
+    take_mut::take(self, |old| match old {
+      Self::NotStarted(init) => {
+        let renderer = init.start(event_loop);
+        Status::Running(renderer)
+      }
+      _ => panic!(),
+    });
+  }
+
+  pub fn set_to_running(&mut self) {
+    take_mut::take(self, |old| match old {
+      Self::Paused(renderer) => Self::Running(renderer),
+      _ => panic!(),
+    });
+  }
+
+  pub fn set_to_paused(&mut self) {
+    take_mut::take(self, |old| match old {
+      Self::Running(renderer) => Self::Paused(renderer),
+      _ => panic!(),
+    });
+  }
 }
 
 impl PartialEq for Status {
@@ -61,13 +100,13 @@ impl PartialEq for Status {
           return true;
         }
       }
-      Status::Running => {
-        if let Status::Running = other {
+      Status::Running(_) => {
+        if let Status::Running(_) = other {
           return true;
         }
       }
-      Status::Paused => {
-        if let Status::Paused = other {
+      Status::Paused(_) => {
+        if let Status::Paused(_) = other {
           return true;
         }
       }
@@ -94,17 +133,20 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
       Event::Suspended => {
         // should completely pause the application
         log::debug!("Application suspended");
-        if status == Status::Running {
-          status = Status::Paused;
+        if status.running() {
+          status.set_to_paused();
         }
       }
-      Event::Resumed => match status {
-        Status::NotStarted(init) => {
+      Event::Resumed => match &mut status {
+        Status::NotStarted(_) => {
           log::debug!("Starting application");
-          status = Status::Running;
+
+          status.start(target);
+
+          target.exit() // todo: debugging
         }
-        Status::Paused => status = Status::Running,
-        Status::Running => {}
+        Status::Paused(_) => status.set_to_running(),
+        Status::Running(_) => {}
       },
       Event::AboutToWait => {
         // winit has two events that notify when a frame needs to be rendered:
@@ -131,7 +173,8 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
           return;
         }
 
-        if status == Status::Running {
+        if let Status::Running(renderer) = &mut status {
+          renderer.render_next_frame();
           // if engine
           //   .render_frame(time_passed.as_secs_f32(), &player.sprite_data())
           //   .is_err()
@@ -144,24 +187,27 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
         WindowEvent::CloseRequested => {
           target.exit();
         }
-        WindowEvent::Occluded(occluded) => match status {
-          Status::NotStarted(init) => {
-            log::debug!("Starting application");
-            status = Status::Running;
-          }
-          Status::Paused => {
-            if !occluded {
-              status = Status::Running;
-            }
-          }
-          Status::Running => {
-            if occluded {
-              status = Status::Paused;
-            }
-          }
-        },
+        // WindowEvent::Occluded(occluded) => match status {
+        //   Status::NotStarted(init) => {
+        //     log::debug!("Starting application");
+        //     status = Status::Running;
+        //   }
+        //   Status::Paused => {
+        //     if !occluded {
+        //       status = Status::Running;
+        //     }
+        //   }
+        //   Status::Running => {
+        //     if occluded {
+        //       status = Status::Paused;
+        //     }
+        //   }
+        // },
         WindowEvent::Resized(new_size) => {
-          engine.window_resized(new_size);
+          match &mut status {
+            Status::Running(renderer) | Status::Paused(renderer) => renderer.window_resized(),
+            _ => {}
+          }
 
           if WAIT_AFTER_WINDOW_RESIZE_ENABLED
             && (cur_window_size.width.abs_diff(new_size.width)
