@@ -10,11 +10,3 @@ pub fn parse_vulkan_api_version(v: u32) -> String {
     vk::api_version_patch(v)
   )
 }
-
-// transmute literals to static CStr
-#[macro_export]
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}

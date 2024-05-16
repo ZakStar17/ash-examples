@@ -27,6 +27,7 @@ pub enum InstanceCreationError {
   Failed,
 }
 
+// checks if entry supports the target API version
 fn check_api_version(entry: &ash::Entry) -> Result<(), InstanceCreationError> {
   let max_supported_version = match unsafe { entry.try_enumerate_instance_version() } {
     // Vulkan 1.1+
@@ -70,8 +71,6 @@ fn get_app_info<'a>() -> vk::ApplicationInfo<'a> {
 pub fn create_instance(
   entry: &ash::Entry,
 ) -> Result<(ash::Instance, crate::validation_layers::DebugUtils), InstanceCreationError> {
-  use std::ptr::addr_of;
-
   use crate::{
     validation_layers::{self, DebugUtils},
     ADDITIONAL_VALIDATION_FEATURES,
@@ -81,7 +80,7 @@ pub fn create_instance(
 
   let extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
 
-  let layers_str = validation_layers::get_supported_validation_layers(&entry)
+  let layers_str = validation_layers::get_supported_validation_layers(entry)
     .map_err(|err| InstanceCreationError::OutOfMemory(err.into()))?;
   let layers: Vec<*const c_char> = layers_str.iter().map(|name| name.as_ptr()).collect();
 
@@ -90,7 +89,7 @@ pub fn create_instance(
   // enable/disable some validation features by passing a ValidationFeaturesEXT struct
   let additional_features = vk::ValidationFeaturesEXT {
     s_type: vk::StructureType::VALIDATION_FEATURES_EXT,
-    p_next: addr_of!(debug_create_info) as *const c_void,
+    p_next: &debug_create_info as *const vk::DebugUtilsMessengerCreateInfoEXT as *const c_void,
     enabled_validation_feature_count: ADDITIONAL_VALIDATION_FEATURES.len() as u32,
     p_enabled_validation_features: ADDITIONAL_VALIDATION_FEATURES.as_ptr(),
     disabled_validation_feature_count: 0,
@@ -103,11 +102,11 @@ pub fn create_instance(
     app_info,
     &extensions,
     &layers,
-    addr_of!(additional_features) as *const c_void,
+    &additional_features as *const vk::ValidationFeaturesEXT as *const c_void,
   )?;
 
   log::debug!("Creating Debug Utils");
-  let debug_utils = DebugUtils::create(&entry, &instance, debug_create_info)?;
+  let debug_utils = DebugUtils::create(entry, &instance, debug_create_info)?;
 
   Ok((instance, debug_utils))
 }
@@ -123,6 +122,7 @@ pub fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, InstanceCrea
 }
 
 // check if extensions are layers are present and then create a vk instance
+// (safety: extensions and layers should be valid cstrings)
 fn create_instance_checked(
   entry: &ash::Entry,
   app_info: vk::ApplicationInfo,
