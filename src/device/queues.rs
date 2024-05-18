@@ -35,6 +35,7 @@ impl QueueFamilies {
           });
         }
       } else if family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
+        #[allow(clippy::collapsible_if)]
         if transfer.is_none() {
           transfer = Some(QueueFamily {
             index: i as u32,
