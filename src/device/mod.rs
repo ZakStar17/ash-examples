@@ -9,7 +9,7 @@ pub use queues::{QueueFamilies, Queues};
 
 use self::vendor::Vendor;
 use std::{
-  ffi::c_void,
+  ffi::{c_void, CStr},
   mem::MaybeUninit,
   ptr::{self, addr_of_mut},
 };
@@ -17,7 +17,7 @@ use std::{
 use ash::vk;
 
 use crate::{
-  utility::{self, c_char_array_to_string},
+  utility::{self},
   REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
 };
 
@@ -26,13 +26,13 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let driver_version = vendor.parse_driver_version(properties.driver_version);
 
   log::info!(
-    "\nFound physical device \"{}\":
+    "\nFound physical device \"{:?}\":
       API Version: {},
       Vendor: {},
       Driver Version: {},
       ID: {},
       Type: {},",
-    c_char_array_to_string(&properties.device_name),
+    unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }, // expected to be a valid cstr
     utility::parse_vulkan_api_version(properties.api_version),
     vendor.to_string(),
     driver_version,

@@ -1,8 +1,6 @@
-use std::ops::Deref;
+use std::{ffi::CStr, ops::Deref};
 
 use ash::vk;
-
-use crate::utility;
 
 use super::select_physical_device;
 
@@ -31,8 +29,8 @@ impl PhysicalDevice {
           instance.get_physical_device_queue_family_properties(physical_device);
 
         log::info!(
-          "Using physical device \"{}\"",
-          utility::c_char_array_to_string(&properties.p10.device_name)
+          "Using physical device \"{:?}\"",
+          unsafe { CStr::from_ptr(properties.p10.device_name.as_ptr()) }, // expected to be a valid cstr
         );
         print_queue_families_debug_info(&queue_family_properties);
         print_device_memory_debug_info(&mem_properties);

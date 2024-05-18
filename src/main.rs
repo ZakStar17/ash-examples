@@ -29,10 +29,10 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 // somewhat arbitrary
-pub const APPLICATION_NAME: &'static CStr = cstr!("Vulkan Device Creation");
-pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
+static APPLICATION_NAME: &CStr = c"Vulkan Device Creation";
+const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-pub const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
+static REQUIRED_DEVICE_EXTENSIONS: [&CStr; 0] = [];
 
 fn main() {
   env_logger::init();
