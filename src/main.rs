@@ -15,7 +15,7 @@ use crate::device::{create_logical_device, PhysicalDevice};
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
-const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
+const VALIDATION_LAYERS: [&CStr; 1] = [c"VK_LAYER_KHRONOS_validation"];
 #[cfg(feature = "vl")]
 const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
   vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
