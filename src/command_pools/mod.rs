@@ -73,7 +73,7 @@ impl CommandPools {
     let graphics_pool =
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families)?;
     let transfer_pool =
-      match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
+      match TransferCommandBufferPool::create(device, &physical_device.queue_families) {
         Ok(pool) => pool,
         Err(err) => {
           unsafe {
@@ -90,7 +90,7 @@ impl CommandPools {
 }
 
 impl DeviceManuallyDestroyed for CommandPools {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.graphics_pool.destroy_self(device);
     self.transfer_pool.destroy_self(device);
   }

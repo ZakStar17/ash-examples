@@ -11,8 +11,7 @@ use crate::{
   allocator::allocate_and_bind_memory,
   command_pools::TransferCommandBufferPool,
   create_objs::{create_buffer, create_fence, create_image, create_image_view},
-  destroy,
-  device_destroyable::DeviceManuallyDestroyed,
+  device_destroyable::{destroy, DeviceManuallyDestroyed},
   errors::{AllocationError, OutOfMemoryError},
   initialization::device::{PhysicalDevice, Queues},
   render_pass::create_framebuffer,
@@ -429,7 +428,7 @@ impl GPUData {
 }
 
 impl DeviceManuallyDestroyed for GPUData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.triangle_image.destroy_self(device);
     self.triangle_model.destroy_self(device);
     self.final_buffer.destroy_self(device);
@@ -465,7 +464,7 @@ impl TriangleImage {
 
 // memory must be freed manually
 impl DeviceManuallyDestroyed for TriangleImage {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.framebuffer.destroy_self(device);
     self.image_view.destroy_self(device);
     self.image.destroy_self(device);
@@ -483,7 +482,7 @@ impl TriangleModelData {
 }
 
 impl DeviceManuallyDestroyed for TriangleModelData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.vertex.destroy_self(device);
     self.index.destroy_self(device);
   }
@@ -500,7 +499,7 @@ impl FinalBuffer {
 }
 
 impl DeviceManuallyDestroyed for FinalBuffer {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.buffer.destroy_self(device);
   }
 }

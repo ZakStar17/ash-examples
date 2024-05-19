@@ -143,7 +143,7 @@ impl GraphicsPipeline {
 }
 
 impl DeviceManuallyDestroyed for GraphicsPipeline {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_pipeline(self.pipeline, None);
     device.destroy_pipeline_layout(self.layout, None);
   }

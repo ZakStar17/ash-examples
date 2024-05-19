@@ -2,14 +2,14 @@ use std::{ffi::CStr, marker::PhantomData, path::Path, ptr};
 
 use ash::vk;
 
-use crate::{cstr, device_destroyable::DeviceManuallyDestroyed};
+use crate::device_destroyable::DeviceManuallyDestroyed;
 
 use super::{load_shader, ShaderError};
 
 const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
 const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
 
-const MAIN_FN_NAME: &'static CStr = cstr!("main");
+static MAIN_FN_NAME: &'static CStr = c"main";
 
 pub struct Shader {
   pub vert: vk::ShaderModule,
@@ -55,7 +55,7 @@ impl Shader {
 }
 
 impl DeviceManuallyDestroyed for Shader {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_shader_module(self.vert, None);
     device.destroy_shader_module(self.frag, None);
   }

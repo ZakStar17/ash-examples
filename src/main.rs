@@ -22,7 +22,7 @@ use crate::renderer::Renderer;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
-const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
+const VALIDATION_LAYERS: [&CStr; 1] = [c"VK_LAYER_KHRONOS_validation"];
 #[cfg(feature = "vl")]
 const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
   vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
@@ -31,10 +31,10 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
-const APPLICATION_NAME: &'static CStr = cstr!("Image clear");
+static APPLICATION_NAME: &CStr = c"Triangle image";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
+static REQUIRED_DEVICE_EXTENSIONS: [&CStr; 0] = [];
 
 const IMAGE_WIDTH: u32 = 1920;
 const IMAGE_HEIGHT: u32 = 1080;
@@ -66,30 +66,45 @@ const VERTICES: [Vertex; 3] = [
 ];
 const INDICES: [u16; 3] = [0, 1, 2];
 
-fn main() {
-  env_logger::init();
-
+fn initialize_and_run() -> Result<(), String> {
   let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE)
-    .expect("Failed to initialize");
-  unsafe { renderer.record_work() }.expect("Failed to record work");
+    .map_err(|err| format!("Failed to initialize: {}", err))?;
+  unsafe { renderer.record_work() }.map_err(|err| format!("Failed to record work: {}", err))?;
 
   println!("Submitting work...");
-  renderer.submit_and_wait().expect("Failed to submit work");
+  renderer
+    .submit_and_wait()
+    .map_err(|err| format!("Failed to submit work: {}", err))?;
   println!("GPU finished!");
 
   println!("Saving file...");
+  let mut save_result = Ok(());
   unsafe {
     renderer.get_resulting_data(|data| {
-      image::save_buffer(
+      save_result = image::save_buffer(
         IMAGE_SAVE_PATH,
         data,
         IMAGE_WIDTH,
         IMAGE_HEIGHT,
         IMAGE_SAVE_TYPE,
-      )
-      .expect("Failed to save image");
+      );
     })
   }
-  .expect("Failed to get resulting data");
+  .map_err(|err| format!("Failed to get resulting data: {}", err))?;
+  if let Err(err) = save_result {
+    return Err(format!("Failed to save image: {}", err));
+  }
+
+  Ok(())
+}
+
+fn main() {
+  env_logger::init();
+
+  if let Err(s) = initialize_and_run() {
+    log::error!("{}", s);
+    std::process::exit(1);
+  }
+
   println!("Done!");
 }

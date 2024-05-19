@@ -7,8 +7,7 @@ use std::{
 use crate::{
   command_pools::CommandPools,
   create_objs::{create_fence, create_semaphore},
-  destroy,
-  device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
+  device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
   errors::{InitializationError, OutOfMemoryError},
   gpu_data::GPUData,
   initialization::{
