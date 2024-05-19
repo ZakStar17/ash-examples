@@ -4,7 +4,7 @@ mod render;
 mod utility;
 
 use ash::vk;
-use render::{RenderInit, SyncRenderer};
+use render::{RenderInit, RenderInitError, SyncRenderer};
 use std::{
   ffi::CStr,
   mem::{self, MaybeUninit},
@@ -52,72 +52,75 @@ enum RenderStatus {
   Initialized(RenderInit),
   Started(SyncRenderer),
 }
-enum Status {
-  NotStarted(RenderInit),
-  Running(SyncRenderer),
-  Paused(SyncRenderer),
+enum RunningStatus {
+  NotStarted,
+  Running,
+  Paused,
 }
 
-impl Status {
-  pub fn running(&self) -> bool {
-    if let Self::Running(_) = self {
+struct ProgramStatus {
+  render: RenderStatus,
+  running: RunningStatus
+}
+
+impl ProgramStatus {
+  pub fn new(event_loop: &EventLoop<()>) -> Result<Self, RenderInitError> {
+    let render =  RenderInit::new(event_loop)?;
+    Ok(Self {
+      render: RenderStatus::Initialized(render),
+      running: RunningStatus::NotStarted 
+    })
+  }
+
+  pub fn start(&mut self, event_loop: &EventLoopWindowTarget<()>) {
+    take_mut::take(&mut self.render, |old| match old {
+      RenderStatus::Initialized(init) => {
+        let renderer = init.start(event_loop);
+        RenderStatus::Started(renderer)
+      }
+      _ => panic!("Render started multiple times"),
+    });
+    self.running = RunningStatus::Running;
+  }
+
+  pub fn pause(&mut self) {
+    if let RunningStatus::Running = self.running {
+      self.running = RunningStatus::Paused;
+    }
+  }
+
+  pub fn unpause(&mut self) {
+    if let RunningStatus::Paused = self.running {
+      self.running = RunningStatus::Running;
+    }
+  }
+
+  pub fn is_running(&self) -> bool {
+    if let RunningStatus::Running = self.running {
       true
     } else {
       false
     }
   }
 
-  pub fn start(&mut self, event_loop: &EventLoopWindowTarget<()>) {
-    take_mut::take(self, |old| match old {
-      Self::NotStarted(init) => {
-        let renderer = init.start(event_loop);
-        Status::Running(renderer)
-      }
-      _ => panic!(),
-    });
-  }
-
-  pub fn set_to_running(&mut self) {
-    take_mut::take(self, |old| match old {
-      Self::Paused(renderer) => Self::Running(renderer),
-      _ => panic!(),
-    });
-  }
-
-  pub fn set_to_paused(&mut self) {
-    take_mut::take(self, |old| match old {
-      Self::Running(renderer) => Self::Paused(renderer),
-      _ => panic!(),
-    });
-  }
-}
-
-impl PartialEq for Status {
-  fn eq(&self, other: &Self) -> bool {
-    match self {
-      Status::NotStarted(_) => {
-        if let Status::NotStarted(_) = other {
-          return true;
-        }
-      }
-      Status::Running(_) => {
-        if let Status::Running(_) = other {
-          return true;
-        }
-      }
-      Status::Paused(_) => {
-        if let Status::Paused(_) = other {
-          return true;
-        }
-      }
+  pub fn has_started(&self) -> bool {
+    if let RunningStatus::NotStarted = self.running {
+      false
+    } else {
+      true
     }
-    false
+  }
+
+  pub fn get_renderer(&mut self) -> &mut SyncRenderer {
+    if let RenderStatus::Started(render) = &mut self.render {
+      render
+    } else {
+      panic!();
+    }
   }
 }
 
-pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
-  let mut status = Status::NotStarted(init);
-
+fn main_loop(event_loop: EventLoop<()>, mut status: ProgramStatus) {
   let mut wait_for_more_window_resizes = false;
   let mut cur_window_size = PhysicalSize {
     width: u32::MAX,
@@ -133,21 +136,18 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
       Event::Suspended => {
         // should completely pause the application
         log::debug!("Application suspended");
-        if status.running() {
-          status.set_to_paused();
-        }
+        status.pause();
       }
-      Event::Resumed => match &mut status {
-        Status::NotStarted(_) => {
+      Event::Resumed => {
+        if status.has_started() {
+          status.unpause();
+        } else {
           log::debug!("Starting application");
 
           status.start(target);
 
-          // todo write descriptor set is missing
-          target.exit() // todo: debugging
+          //target.exit() // todo: debugging
         }
-        Status::Paused(_) => status.set_to_running(),
-        Status::Running(_) => {}
       },
       Event::AboutToWait => {
         // winit has two events that notify when a frame needs to be rendered:
@@ -174,14 +174,11 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
           return;
         }
 
-        if let Status::Running(renderer) = &mut status {
-          renderer.render_next_frame();
-          // if engine
-          //   .render_frame(time_passed.as_secs_f32(), &player.sprite_data())
-          //   .is_err()
-          // {
-          //   log::warn!("Frame failed to render");
-          // }
+        if status.is_running() {
+          if frame_i == 0 {
+            status.get_renderer().render_next_frame();
+          }
+          frame_i += 1;
         }
       }
       Event::WindowEvent { event, .. } => match event {
@@ -205,11 +202,9 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
         //   }
         // },
         WindowEvent::Resized(new_size) => {
-          match &mut status {
-            Status::Running(renderer) | Status::Paused(renderer) => renderer.window_resized(),
-            _ => {}
+          if status.has_started() {
+            status.get_renderer().window_resized();
           }
-
           if WAIT_AFTER_WINDOW_RESIZE_ENABLED
             && (cur_window_size.width.abs_diff(new_size.width)
               <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD
@@ -249,6 +244,6 @@ fn main() {
   // make the event loop run continuously even if there is no new user input
   event_loop.set_control_flow(ControlFlow::Poll);
 
-  let init = RenderInit::new(&event_loop).expect("Failed to initialize before window");
-  main_loop(event_loop, init);
+  let status = ProgramStatus::new(&event_loop).unwrap();  // todo
+  main_loop(event_loop, status);
 }

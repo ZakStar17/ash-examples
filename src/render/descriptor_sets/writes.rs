@@ -48,19 +48,11 @@ impl<'a> BufferWriteDescriptorSet<'a> {
 
   // returns a vk::WriteDescriptorSet that is valid for as long that self is not moved
   pub fn contextualize(&self) -> vk::WriteDescriptorSet {
-    let mut copy = self.inner;
-    copy.p_buffer_info = addr_of!(self.info);
-    copy
+    vk::WriteDescriptorSet {
+      p_buffer_info: addr_of!(self.info),
+      ..self.inner
+    }
   }
-
-  // Using pins works but is annoying as you have to constantly pin!() stuff
-  // Also, returning &vk::WriteDescriptorSet doesn't guarantee that a new copy of the descriptor
-  // outlives &self, so it also needs an additional wrapper for the lifetimes to actually work
-  // a copy has to be used
-  // pub fn deref_pinned<'a>(s: &'a mut Pin<&mut Self>) -> &'a vk::WriteDescriptorSet {
-  //   s.inner.p_buffer_info = addr_of!(s.info);
-  //   &s.inner
-  // }
 }
 
 pub fn storage_buffer_descriptor_set<'a>(
@@ -94,9 +86,10 @@ impl<'a> ImageWriteDescriptorSet<'a> {
 
   // returns a vk::WriteDescriptorSet that is valid for as long that self is not moved
   pub fn contextualize(&self) -> vk::WriteDescriptorSet {
-    let mut copy = self.inner;
-    copy.p_image_info = addr_of!(self.info);
-    copy
+    vk::WriteDescriptorSet {
+      p_image_info: addr_of!(self.info),
+      ..self.inner
+    }
   }
 }
 

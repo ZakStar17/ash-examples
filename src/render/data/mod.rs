@@ -114,12 +114,18 @@ impl GPUData {
     let texture_set = descriptor_pool
       .allocate_sets(device, &[descriptor_pool.texture_layout])
       .unwrap()[0];
-    let texture = Texture::new(device, texture_image.image, texture_memory, texture_set)
+    let (texture, texture_write_descriptor_set) = Texture::new(device, texture_image.image, texture_memory, texture_set)
       .on_err(|_| destroy_all())?;
 
     let ferris = FerrisModel::new(vertex_final, index_final, ferris_memory);
 
     destroy_staging();
+
+    // update texture set
+    unsafe {
+      let contextualized_write_descriptor_set = texture_write_descriptor_set.contextualize();
+      device.update_descriptor_sets(&[contextualized_write_descriptor_set], &[]);
+    }
 
     Ok(Self { texture, ferris })
   }

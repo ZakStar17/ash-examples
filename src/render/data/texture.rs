@@ -4,9 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    create_objs::{create_buffer, create_image, create_image_view},
-    device_destroyable::DeviceManuallyDestroyed,
-    errors::OutOfMemoryError,
+    create_objs::{create_buffer, create_image, create_image_view}, descriptor_sets::{texture_write_descriptor_set, ImageWriteDescriptorSet}, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError
   },
   utility::const_flag_bitor,
 };
@@ -62,14 +60,6 @@ pub struct Texture {
   pub descriptor: vk::DescriptorSet,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ImageCreationError {
-  #[error("Out of memory")]
-  OutOfMemoryError(#[source] OutOfMemoryError),
-  #[error("No supported formats available")]
-  NoSupportedFormats,
-}
-
 impl Texture {
   // takes image ownership
   // other objects must be managed outside
@@ -78,14 +68,15 @@ impl Texture {
     image: vk::Image,
     memory: vk::DeviceMemory,
     descriptor: vk::DescriptorSet,
-  ) -> Result<Self, OutOfMemoryError> {
+  ) -> Result<(Self, ImageWriteDescriptorSet), OutOfMemoryError> {
     let view = create_image_view(device, image, TEXTURE_FORMAT)?;
-    Ok(Self {
+    let write_descriptor_set = texture_write_descriptor_set(descriptor, view, 0);
+    Ok((Self {
       image,
       memory,
       view,
       descriptor,
-    })
+    }, write_descriptor_set))
   }
 
   pub fn create_image(device: &ash::Device) -> Result<LoadedImage, ImageLoadError> {

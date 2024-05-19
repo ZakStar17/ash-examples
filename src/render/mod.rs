@@ -18,7 +18,7 @@ mod vertices;
 use ash::vk;
 use std::ffi::CStr;
 
-pub use initialization::RenderInit;
+pub use initialization::{RenderInit, RenderInitError};
 pub use sync_renderer::SyncRenderer;
 
 const FRAMES_IN_FLIGHT: usize = 2;

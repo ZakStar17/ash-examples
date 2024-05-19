@@ -144,7 +144,7 @@ impl SyncRenderer {
         .record_graphics(
           cur_frame_i,
           image_index as usize,
-          &RenderPosition::new([0.0, 0.0], [1.0, 1.0]),
+          &RenderPosition::new([-0.3, -0.3], [0.4, 0.3]),
         )
         .unwrap();
     }
