@@ -15,7 +15,6 @@ mod swapchain;
 mod sync_renderer;
 mod vertices;
 
-use crate::cstr;
 use ash::vk;
 use std::ffi::CStr;
 
@@ -26,7 +25,7 @@ const FRAMES_IN_FLIGHT: usize = 2;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
-const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
+const VALIDATION_LAYERS: [&'static CStr; 1] = [c"VK_LAYER_KHRONOS_validation"];
 #[cfg(feature = "vl")]
 const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
   vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
@@ -35,4 +34,4 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
-const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 1] = [cstr!("VK_KHR_swapchain")];
+const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 1] = [c"VK_KHR_swapchain"];

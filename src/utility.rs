@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr, FromBytesUntilNulError};
+use std::ffi::{CStr, FromBytesUntilNulError};
 
 use ash::vk;
 
@@ -13,16 +13,8 @@ pub fn parse_vulkan_api_version(v: u32) -> String {
   )
 }
 
-pub fn c_char_array_to_string(arr: &[c_char]) -> String {
-  let raw_string = unsafe { CStr::from_ptr(arr.as_ptr()) };
-  raw_string
-    .to_str()
-    .expect("Failed to convert raw string")
-    .to_owned()
-}
-
-pub unsafe fn i8_array_as_cstr<'a>(arr: &'a [i8]) -> Result<&'a CStr, FromBytesUntilNulError> {
-  CStr::from_bytes_until_nul(std::mem::transmute(arr))
+pub unsafe fn i8_array_as_cstr(arr: &[i8]) -> Result<&CStr, FromBytesUntilNulError> {
+  CStr::from_bytes_until_nul(std::mem::transmute::<&[i8], &[u8]>(arr))
 }
 
 pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
@@ -30,7 +22,7 @@ pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 }
 
 pub trait OnErr<T, E> {
-  fn on_err<O: FnOnce(&E)>(self: Self, op: O) -> Result<T, E>
+  fn on_err<O: FnOnce(&E)>(self, op: O) -> Result<T, E>
   where
     Self: Sized;
 }
@@ -47,15 +39,6 @@ impl<T, E> OnErr<T, E> for Result<T, E> {
   }
 }
 
-// transmute literals to static CStr
-#[macro_export]
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
-
-#[macro_export]
 macro_rules! const_flag_bitor {
   ($t:ty, $x:expr, $($y:expr),+) => {
     // ash flags don't implement const bitor
@@ -64,6 +47,7 @@ macro_rules! const_flag_bitor {
     )
   };
 }
+pub(crate) use const_flag_bitor;
 
 // populate_array_with_expression!(a + b, 3) transforms into [a + b, a + b, a + b]
 #[macro_export]

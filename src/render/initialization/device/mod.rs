@@ -4,7 +4,7 @@ mod queues;
 mod vendor;
 
 use std::{
-  ffi::c_void,
+  ffi::{c_void, CStr},
   mem::MaybeUninit,
   ptr::{self, addr_of_mut},
 };
@@ -14,13 +14,13 @@ pub use logical_device::create_logical_device;
 pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
+use self::vendor::Vendor;
 use crate::{
   render::{
-    errors::OutOfMemoryError,
-    initialization::device::{queues::QueueFamilyError, vendor::Vendor},
+    errors::OutOfMemoryError, initialization::device::queues::QueueFamilyError,
     REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
   },
-  utility::{self, c_char_array_to_string, i8_array_as_cstr},
+  utility::{self, i8_array_as_cstr},
 };
 
 use super::{Surface, SurfaceError};
@@ -30,13 +30,13 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let driver_version = vendor.parse_driver_version(properties.driver_version);
 
   log::info!(
-    "\nFound physical device \"{}\":
+    "\nFound physical device \"{:?}\":
       API Version: {},
       Vendor: {},
       Driver Version: {},
       ID: {},
       Type: {},",
-    c_char_array_to_string(&properties.device_name),
+    unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }, // expected to be a valid cstr
     utility::parse_vulkan_api_version(properties.api_version),
     vendor.to_string(),
     driver_version,

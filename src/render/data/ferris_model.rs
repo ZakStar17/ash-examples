@@ -3,10 +3,9 @@ use std::{mem::size_of, ops::BitOr, ptr::copy_nonoverlapping};
 use ash::vk;
 
 use crate::{
-  destroy,
   render::{
     create_objs::create_buffer,
-    device_destroyable::DeviceManuallyDestroyed,
+    device_destroyable::{destroy, DeviceManuallyDestroyed},
     errors::OutOfMemoryError,
     render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, QUAD_VERTICES, QUAD_VERTICES_SIZE},
     vertices::Vertex,

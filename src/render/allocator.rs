@@ -7,6 +7,7 @@ use crate::render::{
   initialization::device::PhysicalDevice,
 };
 
+#[allow(dead_code)]
 pub struct PackedAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_size: u64,

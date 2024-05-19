@@ -9,12 +9,11 @@ use std::{
 use ash::vk;
 
 use crate::{
-  destroy,
   render::{
     allocator::allocate_and_bind_memory,
     command_pools::TransferCommandBufferPool,
     create_objs::create_fence,
-    device_destroyable::DeviceManuallyDestroyed,
+    device_destroyable::{destroy, DeviceManuallyDestroyed},
     errors::{AllocationError, OutOfMemoryError},
     initialization::device::{PhysicalDevice, Queues},
   },

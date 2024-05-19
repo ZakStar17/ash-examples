@@ -95,7 +95,7 @@ pub use enumerate_attribute_descriptions;
 macro_rules! vertex_input_state_create_info {
   ($($vertices:ty),+) => {
     {
-    use crate::render::vertices::{enumerate_binding_descriptions, enumerate_attribute_descriptions, PipelineVertexInputStateCreateInfo};
+    use $crate::render::vertices::{enumerate_binding_descriptions, enumerate_attribute_descriptions, PipelineVertexInputStateCreateInfo};
 
     let bindings = enumerate_binding_descriptions!($($vertices),+);
     let attributes = enumerate_attribute_descriptions!($($vertices),+);

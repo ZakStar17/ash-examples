@@ -9,13 +9,12 @@ use winit::{
 };
 
 use crate::{
-  destroy,
   render::{
     command_pools::{
       GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
     },
     data::GPUData,
-    device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
+    device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
     errors::{InitializationError, OutOfMemoryError},
     initialization::{
       self,

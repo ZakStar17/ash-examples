@@ -72,6 +72,7 @@ impl QueueFamilies {
           }
         }
       } else if props.queue_flags.contains(vk::QueueFlags::TRANSFER) {
+        #[allow(clippy::collapsible_if)]
         if transfer.is_none() {
           transfer = family;
         }

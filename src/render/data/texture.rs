@@ -3,12 +3,12 @@ use std::ptr::copy_nonoverlapping;
 use ash::vk;
 
 use crate::{
-  const_flag_bitor,
   render::{
     create_objs::{create_buffer, create_image, create_image_view},
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,
   },
+  utility::const_flag_bitor,
 };
 
 use super::StagingMemoryAllocation;

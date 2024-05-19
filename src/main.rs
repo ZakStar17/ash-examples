@@ -17,10 +17,10 @@ use winit::{
   keyboard::{KeyCode, PhysicalKey},
 };
 
-const APPLICATION_NAME: &'static CStr = cstr!("Bouncy Ferris");
+const APPLICATION_NAME: &CStr = c"Bouncy Ferris";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-const WINDOW_TITLE: &'static str = "Bouncy Ferris";
+const WINDOW_TITLE: &str = "Bouncy Ferris";
 const INITIAL_WINDOW_WIDTH: u32 = 800;
 const INITIAL_WINDOW_HEIGHT: u32 = 800;
 
@@ -28,7 +28,7 @@ const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
 
-const TEXTURE_PATH: &'static str = "./ferris.png";
+const TEXTURE_PATH: &str = "./ferris.png";
 
 // see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
 // FIFO_KHR is required to be supported and functions as vsync
