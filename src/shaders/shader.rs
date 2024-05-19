@@ -6,10 +6,10 @@ use crate::device_destroyable::DeviceManuallyDestroyed;
 
 use super::{load_shader, ShaderError};
 
-const VERT_SHADER_PATH: &'static str = "./shaders/vert.spv";
-const FRAG_SHADER_PATH: &'static str = "./shaders/frag.spv";
+const VERT_SHADER_PATH: &str = "./shaders/vert.spv";
+const FRAG_SHADER_PATH: &str = "./shaders/frag.spv";
 
-static MAIN_FN_NAME: &'static CStr = c"main";
+static MAIN_FN_NAME: &CStr = c"main";
 
 pub struct Shader {
   pub vert: vk::ShaderModule,

@@ -2,7 +2,7 @@ use std::{
   marker::PhantomData,
   mem::size_of,
   ops::BitOr,
-  ptr::{self, addr_of, copy_nonoverlapping},
+  ptr::{self, copy_nonoverlapping},
 };
 
 use ash::vk;
@@ -55,7 +55,7 @@ impl GPUData {
     buffer_size: u64,
   ) -> Result<Self, AllocationError> {
     let triangle_image = create_image(
-      &device,
+      device,
       image_extent.width,
       image_extent.height,
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::COLOR_ATTACHMENT),
@@ -73,7 +73,7 @@ impl GPUData {
     )
     .on_err(|_| unsafe { destroy!(device => &vertex_buffer, &triangle_image) })?;
 
-    let final_buffer = create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)?;
+    let final_buffer = create_buffer(device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)?;
 
     let destroy_created_objects = || unsafe {
       destroy!(device => &final_buffer, &index_buffer, &vertex_buffer, &triangle_image)
@@ -299,16 +299,14 @@ impl GPUData {
         )
         .on_err(|_| destroy_created_objs())? as *mut u8;
 
-      let vertices = VERTICES;
-      let indices = INDICES;
       copy_nonoverlapping(
-        addr_of!(vertices) as *const u8,
-        mem_ptr.byte_add(vertex_offset as usize) as *mut u8,
+        VERTICES.as_ptr() as *const u8,
+        mem_ptr.byte_add(vertex_offset as usize),
         vertex_size as usize,
       );
       copy_nonoverlapping(
-        addr_of!(indices) as *const u8,
-        mem_ptr.byte_add(index_offset as usize) as *mut u8,
+        INDICES.as_ptr() as *const u8,
+        mem_ptr.byte_add(index_offset as usize),
         index_size as usize,
       );
 

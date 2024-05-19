@@ -128,13 +128,11 @@ pub fn create_pipeline_cache(
       let create_info = vk::PipelineCacheCreateInfo::default().initial_data(&data);
       let result = unsafe { device.create_pipeline_cache(&create_info, None) };
 
-      result.or_else(|err| {
+      result.map_err(|err| {
         log::error!(
           "Pipeline cache file data was retrieved however pipeline creation operation failed: {:?}",
           err
         );
-
-        Err(())
       })
     }
     Err(err) => {

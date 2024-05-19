@@ -27,8 +27,7 @@ impl GraphicsPipeline {
     cache: vk::PipelineCache,
     render_pass: vk::RenderPass,
   ) -> Result<Self, PipelineCreationError> {
-    let shader =
-      shaders::Shader::load(device).map_err(|err| PipelineCreationError::ShaderFailed(err))?;
+    let shader = shaders::Shader::load(device).map_err(PipelineCreationError::ShaderFailed)?;
     let shader_stages = shader.get_pipeline_shader_creation_info();
 
     let vertex_input_state = vertex_input_state_create_info!(Vertex);
@@ -97,7 +96,7 @@ impl GraphicsPipeline {
       _marker: PhantomData,
     };
     let layout = unsafe { device.create_pipeline_layout(&layout_create_info, None) }
-      .map_err(|vkerr| OutOfMemoryError::from(vkerr))?;
+      .map_err(OutOfMemoryError::from)?;
 
     let create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,

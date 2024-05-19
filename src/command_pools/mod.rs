@@ -70,8 +70,7 @@ pub struct CommandPools {
 
 impl CommandPools {
   pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let graphics_pool =
-      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families)?;
+    let graphics_pool = GraphicsCommandBufferPool::create(device, &physical_device.queue_families)?;
     let transfer_pool =
       match TransferCommandBufferPool::create(device, &physical_device.queue_families) {
         Ok(pool) => pool,

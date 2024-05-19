@@ -50,7 +50,7 @@ const IMAGE_SAVE_PATH: &str = "image.png";
 const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
-const VERTICES: [Vertex; 3] = [
+static VERTICES: [Vertex; 3] = [
   Vertex {
     pos: [0.7, 0.3],
     color: [1.0, 0.0, 0.0],
@@ -64,7 +64,7 @@ const VERTICES: [Vertex; 3] = [
     color: [0.0, 0.0, 1.0],
   },
 ];
-const INDICES: [u16; 3] = [0, 1, 2];
+static INDICES: [u16; 3] = [0, 1, 2];
 
 fn initialize_and_run() -> Result<(), String> {
   let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE)
