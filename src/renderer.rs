@@ -10,8 +10,7 @@ use crate::{
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_image_view, create_semaphore},
   descriptor_sets::DescriptorSets,
-  destroy,
-  device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
+  device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
   errors::{AllocationError, InitializationError, OutOfMemoryError},
   initialization::{
     create_instance,
@@ -268,7 +267,7 @@ impl GPUData {
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::STORAGE),
     )?;
     log::debug!("Allocating memory for the image that will be cleared");
-    let mandelbrot_image_memory = match allocate_and_bind_memory(
+    let mandelbrot_image_memory_alloc_result = allocate_and_bind_memory(
       &device,
       &physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -280,15 +279,16 @@ impl GPUData {
     .or_else(|err| {
       log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
       allocate_and_bind_memory(
-        &device,
-        &physical_device,
+        device,
+        physical_device,
         vk::MemoryPropertyFlags::empty(),
         &[],
         &[],
         &[mandelbrot_image],
         &[unsafe { device.get_image_memory_requirements(mandelbrot_image) }],
       )
-    }) {
+    });
+    let mandelbrot_image_memory = match mandelbrot_image_memory_alloc_result {
       Ok(alloc) => alloc.memory,
       Err(err) => {
         unsafe {
@@ -312,9 +312,9 @@ impl GPUData {
       }
     };
     log::debug!("Allocating memory for the final buffer");
-    let final_buffer_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
+    let final_buffer_memory_alloc_result = allocate_and_bind_memory(
+      device,
+      physical_device,
       vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
       &[final_buffer],
       &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
@@ -327,15 +327,16 @@ impl GPUData {
         err
       );
       allocate_and_bind_memory(
-        &device,
-        &physical_device,
+        device,
+        physical_device,
         vk::MemoryPropertyFlags::HOST_VISIBLE,
         &[final_buffer],
         &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
         &[],
         &[],
       )
-    }) {
+    });
+    let final_buffer_memory = match final_buffer_memory_alloc_result {
       Ok(alloc) => alloc.memory,
       Err(err) => {
         unsafe {
@@ -382,7 +383,7 @@ impl GPUData {
 }
 
 impl DeviceManuallyDestroyed for GPUData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.mandelbrot_image.destroy_self(device);
     self.mandelbrot_image_memory.destroy_self(device);
     self.mandelbrot_image_view.destroy_self(device);

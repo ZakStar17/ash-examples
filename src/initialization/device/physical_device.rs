@@ -1,8 +1,6 @@
-use std::ops::Deref;
+use std::{ffi::CStr, ops::Deref};
 
 use ash::vk;
-
-use crate::utility::c_char_array_to_string;
 
 use super::select_physical_device;
 
@@ -36,9 +34,7 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select<'b>(
-    instance: &'b ash::Instance,
-  ) -> Result<Option<PhysicalDevice>, vk::Result> {
+  pub unsafe fn select(instance: &ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);
@@ -46,15 +42,8 @@ impl PhysicalDevice {
           instance.get_physical_device_queue_family_properties(physical_device);
 
         log::info!(
-          "Using physical device \"{}\"",
-          c_char_array_to_string(&properties.p10.device_name)
-        );
-        print_queue_families_debug_info(&queue_family_properties);
-        print_device_memory_debug_info(&mem_properties);
-
-        log::info!(
-          "Using physical device \"{}\"",
-          c_char_array_to_string(&properties.p10.device_name)
+          "Using physical device \"{:?}\"",
+          unsafe { CStr::from_ptr(properties.p10.device_name.as_ptr()) }, // expected to be a valid cstr
         );
         print_queue_families_debug_info(&queue_family_properties);
         print_device_memory_debug_info(&mem_properties);
@@ -139,7 +128,7 @@ impl<'a> Iterator for UniqueHeapMemoryTypesIterator<'a> {
   type Item = <MemoryTypesIterator<'a> as Iterator>::Item;
 
   fn next(&mut self) -> Option<Self::Item> {
-    while let Some(next) = self.iter.next() {
+    for next in self.iter.by_ref() {
       if !self.iterated_heaps[next.1.heap_index as usize] {
         self.iterated_heaps[next.1.heap_index as usize] = true;
         return Some(next);

@@ -20,7 +20,7 @@ use crate::renderer::Renderer;
 // array of validation layers that should be loaded
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
-pub const VALIDATION_LAYERS: [&'static CStr; 1] = [cstr!("VK_LAYER_KHRONOS_validation")];
+const VALIDATION_LAYERS: [&CStr; 1] = [c"VK_LAYER_KHRONOS_validation"];
 #[cfg(feature = "vl")]
 pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
   vk::ValidationFeatureEnableEXT::BEST_PRACTICES,
@@ -29,11 +29,10 @@ pub const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = 
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
-// somewhat arbitrary
-const APPLICATION_NAME: &'static CStr = cstr!("Mandelbrot");
+static APPLICATION_NAME: &CStr = c"Mandelbrot";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-const REQUIRED_DEVICE_EXTENSIONS: [&'static CStr; 0] = [];
+static REQUIRED_DEVICE_EXTENSIONS: [&CStr; 0] = [];
 
 const IMAGE_WIDTH: u32 = 4000;
 const IMAGE_HEIGHT: u32 = 4000;

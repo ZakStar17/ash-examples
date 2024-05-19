@@ -129,7 +129,7 @@ impl ComputeCommandBufferPool {
 }
 
 impl DeviceManuallyDestroyed for ComputeCommandBufferPool {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_command_pool(self.pool, None);
   }
 }

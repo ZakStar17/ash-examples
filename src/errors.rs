@@ -9,7 +9,7 @@ pub fn error_chain_fmt(
   e: &impl std::error::Error,
   f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
-  writeln!(f, "{}\nCauses:", e)?;
+  writeln!(f, "{}\n", e)?;
   let mut current = e.source();
   while let Some(cause) = current {
     writeln!(f, "  {}", cause)?;

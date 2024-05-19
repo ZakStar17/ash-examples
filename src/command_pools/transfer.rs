@@ -27,7 +27,7 @@ impl TransferCommandBufferPool {
     })
   }
 
-  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
+  pub unsafe fn reset(&self, device: &ash::Device) -> Result<(), vk::Result> {
     device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
   }
 
@@ -123,7 +123,7 @@ impl TransferCommandBufferPool {
 }
 
 impl DeviceManuallyDestroyed for TransferCommandBufferPool {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_command_pool(self.pool, None);
   }
 }

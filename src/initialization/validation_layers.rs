@@ -102,7 +102,7 @@ impl DebugUtils {
 }
 
 impl ManuallyDestroyed for DebugUtils {
-  unsafe fn destroy_self(self: &Self) {
+  unsafe fn destroy_self(&self) {
     self.destroy_self();
   }
 }
