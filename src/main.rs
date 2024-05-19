@@ -39,22 +39,42 @@ fn main() {
 
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
+  let on_instance_fail = |err| {
+    log::error!("Failed to create an instance: {}", err);
+    std::process::exit(1);
+  };
   #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) =
-    instance::create_instance(&entry).expect("Failed to create an instance");
+  let (instance, mut debug_utils) = match instance::create_instance(&entry) {
+    Ok(v) => v,
+    Err(err) => on_instance_fail(err),
+  };
   #[cfg(not(feature = "vl"))]
-  let instance = instance::create_instance(&entry).expect("Failed to create an instance");
+  let instance = match instance::create_instance(&entry) {
+    Ok(v) => v,
+    Err(err) => on_instance_fail(err),
+  };
 
   let physical_device = match unsafe { PhysicalDevice::select(&instance) } {
     Ok(device_opt) => match device_opt {
       Some(device) => device,
-      None => panic!("No suitable device found"),
+      None => {
+        log::error!("No suitable device found");
+        std::process::exit(1);
+      }
     },
-    Err(err) => panic!("Failed to query physical devices: {:?}", err),
+    Err(err) => {
+      log::error!("Failed to query physical devices: {:?}", err);
+      std::process::exit(1);
+    }
   };
 
-  let (logical_device, _queues) =
-    create_logical_device(&instance, &physical_device).expect("Failed to create an logical device");
+  let (logical_device, _queues) = match create_logical_device(&instance, &physical_device) {
+    Ok(v) => v,
+    Err(err) => {
+      log::error!("Failed to create an logical device: {}", err);
+      std::process::exit(1);
+    }
+  };
 
   println!("Successfully created the logical device!");
 
@@ -69,9 +89,7 @@ fn main() {
     logical_device.destroy_device(None);
 
     #[cfg(feature = "vl")]
-    {
-      debug_utils.destroy_self();
-    }
+    debug_utils.destroy_self();
     instance.destroy_instance(None);
   }
 }
