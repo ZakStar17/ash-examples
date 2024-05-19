@@ -9,9 +9,8 @@ use crate::{
   allocator::allocate_and_bind_memory,
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
-  destroy,
   device::{create_logical_device, PhysicalDevice, Queues},
-  device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
+  device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
   instance::create_instance,
@@ -215,15 +214,16 @@ impl GPUData {
   ) -> Result<Self, AllocationError> {
     // GPU image with DEVICE_LOCAL flags
     let clear_image = create_image(
-      &device,
+      device,
       image_width,
       image_height,
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
     )?;
     log::debug!("Allocating memory for the image that will be cleared");
-    let clear_image_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
+
+    let clear_image_memory_alloc_result = allocate_and_bind_memory(
+      device,
+      physical_device,
       vk::MemoryPropertyFlags::DEVICE_LOCAL,
       &[],
       &[],
@@ -233,15 +233,16 @@ impl GPUData {
     .or_else(|err| {
       log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
       allocate_and_bind_memory(
-        &device,
-        &physical_device,
+        device,
+        physical_device,
         vk::MemoryPropertyFlags::empty(),
         &[],
         &[],
         &[clear_image],
         &[unsafe { device.get_image_memory_requirements(clear_image) }],
       )
-    }) {
+    });
+    let clear_image_memory = match clear_image_memory_alloc_result {
       Ok(alloc) => alloc.memory,
       Err(err) => {
         unsafe {
@@ -251,7 +252,7 @@ impl GPUData {
       }
     };
 
-    let final_buffer = match create_buffer(&device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
+    let final_buffer = match create_buffer(device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
     {
       Ok(buffer) => buffer,
       Err(err) => {
@@ -262,9 +263,9 @@ impl GPUData {
       }
     };
     log::debug!("Allocating memory for the final buffer");
-    let final_buffer_memory = match allocate_and_bind_memory(
-      &device,
-      &physical_device,
+    let final_buffer_memory_alloc_result = allocate_and_bind_memory(
+      device,
+      physical_device,
       vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
       &[final_buffer],
       &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
@@ -277,15 +278,16 @@ impl GPUData {
         err
       );
       allocate_and_bind_memory(
-        &device,
-        &physical_device,
+        device,
+        physical_device,
         vk::MemoryPropertyFlags::HOST_VISIBLE,
         &[final_buffer],
         &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
         &[],
         &[],
       )
-    }) {
+    });
+    let final_buffer_memory = match final_buffer_memory_alloc_result {
       Ok(alloc) => alloc.memory,
       Err(err) => {
         unsafe {
@@ -331,7 +333,7 @@ impl GPUData {
 }
 
 impl DeviceManuallyDestroyed for GPUData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.clear_image.destroy_self(device);
     self.clear_image_memory.destroy_self(device);
     self.final_buffer.destroy_self(device);

@@ -15,9 +15,8 @@ pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
 use crate::{
-  const_flag_bitor,
   device::vendor::Vendor,
-  utility::{self, i8_array_as_cstr},
+  utility::{self, const_flag_bitor, i8_array_as_cstr},
   IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE, IMAGE_WIDTH, REQUIRED_DEVICE_EXTENSIONS,
   TARGET_API_VERSION,
 };

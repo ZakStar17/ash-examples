@@ -23,9 +23,7 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select<'b>(
-    instance: &'b ash::Instance,
-  ) -> Result<Option<PhysicalDevice>, vk::Result> {
+  pub unsafe fn select(instance: &ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);
@@ -112,7 +110,7 @@ impl<'a> Iterator for UniqueHeapMemoryTypesIterator<'a> {
   type Item = <MemoryTypesIterator<'a> as Iterator>::Item;
 
   fn next(&mut self) -> Option<Self::Item> {
-    while let Some(next) = self.iter.next() {
+    for next in self.iter.by_ref() {
       if !self.iterated_heaps[next.1.heap_index as usize] {
         self.iterated_heaps[next.1.heap_index as usize] = true;
         return Some(next);

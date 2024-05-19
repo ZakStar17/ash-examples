@@ -70,9 +70,9 @@ pub struct CommandPools {
 
 impl CommandPools {
   pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let compute_pool = ComputeCommandBufferPool::create(&device, &physical_device.queue_families)?;
+    let compute_pool = ComputeCommandBufferPool::create(device, &physical_device.queue_families)?;
     let transfer_pool =
-      match TransferCommandBufferPool::create(&device, &physical_device.queue_families) {
+      match TransferCommandBufferPool::create(device, &physical_device.queue_families) {
         Ok(pool) => pool,
         Err(err) => {
           unsafe {
@@ -89,7 +89,7 @@ impl CommandPools {
 }
 
 impl DeviceManuallyDestroyed for CommandPools {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.compute_pool.destroy_self(device);
     self.transfer_pool.destroy_self(device);
   }

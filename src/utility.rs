@@ -18,7 +18,7 @@ pub unsafe fn i8_array_as_cstr(arr: &[i8]) -> Result<&CStr, FromBytesUntilNulErr
 }
 
 pub trait OnErr<T, E> {
-  fn on_err<O: FnOnce(&E)>(self: Self, op: O) -> Result<T, E>
+  fn on_err<O: FnOnce(&E)>(self, op: O) -> Result<T, E>
   where
     Self: Sized;
 }
@@ -35,15 +35,6 @@ impl<T, E> OnErr<T, E> for Result<T, E> {
   }
 }
 
-// transmute literals to static CStr
-#[macro_export]
-macro_rules! cstr {
-  ( $s:literal ) => {{
-    unsafe { std::mem::transmute::<_, &CStr>(concat!($s, "\0")) }
-  }};
-}
-
-#[macro_export]
 macro_rules! const_flag_bitor {
   ($t:ty, $x:expr, $($y:expr),+) => {
     // ash flags don't implement const bitor
@@ -52,3 +43,4 @@ macro_rules! const_flag_bitor {
     )
   };
 }
+pub(crate) use const_flag_bitor;
