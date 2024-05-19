@@ -49,30 +49,45 @@ const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
 
 const IMAGE_SAVE_PATH: &str = "image.png";
 
-fn main() {
-  env_logger::init();
-
+fn initialize_and_run() -> Result<(), String> {
   let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE)
-    .expect("Failed to initialize");
-  unsafe { renderer.record_work() }.expect("Failed to record work");
+    .map_err(|err| format!("Failed to initialize: {}", err))?;
+  unsafe { renderer.record_work() }.map_err(|err| format!("Failed to record work: {}", err))?;
 
   println!("Submitting work...");
-  renderer.submit_and_wait().expect("Failed to submit work");
+  renderer
+    .submit_and_wait()
+    .map_err(|err| format!("Failed to submit work: {}", err))?;
   println!("GPU finished!");
 
   println!("Saving file...");
+  let mut save_result = Ok(());
   unsafe {
     renderer.get_resulting_data(|data| {
-      image::save_buffer(
+      save_result = image::save_buffer(
         IMAGE_SAVE_PATH,
         data,
         IMAGE_WIDTH,
         IMAGE_HEIGHT,
         IMAGE_SAVE_TYPE,
-      )
-      .expect("Failed to save image");
+      );
     })
   }
-  .expect("Failed to get resulting data");
+  .map_err(|err| format!("Failed to get resulting data: {}", err))?;
+  if let Err(err) = save_result {
+    return Err(format!("Failed to save image: {}", err));
+  }
+
+  Ok(())
+}
+
+fn main() {
+  env_logger::init();
+
+  if let Err(s) = initialize_and_run() {
+    log::error!("{}", s);
+    std::process::exit(1);
+  }
+
   println!("Done!");
 }
