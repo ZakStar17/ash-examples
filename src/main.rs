@@ -34,20 +34,28 @@ fn main() {
 
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
-  #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) =
-    instance::create_instance(&entry).expect("Failed to create an instance");
-  #[cfg(not(feature = "vl"))]
-  let instance = instance::create_instance(&entry).expect("Failed to create an instance");
+  let on_instance_fail = |err| {
+    log::error!("Failed to create an instance: {}", err);
+    std::process::exit(1);
+  };
 
-  println!("Successfully created an Instance!");
+  #[cfg(feature = "vl")]
+  let (instance, mut debug_utils) = match instance::create_instance(&entry) {
+    Ok(v) => v,
+    Err(err) => on_instance_fail(err),
+  };
+  #[cfg(not(feature = "vl"))]
+  let instance = match instance::create_instance(&entry) {
+    Ok(v) => v,
+    Err(err) => on_instance_fail(err),
+  };
+
+  println!("Successfully created an instance!");
 
   log::debug!("Destroying objects");
   unsafe {
     #[cfg(feature = "vl")]
-    {
-      debug_utils.destroy_self();
-    }
+    debug_utils.destroy_self();
     instance.destroy_instance(None);
   }
 }
