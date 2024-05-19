@@ -16,6 +16,7 @@ use crate::{
 
 use super::StagingMemoryAllocation;
 
+#[derive(Debug)]
 pub struct FerrisModel {
   pub vertex: vk::Buffer,
   pub index: vk::Buffer,

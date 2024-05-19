@@ -54,6 +54,7 @@ pub enum ImageLoadError {
   ImageError(#[source] image::ImageError),
 }
 
+#[derive(Debug)]
 pub struct Texture {
   pub image: vk::Image,
   pub memory: vk::DeviceMemory, // not owned

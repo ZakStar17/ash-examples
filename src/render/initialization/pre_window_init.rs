@@ -6,11 +6,16 @@ use std::mem;
 
 use super::{DebugUtils, InstanceCreationError};
 
+use std::{
+  self,
+  ptr::{self, addr_of_mut},
+};
+
 pub struct RenderInit {
-  entry: ash::Entry,
-  instance: ash::Instance,
+  pub entry: ash::Entry,
+  pub instance: ash::Instance,
   #[cfg(feature = "vl")]
-  debug_utils: DebugUtils,
+  pub debug_utils: DebugUtils,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -60,29 +65,36 @@ impl RenderInit {
   // take values out without calling drop
   #[cfg(feature = "vl")]
   pub fn deconstruct(mut self) -> (ash::Entry, ash::Instance, DebugUtils) {
-    unsafe {
-      // there is probably a way better way of doing this,
-      //  but I could't get it to work with ManuallyDrop or without creating uninit copies
-      let a = mem::replace(&mut self.entry, mem::MaybeUninit::uninit().assume_init());
-      let b = mem::replace(&mut self.instance, mem::MaybeUninit::uninit().assume_init());
-      let c = mem::replace(
-        &mut self.debug_utils,
-        mem::MaybeUninit::uninit().assume_init(),
-      );
-      mem::forget(self);
+    use std::mem::MaybeUninit;
 
-      (a, b, c)
+    unsafe {
+      // could't find a less stupid way of doing this
+      let mut entry: MaybeUninit<ash::Entry> = MaybeUninit::uninit();
+      ptr::copy_nonoverlapping(addr_of_mut!(self.entry), entry.as_mut_ptr(), 1);
+      let mut instance = MaybeUninit::uninit();
+      ptr::copy_nonoverlapping(addr_of_mut!(self.instance), instance.as_mut_ptr(), 1);
+      let mut debug_utils = MaybeUninit::uninit();
+      ptr::copy_nonoverlapping(addr_of_mut!(self.debug_utils), debug_utils.as_mut_ptr(), 1);
+
+      mem::forget(self);
+      (
+        entry.assume_init(),
+        instance.assume_init(),
+        debug_utils.assume_init(),
+      )
     }
   }
 
   #[cfg(not(feature = "vl"))]
-  pub fn deconstruct(self) -> (ash::Entry, ash::Instance) {
+  pub fn deconstruct(mut self) -> (ash::Entry, ash::Instance) {
     unsafe {
-      let a = mem::replace(&mut self.entry, mem::MaybeUninit::uninit().assume_init());
-      let b = mem::replace(&mut self.instance, mem::MaybeUninit::uninit().assume_init());
-      mem::forget(self);
+      let mut entry: MaybeUninit<ash::Entry> = MaybeUninit::uninit();
+      ptr::copy_nonoverlapping(addr_of_mut!(self.entry), entry.as_mut_ptr(), 1);
+      let mut instance = MaybeUninit::uninit();
+      ptr::copy_nonoverlapping(addr_of_mut!(self.instance), instance.as_mut_ptr(), 1);
 
-      (a, b)
+      mem::forget(self);
+      (entry.assume_init(), instance.assume_init())
     }
   }
 }
@@ -90,9 +102,9 @@ impl RenderInit {
 impl Drop for RenderInit {
   fn drop(&mut self) {
     unsafe {
-      self.instance.destroy_self();
       #[cfg(feature = "vl")]
       self.debug_utils.destroy_self();
+      self.instance.destroy_self();
     }
   }
 }

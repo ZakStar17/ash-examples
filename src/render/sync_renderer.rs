@@ -108,7 +108,8 @@ impl SyncRenderer {
 
     if self.recreate_swapchain_next_frame {
       unsafe {
-        self.renderer.recreate_swapchain();
+        // todo
+        self.renderer.recreate_swapchain().unwrap();
       }
       self.recreate_swapchain_next_frame = false;
       self.last_frame_recreated_swapchain = true;
@@ -138,11 +139,14 @@ impl SyncRenderer {
     // actual rendering
 
     unsafe {
-      self.renderer.record_graphics(
-        cur_frame_i,
-        image_index as usize,
-        &RenderPosition::new([0.0, 0.0], [1.0, 1.0]),
-      );
+      self
+        .renderer
+        .record_graphics(
+          cur_frame_i,
+          image_index as usize,
+          &RenderPosition::new([0.0, 0.0], [1.0, 1.0]),
+        )
+        .unwrap();
     }
 
     let command_buffers = [vk::CommandBufferSubmitInfo::default()
@@ -191,6 +195,7 @@ impl SyncRenderer {
         )
         .unwrap();
     }
+    self.timeline_index = next_timeline_value;
 
     unsafe {
       if let Err(vk_result) = self.renderer.swapchains.queue_present(

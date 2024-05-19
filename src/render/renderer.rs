@@ -91,7 +91,7 @@ pub struct Renderer {
 
 const DESTROYABLE_COUNT: usize = 69; // todo
 struct Destructor {
-  objs: [*const dyn DeviceManuallyDestroyed; DESTROYABLE_COUNT],
+  objs: [MaybeUninit<*const dyn DeviceManuallyDestroyed>; DESTROYABLE_COUNT],
   len: usize,
 }
 
@@ -105,12 +105,16 @@ impl Destructor {
 
   pub fn push(&mut self, ptr: *const dyn DeviceManuallyDestroyed) {
     self.len += 1;
-    self.objs[self.len] = ptr;
+    self.objs[self.len] = MaybeUninit::new(ptr);
   }
 
   pub unsafe fn fire(&self, device: &ash::Device) {
     for i in (0..self.len).rev() {
-      self.objs[i].as_ref().unwrap().destroy_self(device);
+      self.objs[i]
+        .assume_init()
+        .as_ref()
+        .unwrap()
+        .destroy_self(device);
     }
   }
 }
@@ -250,6 +254,7 @@ impl Renderer {
         temp_graphics_pool.destroy_self(&device);
         destructor.fire(&device);
       })?;
+      log::debug!("GPU data addresses: {:#?}", data);
 
       unsafe {
         temp_transfer_pool.destroy_self(&device);
@@ -326,7 +331,7 @@ impl Renderer {
       self
         .device
         .device_wait_idle()
-        .on_err(|_| self.swapchains.revert_recreate())
+        .on_err(|_| self.swapchains.revert_recreate(&self.device))
         .map_err(|vkerr| match vkerr {
           vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
             SwapchainCreationError::OutOfMemory(vkerr.into())
@@ -338,7 +343,7 @@ impl Renderer {
       // recreate all objects that depend on image format (but not on extent)
       new_render_pass = Some(
         create_render_pass(&self.device, self.swapchains.get_format())
-          .on_err(|_| self.swapchains.revert_recreate())?,
+          .on_err(|_| self.swapchains.revert_recreate(&self.device))?,
       );
     } else {
       if !changes.extent {
@@ -365,7 +370,7 @@ impl Renderer {
           if let Some(render_pass) = new_render_pass {
             render_pass.destroy_self(&self.device);
           }
-          self.swapchains.revert_recreate();
+          self.swapchains.revert_recreate(&self.device);
 
           return Err(err.into());
         },
@@ -387,7 +392,7 @@ impl Renderer {
           if let Some(render_pass) = new_render_pass {
             render_pass.destroy_self(&self.device);
           }
-          self.swapchains.revert_recreate();
+          self.swapchains.revert_recreate(&self.device);
 
           return Err(err.into());
         },
@@ -416,7 +421,7 @@ impl Renderer {
       self.old_framebuffers.0 = false;
     }
 
-    self.swapchains.destroy_old();
+    self.swapchains.destroy_old(&self.device);
   }
 }
 
@@ -449,7 +454,7 @@ impl Drop for Renderer {
 
       self.framebuffers.destroy_self(&self.device);
       self.render_pass.destroy_self(&self.device);
-      ManuallyDestroyed::destroy_self(&self.swapchains);
+      self.swapchains.destroy_self(&self.device);
 
       ManuallyDestroyed::destroy_self(&self.surface);
       ManuallyDestroyed::destroy_self(&self.device);

@@ -3,7 +3,6 @@ mod texture;
 
 use std::{
   marker::PhantomData,
-  ops::BitOr,
   ptr::{self},
 };
 
@@ -31,12 +30,13 @@ use super::{
 
 pub use self::{ferris_model::FerrisModel, texture::ImageLoadError};
 
+#[derive(Debug)]
 pub struct GPUData {
   pub texture: Texture,
   pub ferris: FerrisModel,
 }
 
-struct StagingMemoryAllocation {
+pub struct StagingMemoryAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_type: u32,
   pub texture_offset: u64,
@@ -81,12 +81,14 @@ impl GPUData {
           free_device_memory();
         },
       )?;
-    let destroy_all = || unsafe {
-      destroy_device_objects();
-      free_device_memory();
-
+    let destroy_staging = || unsafe {
       destroy!(device => &texture_staging, &vertex_staging, &index_staging);
       staging_memory.memory.destroy_self(device);
+    };
+    let destroy_all = || {
+      destroy_device_objects();
+      free_device_memory();
+      destroy_staging();
     };
 
     Self::record_command_buffers_and_dispatch(
@@ -117,6 +119,8 @@ impl GPUData {
       .on_err(|_| destroy_all())?;
 
     let ferris = FerrisModel::new(vertex_final, index_final, ferris_memory);
+
+    destroy_staging();
 
     Ok(Self { texture, ferris })
   }
@@ -297,46 +301,6 @@ impl GPUData {
     }
 
     Ok((staging_alloc, texture_buffer, vertex_buffer, index_buffer))
-  }
-
-  fn allocate_host_memory(
-    device: &ash::Device,
-    physical_device: &PhysicalDevice,
-    final_buffer: vk::Buffer,
-  ) -> Result<vk::DeviceMemory, AllocationError> {
-    let final_buffer_memory_requirements =
-      unsafe { device.get_buffer_memory_requirements(final_buffer) };
-
-    log::debug!("Allocating final buffer memory");
-    Ok(
-      match allocate_and_bind_memory(
-        device,
-        physical_device,
-        vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
-        &[final_buffer],
-        &[final_buffer_memory_requirements],
-        &[],
-        &[],
-      ) {
-        Ok(alloc) => {
-          log::debug!("Final buffer memory allocated successfully");
-          alloc.memory
-        }
-        Err(_) => {
-          let alloc = allocate_and_bind_memory(
-            device,
-            physical_device,
-            vk::MemoryPropertyFlags::HOST_VISIBLE,
-            &[final_buffer],
-            &[final_buffer_memory_requirements],
-            &[],
-            &[],
-          )?;
-          log::debug!("Final buffer memory allocated suboptimally");
-          alloc.memory
-        }
-      },
-    )
   }
 
   fn record_command_buffers_and_dispatch(

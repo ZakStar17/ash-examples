@@ -116,9 +116,9 @@ impl Swapchains {
     Ok(changes)
   }
 
-  pub fn revert_recreate(&mut self) {
+  pub fn revert_recreate(&mut self, device: &ash::Device) {
     unsafe {
-      self.current.destroy_self(&self.loader);
+      self.current.destroy_self(&self.loader, device);
     }
     let mut temp = None;
     mem::swap(&mut self.old, &mut temp);
@@ -146,10 +146,10 @@ impl Swapchains {
     unsafe { self.loader.queue_present(present_queue, &present_info) }
   }
 
-  pub fn destroy_old(&mut self) {
+  pub fn destroy_old(&mut self, device: &ash::Device) {
     if let Some(old) = &mut self.old {
       unsafe {
-        old.destroy_self(&self.loader);
+        old.destroy_self(&self.loader, device);
       }
       self.old = None;
     }
@@ -168,12 +168,12 @@ impl Swapchains {
   }
 }
 
-impl ManuallyDestroyed for Swapchains {
-  unsafe fn destroy_self(self: &Self) {
+impl DeviceManuallyDestroyed for Swapchains {
+  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
     if let Some(old) = &self.old {
-      old.destroy_self(&self.loader);
+      old.destroy_self(&self.loader, device);
     }
-    self.current.destroy_self(&self.loader);
+    self.current.destroy_self(&self.loader, device);
   }
 }
 
@@ -385,7 +385,10 @@ impl Swapchain {
     loader.acquire_next_image(self.inner, std::u64::MAX, semaphore, vk::Fence::null())
   }
 
-  pub unsafe fn destroy_self(&self, loader: &ash::khr::swapchain::Device) {
+  pub unsafe fn destroy_self(&self, loader: &ash::khr::swapchain::Device, device: &ash::Device) {
+    for view in self.image_views.iter() {
+      view.destroy_self(device);
+    }
     loader.destroy_swapchain(self.inner, None);
   }
 }

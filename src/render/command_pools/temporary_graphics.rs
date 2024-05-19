@@ -53,7 +53,7 @@ impl TemporaryGraphicsCommandPool {
     };
 
     let acquire_to_shader_read = vk::ImageMemoryBarrier2 {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::TRANSFER,
       dst_stage_mask: vk::PipelineStageFlags2::FRAGMENT_SHADER,

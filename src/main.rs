@@ -143,6 +143,7 @@ pub fn main_loop(event_loop: EventLoop<()>, init: RenderInit) {
 
           status.start(target);
 
+          // todo write descriptor set is missing
           target.exit() // todo: debugging
         }
         Status::Paused(_) => status.set_to_running(),

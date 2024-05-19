@@ -64,7 +64,7 @@ impl TransferCommandBufferPool {
 
     // change image layout to TRANSFER_DST before copy operation
     let transfer_dst_layout = vk::ImageMemoryBarrier2 {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::NONE,
       dst_stage_mask: vk::PipelineStageFlags2::COPY,
@@ -106,7 +106,7 @@ impl TransferCommandBufferPool {
     );
 
     let mut shader_read_layout = vk::ImageMemoryBarrier2 {
-      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::COPY,
       dst_stage_mask: vk::PipelineStageFlags2::TRANSFER,
