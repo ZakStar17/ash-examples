@@ -4,7 +4,10 @@ use ash::vk;
 
 use crate::{
   render::{
-    create_objs::{create_buffer, create_image, create_image_view}, descriptor_sets::{texture_write_descriptor_set, ImageWriteDescriptorSet}, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError
+    create_objs::{create_buffer, create_image, create_image_view},
+    descriptor_sets::{texture_write_descriptor_set, ImageWriteDescriptorSet},
+    device_destroyable::DeviceManuallyDestroyed,
+    errors::OutOfMemoryError,
   },
   utility::const_flag_bitor,
 };
@@ -71,12 +74,15 @@ impl Texture {
   ) -> Result<(Self, ImageWriteDescriptorSet), OutOfMemoryError> {
     let view = create_image_view(device, image, TEXTURE_FORMAT)?;
     let write_descriptor_set = texture_write_descriptor_set(descriptor, view, 0);
-    Ok((Self {
-      image,
-      memory,
-      view,
-      descriptor,
-    }, write_descriptor_set))
+    Ok((
+      Self {
+        image,
+        memory,
+        view,
+        descriptor,
+      },
+      write_descriptor_set,
+    ))
   }
 
   pub fn create_image(device: &ash::Device) -> Result<LoadedImage, ImageLoadError> {

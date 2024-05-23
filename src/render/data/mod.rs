@@ -114,8 +114,9 @@ impl GPUData {
     let texture_set = descriptor_pool
       .allocate_sets(device, &[descriptor_pool.texture_layout])
       .unwrap()[0];
-    let (texture, texture_write_descriptor_set) = Texture::new(device, texture_image.image, texture_memory, texture_set)
-      .on_err(|_| destroy_all())?;
+    let (texture, texture_write_descriptor_set) =
+      Texture::new(device, texture_image.image, texture_memory, texture_set)
+        .on_err(|_| destroy_all())?;
 
     let ferris = FerrisModel::new(vertex_final, index_final, ferris_memory);
 
@@ -329,7 +330,7 @@ impl GPUData {
     let index_region = vk::BufferCopy2::default().size(index_size);
     unsafe {
       transfer_pool.reset(device)?;
-      transfer_pool.record_copy_buffers_to_buffers(
+      transfer_pool.record_copy_buffers_to_buffers_from_host(
         device,
         &[
           vk::CopyBufferInfo2 {

@@ -60,15 +60,15 @@ enum RunningStatus {
 
 struct ProgramStatus {
   render: RenderStatus,
-  running: RunningStatus
+  running: RunningStatus,
 }
 
 impl ProgramStatus {
   pub fn new(event_loop: &EventLoop<()>) -> Result<Self, RenderInitError> {
-    let render =  RenderInit::new(event_loop)?;
+    let render = RenderInit::new(event_loop)?;
     Ok(Self {
       render: RenderStatus::Initialized(render),
-      running: RunningStatus::NotStarted 
+      running: RunningStatus::NotStarted,
     })
   }
 
@@ -148,7 +148,7 @@ fn main_loop(event_loop: EventLoop<()>, mut status: ProgramStatus) {
 
           //target.exit() // todo: debugging
         }
-      },
+      }
       Event::AboutToWait => {
         // winit has two events that notify when a frame needs to be rendered:
         // WindowEvent::RedrawRequested => Useful for applications that don't render often,
@@ -175,7 +175,8 @@ fn main_loop(event_loop: EventLoop<()>, mut status: ProgramStatus) {
         }
 
         if status.is_running() {
-          if frame_i == 0 {
+          if frame_i < 300 {
+            println!("\n\nRENDERING FRAME {}\n", frame_i);
             status.get_renderer().render_next_frame();
           }
           frame_i += 1;
@@ -244,6 +245,6 @@ fn main() {
   // make the event loop run continuously even if there is no new user input
   event_loop.set_control_flow(ControlFlow::Poll);
 
-  let status = ProgramStatus::new(&event_loop).unwrap();  // todo
+  let status = ProgramStatus::new(&event_loop).unwrap(); // todo
   main_loop(event_loop, status);
 }

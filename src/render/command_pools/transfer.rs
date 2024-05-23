@@ -69,7 +69,7 @@ impl TransferCommandBufferPool {
       src_stage_mask: vk::PipelineStageFlags2::NONE,
       dst_stage_mask: vk::PipelineStageFlags2::COPY,
       src_access_mask: vk::AccessFlags2::NONE,
-      dst_access_mask: vk::AccessFlags2::NONE,
+      dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
       old_layout: vk::ImageLayout::UNDEFINED,
       new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
       src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
@@ -78,12 +78,30 @@ impl TransferCommandBufferPool {
       subresource_range,
       _marker: PhantomData,
     };
-    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[transfer_dst_layout]));
+    // flush buffer contents before copy
+    let buffer_cpu_barrier = vk::BufferMemoryBarrier2 {
+      s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+      p_next: ptr::null(),
+      src_stage_mask: vk::PipelineStageFlags2::HOST,
+      dst_stage_mask: vk::PipelineStageFlags2::COPY,
+      src_access_mask: vk::AccessFlags2::HOST_WRITE,
+      dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+      src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      buffer: staging_buffer,
+      offset: 0,
+      size: vk::WHOLE_SIZE,
+      _marker: PhantomData,
+    };
+    device.cmd_pipeline_barrier2(
+      cb,
+      &dependency_info(&[], &[buffer_cpu_barrier], &[transfer_dst_layout]),
+    );
 
     let copy_region = vk::BufferImageCopy {
       buffer_offset: 0,
-      buffer_row_length: 0,
-      buffer_image_height: 0,
+      buffer_row_length: 0,   // 0 because buffer is tightly packed
+      buffer_image_height: 0, // 0 because buffer is tightly packed
       image_subresource: vk::ImageSubresourceLayers {
         aspect_mask: vk::ImageAspectFlags::COLOR,
         mip_level: 0,
@@ -105,7 +123,7 @@ impl TransferCommandBufferPool {
       &[copy_region],
     );
 
-    let mut shader_read_layout = vk::ImageMemoryBarrier2 {
+    let mut sampled_read_layout = vk::ImageMemoryBarrier2 {
       s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
       p_next: ptr::null(),
       src_stage_mask: vk::PipelineStageFlags2::COPY,
@@ -122,17 +140,17 @@ impl TransferCommandBufferPool {
     };
     if queue_families.get_graphics_index() != queue_families.get_transfer_index() {
       // release if queues are different
-      shader_read_layout.dst_access_mask = vk::AccessFlags2::NONE;
-      shader_read_layout.src_queue_family_index = queue_families.get_transfer_index();
-      shader_read_layout.dst_queue_family_index = queue_families.get_graphics_index();
+      sampled_read_layout.dst_access_mask = vk::AccessFlags2::NONE;
+      sampled_read_layout.src_queue_family_index = queue_families.get_transfer_index();
+      sampled_read_layout.dst_queue_family_index = queue_families.get_graphics_index();
     }
-    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[shader_read_layout]));
+    device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[sampled_read_layout]));
 
     device.end_command_buffer(cb)?;
     Ok(())
   }
 
-  pub unsafe fn record_copy_buffers_to_buffers(
+  pub unsafe fn record_copy_buffers_to_buffers_from_host(
     &mut self,
     device: &ash::Device,
     copy_infos: &[vk::CopyBufferInfo2],
@@ -143,6 +161,21 @@ impl TransferCommandBufferPool {
     device.begin_command_buffer(cb, &begin_info)?;
 
     for copy_info in copy_infos {
+      let buffer_cpu_barrier = vk::BufferMemoryBarrier2 {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_stage_mask: vk::PipelineStageFlags2::HOST,
+        dst_stage_mask: vk::PipelineStageFlags2::COPY,
+        src_access_mask: vk::AccessFlags2::HOST_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        buffer: copy_info.src_buffer,
+        offset: 0,
+        size: vk::WHOLE_SIZE,
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[buffer_cpu_barrier], &[]));
       device.cmd_copy_buffer2(cb, copy_info);
     }
 
