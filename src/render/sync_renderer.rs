@@ -213,7 +213,6 @@ impl SyncRenderer {
 
             // errors of this type still signal sync objects accordingly
             //return Err(());
-            return;
           }
           other => panic!("Failed to present to swapchain: {:?}", other),
         }

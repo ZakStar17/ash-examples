@@ -36,8 +36,8 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select<'b>(
-    instance: &'b ash::Instance,
+  pub unsafe fn select(
+    instance: &ash::Instance,
     surface: &Surface,
   ) -> Result<Option<PhysicalDevice>, vk::Result> {
     match select_physical_device(instance, surface)? {

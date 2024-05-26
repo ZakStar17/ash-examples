@@ -45,7 +45,7 @@ impl Surface {
     display_handle: DisplayHandle,
     window_handle: WindowHandle,
   ) -> Result<Self, OutOfMemoryError> {
-    let loader = ash::khr::surface::Instance::new(&entry, &instance);
+    let loader = ash::khr::surface::Instance::new(entry, instance);
     let inner = unsafe {
       ash_window::create_surface(
         entry,
@@ -103,7 +103,7 @@ impl Surface {
   pub fn get_extent_from_capabilities(
     capabilities: &vk::SurfaceCapabilitiesKHR,
   ) -> Option<vk::Extent2D> {
-    if capabilities.current_extent.width != u32::max_value() {
+    if capabilities.current_extent.width != u32::MAX {
       Some(capabilities.current_extent)
     } else {
       None
@@ -112,7 +112,7 @@ impl Surface {
 }
 
 impl ManuallyDestroyed for Surface {
-  unsafe fn destroy_self(self: &Self) {
+  unsafe fn destroy_self(&self) {
     self.loader.destroy_surface(self.inner, None);
   }
 }

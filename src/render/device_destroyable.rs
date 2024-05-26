@@ -31,7 +31,7 @@ macro_rules! destroy {
 pub(crate) use destroy;
 
 impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     for value in self.iter() {
       value.destroy_self(device);
     }
@@ -39,7 +39,7 @@ impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
 }
 
 impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for [T] {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     for value in self.iter() {
       value.destroy_self(device);
     }
@@ -113,7 +113,7 @@ impl DeviceManuallyDestroyed for vk::Framebuffer {
 }
 
 impl DeviceManuallyDestroyed for vk::Pipeline {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_pipeline(*self, None);
   }
 }

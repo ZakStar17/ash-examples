@@ -14,7 +14,7 @@ use crate::{
 
 use super::StagingMemoryAllocation;
 
-const TEXTURE_PATH: &'static str = "./ferris.png";
+const TEXTURE_PATH: &str = "./ferris.png";
 pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 pub const TEXTURE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags,
@@ -42,7 +42,7 @@ pub struct LoadedImage {
 }
 
 impl DeviceManuallyDestroyed for LoadedImage {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.image.destroy_self(device);
   }
 }
@@ -87,9 +87,9 @@ impl Texture {
 
   pub fn create_image(device: &ash::Device) -> Result<LoadedImage, ImageLoadError> {
     let (width, height, bytes) =
-      read_texture_bytes_as_rgba8().map_err(|err| ImageLoadError::ImageError(err))?;
+      read_texture_bytes_as_rgba8().map_err(ImageLoadError::ImageError)?;
     let image = create_image(device, TEXTURE_FORMAT, width, height, TEXTURE_USAGES)
-      .map_err(|err| ImageLoadError::OutOfMemory(err))?;
+      .map_err(ImageLoadError::OutOfMemory)?;
     Ok(LoadedImage {
       image,
       width,
@@ -116,14 +116,14 @@ impl Texture {
   ) {
     copy_nonoverlapping(
       buffer_bytes.as_ptr(),
-      mem_ptr.byte_add(alloc.texture_offset as usize) as *mut u8,
+      mem_ptr.byte_add(alloc.texture_offset as usize),
       buffer_bytes.len(),
     );
   }
 }
 
 impl DeviceManuallyDestroyed for Texture {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.view.destroy_self(device);
     self.image.destroy_self(device);
   }

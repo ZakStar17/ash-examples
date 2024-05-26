@@ -109,7 +109,7 @@ impl DescriptorPool {
 }
 
 impl DeviceManuallyDestroyed for DescriptorPool {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_descriptor_pool(self.pool, None);
 
     device.destroy_descriptor_set_layout(self.texture_layout, None);

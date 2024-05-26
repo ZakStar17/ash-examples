@@ -7,7 +7,7 @@ use crate::{utility::OnErr, PREFERRED_PRESENTATION_METHOD};
 
 use super::{
   create_objs::create_image_view,
-  device_destroyable::{DeviceManuallyDestroyed, ManuallyDestroyed},
+  device_destroyable::DeviceManuallyDestroyed,
   errors::OutOfMemoryError,
   initialization::{
     device::{PhysicalDevice, QueueFamilies},
@@ -169,7 +169,7 @@ impl Swapchains {
 }
 
 impl DeviceManuallyDestroyed for Swapchains {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     if let Some(old) = &self.old {
       old.destroy_self(&self.loader, device);
     }
@@ -344,7 +344,7 @@ impl Swapchain {
 
     // todo: destroy swapchain
     let images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
-      .map_err(|vkerr| OutOfMemoryError::from(vkerr))
+      .map_err(OutOfMemoryError::from)
       .on_err(|_| unsafe { swapchain_loader.destroy_swapchain(swapchain, None) })?
       .into_boxed_slice();
 
@@ -382,7 +382,7 @@ impl Swapchain {
     semaphore: vk::Semaphore,
     loader: &ash::khr::swapchain::Device,
   ) -> Result<(u32, bool), vk::Result> {
-    loader.acquire_next_image(self.inner, std::u64::MAX, semaphore, vk::Fence::null())
+    loader.acquire_next_image(self.inner, u64::MAX, semaphore, vk::Fence::null())
   }
 
   pub unsafe fn destroy_self(&self, loader: &ash::khr::swapchain::Device, device: &ash::Device) {

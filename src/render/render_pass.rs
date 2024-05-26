@@ -90,7 +90,7 @@ pub fn create_framebuffers_from_swapchain_images(
 
   for &view in swapchains.get_image_views().iter() {
     framebuffers.push(
-      match create_framebuffer(&device, render_pass, view, swapchains.get_extent()) {
+      match create_framebuffer(device, render_pass, view, swapchains.get_extent()) {
         Ok(value) => value,
         Err(err) => unsafe {
           for framebuffer in framebuffers {

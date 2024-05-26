@@ -432,7 +432,7 @@ impl GPUData {
 }
 
 impl DeviceManuallyDestroyed for GPUData {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.texture.destroy_self(device);
     self.ferris.destroy_self(device);
 

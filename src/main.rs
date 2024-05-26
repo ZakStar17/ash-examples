@@ -52,6 +52,8 @@ struct WindowResizeHandler {
   pub last_activation_size: PhysicalSize<u32>,
 }
 
+// clippy kinda hallucinates here
+#[allow(clippy::large_enum_variant)]
 enum RenderStatus {
   Initialized(RenderInit),
   Started(StartedStatus),
@@ -74,12 +76,10 @@ impl StartedStatus {
   fn update_control_flow(&self, target: &EventLoopWindowTarget<()>) {
     if self.should_draw() {
       target.set_control_flow(ControlFlow::Poll);
+    } else if let Some(until) = Instant::now().checked_add(FORCE_WINDOW_RESIZE_DURATION_THRESHOLD) {
+      target.set_control_flow(ControlFlow::WaitUntil(until))
     } else {
-      if let Some(until) = Instant::now().checked_add(FORCE_WINDOW_RESIZE_DURATION_THRESHOLD) {
-        target.set_control_flow(ControlFlow::WaitUntil(until))
-      } else {
-        target.set_control_flow(ControlFlow::Wait);
-      }
+      target.set_control_flow(ControlFlow::Wait);
     }
   }
 
@@ -156,12 +156,9 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
   event_loop
     .run(move |event, target| {
       if !status.started() {
-        match event {
-          Event::Resumed => {
-            log::debug!("Starting application");
-            status.start(target);
-          }
-          _ => (),
+        if event == Event::Resumed {
+          log::debug!("Starting application");
+          status.start(target);
         }
       } else {
         let status = status.unwrap_started();
@@ -254,9 +251,9 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
             WindowEvent::KeyboardInput { event, .. } => {
               let pressed = event.state.is_pressed();
               // todo: implement step frame by frame functionality
-              match event.physical_key {
-                // close on escape
-                PhysicalKey::Code(code) => match code {
+              if let PhysicalKey::Code(code) = event.physical_key {
+                match code {
+                  // close on escape
                   KeyCode::Escape => target.exit(),
                   KeyCode::Pause => {
                     if pressed {
@@ -269,8 +266,7 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
                     }
                   }
                   _ => {}
-                },
-                _ => {}
+                }
               }
             }
             _ => {}

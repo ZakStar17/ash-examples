@@ -309,7 +309,10 @@ impl Renderer {
     // most of this function is just cleanup in case of an error
 
     // it is possible to use more than two frames in flight, but it would require having more than one old swapchain and pipeline
-    assert!(FRAMES_IN_FLIGHT == 2);
+    #[allow(clippy::assertions_on_constants)]
+    {
+      assert!(FRAMES_IN_FLIGHT == 2);
+    }
 
     // this function shouldn't be called if old objects haven't been destroyed
     assert!(!self.old_framebuffers.0);
@@ -345,11 +348,10 @@ impl Renderer {
         create_render_pass(&self.device, self.swapchains.get_format())
           .on_err(|_| self.swapchains.revert_recreate(&self.device))?,
       );
-    } else {
-      if !changes.extent {
+    } else if !changes.extent {
         log::warn!("Recreating swapchain without any extent or format change");
       }
-    }
+    
 
     assert!(self.swapchains.get_image_views().len() == self.framebuffers.len());
 

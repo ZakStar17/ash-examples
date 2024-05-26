@@ -76,19 +76,19 @@ impl FerrisModel {
     let indices = QUAD_INDICES;
     copy_nonoverlapping(
       vertices.as_ptr() as *const u8,
-      mem_ptr.byte_add(alloc.vertex_offset as usize) as *mut u8,
+      mem_ptr.byte_add(alloc.vertex_offset as usize),
       QUAD_VERTICES_SIZE,
     );
     copy_nonoverlapping(
       indices.as_ptr() as *const u8,
-      mem_ptr.byte_add(alloc.index_offset as usize) as *mut u8,
+      mem_ptr.byte_add(alloc.index_offset as usize),
       QUAD_INDICES_SIZE,
     );
   }
 }
 
 impl DeviceManuallyDestroyed for FerrisModel {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     self.vertex.destroy_self(device);
     self.index.destroy_self(device);
   }

@@ -37,8 +37,7 @@ impl GraphicsPipeline {
     extent: vk::Extent2D,
   ) -> Result<Self, PipelineCreationError> {
     let layout = Self::create_layout(device, descriptor_pool)?;
-    let shader =
-      shaders::Shader::load(device).map_err(|err| PipelineCreationError::ShaderFailed(err))?;
+    let shader = shaders::Shader::load(device).map_err(PipelineCreationError::ShaderFailed)?;
 
     let initial = Self::create_with_base(
       device,
@@ -123,10 +122,8 @@ impl GraphicsPipeline {
       p_push_constant_ranges: &push_constant_range,
       _marker: PhantomData,
     };
-    Ok(
-      unsafe { device.create_pipeline_layout(&layout_create_info, None) }
-        .map_err(|vkerr| OutOfMemoryError::from(vkerr))?,
-    )
+    unsafe { device.create_pipeline_layout(&layout_create_info, None) }
+      .map_err(OutOfMemoryError::from)
   }
 
   fn create_with_base(
@@ -201,7 +198,7 @@ impl GraphicsPipeline {
       flags: vk::PipelineCreateFlags::empty(),
       stage_count: shader_stages.len() as u32,
       p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: &*vertex_input_state,
+      p_vertex_input_state: vertex_input_state,
       p_input_assembly_state: &input_assembly_state,
       p_tessellation_state: ptr::null(),
       p_viewport_state: &viewport_state,
@@ -281,7 +278,7 @@ const fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a
 }
 
 impl DeviceManuallyDestroyed for GraphicsPipeline {
-  unsafe fn destroy_self(self: &Self, device: &ash::Device) {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
     if let Some(old) = self.old {
       device.destroy_pipeline(old, None);
     }

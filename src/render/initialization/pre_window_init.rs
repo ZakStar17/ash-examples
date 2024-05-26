@@ -40,7 +40,7 @@ impl RenderInit {
 
     let display_handle = event_loop
       .display_handle()
-      .map_err(|err| RenderInitError::DisplayHandle(err))?;
+      .map_err(RenderInitError::DisplayHandle)?;
 
     #[cfg(feature = "vl")]
     let (instance, debug_utils) = super::create_instance(&entry, display_handle)?;

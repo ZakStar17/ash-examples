@@ -93,9 +93,7 @@ fn check_physical_device_capabilities(
     return Ok(false);
   }
 
-  if !supports_required_extensions(instance, physical_device)
-    .map_err(|err| SurfaceError::OutOfMemory(err))?
-  {
+  if !supports_required_extensions(instance, physical_device).map_err(SurfaceError::OutOfMemory)? {
     log::info!("Skipped physical device: Device does not support all required extensions");
     return Ok(false);
   }
@@ -143,8 +141,8 @@ unsafe fn select_physical_device<'a>(
         let features = get_extended_features(instance, physical_device);
 
         match check_physical_device_capabilities(
-          &instance,
-          &surface,
+          instance,
+          surface,
           physical_device,
           &properties,
           &features,
