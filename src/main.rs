@@ -7,7 +7,6 @@ use ash::vk;
 use render::{RenderInit, RenderInitError, SyncRenderer};
 use std::{
   ffi::CStr,
-  mem::{self, MaybeUninit},
   time::{Duration, Instant},
 };
 use winit::{
@@ -28,212 +27,257 @@ const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
 
-const TEXTURE_PATH: &str = "./ferris.png";
-
 // see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
 // FIFO_KHR is required to be supported and functions as vsync
 // IMMEDIATE will be chosen over RELAXED_KHR if the latter is not supported
 // otherwise, presentation mode will fallback to FIFO_KHR
 const PREFERRED_PRESENTATION_METHOD: vk::PresentModeKHR = vk::PresentModeKHR::IMMEDIATE;
 
-// This application doesn't use dynamic pipeline size, so resizing is expensive
-// If a small resize happens (for example while resizing with the mouse) this usually means that
-// more are to come, and recreating objects each frame can make the application unresponsive
-// If enabled, the render function will sleep for some time and wait for more window resize events
-// to be acknowledged
-const WAIT_AFTER_WINDOW_RESIZE_ENABLED: bool = true;
-const WAIT_AFTER_WINDOW_RESIZE_THRESHOLD: u32 = 20;
-const WAIT_AFTER_WINDOW_RESIZE_DURATION: Duration = Duration::from_millis(60);
-
 // prints current frame 1 / <time since last frame> every x time
 const PRINT_FPS_EVERY: Duration = Duration::from_millis(1000);
 
+const START_PAUSED: bool = false; // start application in a paused state
+
+// This application doesn't use dynamic pipeline size, so resizing is expensive
+// If a small resize happens (for example while resizing with the mouse) this usually means that
+// more are to come, and recreating objects each frame can make the application lag
+// If enabled, the render function will wait for more window events unless some threshold is passed
+const WAIT_FOR_MULTIPLE_RESIZE_EVENTS_ENABLED: bool = true;
+const FORCE_WINDOW_RESIZE_SIZE_THRESHOLD: u32 = 20; // how many pixels before forcing update
+                                                    // how much time before forcing update
+const FORCE_WINDOW_RESIZE_DURATION_THRESHOLD: Duration = Duration::from_millis(60);
+struct WindowResizeHandler {
+  pub active: bool,
+  pub last_activation_instant: Instant,
+  pub last_activation_size: PhysicalSize<u32>,
+}
+
 enum RenderStatus {
   Initialized(RenderInit),
-  Started(SyncRenderer),
-}
-enum RunningStatus {
-  NotStarted,
-  Running,
-  Paused,
+  Started(StartedStatus),
 }
 
-struct ProgramStatus {
-  render: RenderStatus,
-  running: RunningStatus,
+struct StartedStatus {
+  pub renderer: SyncRenderer,
+  pub paused: bool,
+  pub occluded: bool,
+  pub suspended: bool,
+  pub waiting_for_window_events: bool,
 }
 
-impl ProgramStatus {
+impl StartedStatus {
+  pub fn should_draw(&self) -> bool {
+    !self.paused && !self.occluded && !self.suspended && !self.waiting_for_window_events
+  }
+
+  // set control flow to poll if frames are ok to draw
+  fn update_control_flow(&self, target: &EventLoopWindowTarget<()>) {
+    if self.should_draw() {
+      target.set_control_flow(ControlFlow::Poll);
+    } else {
+      if let Some(until) = Instant::now().checked_add(FORCE_WINDOW_RESIZE_DURATION_THRESHOLD) {
+        target.set_control_flow(ControlFlow::WaitUntil(until))
+      } else {
+        target.set_control_flow(ControlFlow::Wait);
+      }
+    }
+  }
+
+  pub fn set_paused(&mut self, target: &EventLoopWindowTarget<()>, value: bool) {
+    self.paused = value;
+    self.update_control_flow(target);
+  }
+
+  pub fn set_suspended(&mut self, target: &EventLoopWindowTarget<()>, value: bool) {
+    self.occluded = value;
+    self.update_control_flow(target);
+  }
+
+  pub fn set_occluded(&mut self, target: &EventLoopWindowTarget<()>, value: bool) {
+    self.suspended = value;
+    self.update_control_flow(target);
+  }
+
+  pub fn set_waiting_for_window_events(&mut self, target: &EventLoopWindowTarget<()>, value: bool) {
+    self.waiting_for_window_events = value;
+    self.update_control_flow(target);
+  }
+}
+
+impl RenderStatus {
   pub fn new(event_loop: &EventLoop<()>) -> Result<Self, RenderInitError> {
     let render = RenderInit::new(event_loop)?;
-    Ok(Self {
-      render: RenderStatus::Initialized(render),
-      running: RunningStatus::NotStarted,
-    })
+    Ok(RenderStatus::Initialized(render))
   }
 
   pub fn start(&mut self, event_loop: &EventLoopWindowTarget<()>) {
-    take_mut::take(&mut self.render, |old| match old {
+    take_mut::take(self, |old| match old {
       RenderStatus::Initialized(init) => {
         let renderer = init.start(event_loop);
-        RenderStatus::Started(renderer)
+        Self::Started(StartedStatus {
+          renderer,
+          paused: START_PAUSED,
+          occluded: false,
+          suspended: false,
+          waiting_for_window_events: false,
+        })
       }
       _ => panic!("Render started multiple times"),
     });
-    self.running = RunningStatus::Running;
   }
 
-  pub fn pause(&mut self) {
-    if let RunningStatus::Running = self.running {
-      self.running = RunningStatus::Paused;
-    }
-  }
-
-  pub fn unpause(&mut self) {
-    if let RunningStatus::Paused = self.running {
-      self.running = RunningStatus::Running;
-    }
-  }
-
-  pub fn is_running(&self) -> bool {
-    if let RunningStatus::Running = self.running {
-      true
+  pub fn unwrap_started(&mut self) -> &mut StartedStatus {
+    if let Self::Started(started) = self {
+      started
     } else {
-      false
+      panic!()
     }
   }
 
-  pub fn has_started(&self) -> bool {
-    if let RunningStatus::NotStarted = self.running {
-      false
-    } else {
-      true
-    }
-  }
-
-  pub fn get_renderer(&mut self) -> &mut SyncRenderer {
-    if let RenderStatus::Started(render) = &mut self.render {
-      render
-    } else {
-      panic!();
-    }
+  pub fn started(&self) -> bool {
+    matches!(self, Self::Started(_))
   }
 }
 
-fn main_loop(event_loop: EventLoop<()>, mut status: ProgramStatus) {
-  let mut wait_for_more_window_resizes = false;
-  let mut cur_window_size = PhysicalSize {
-    width: u32::MAX,
-    height: u32::MAX,
+fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
+  let mut window_resize_handler = WindowResizeHandler {
+    active: false,
+    last_activation_instant: Instant::now(),
+    last_activation_size: PhysicalSize {
+      width: u32::MAX,
+      height: u32::MAX,
+    },
   };
 
-  let mut last_update_instant = Instant::now();
+  let mut last_update = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
 
   let mut frame_i: usize = 0;
   event_loop
-    .run(move |event, target| match event {
-      Event::Suspended => {
-        // should completely pause the application
-        log::debug!("Application suspended");
-        status.pause();
-      }
-      Event::Resumed => {
-        if status.has_started() {
-          status.unpause();
-        } else {
-          log::debug!("Starting application");
-
-          status.start(target);
-
-          //target.exit() // todo: debugging
-        }
-      }
-      Event::AboutToWait => {
-        // winit has two events that notify when a frame needs to be rendered:
-        // WindowEvent::RedrawRequested => Useful for applications that don't render often,
-        //  triggers only if the system requests for a rerender (for example during window resize)
-        //  or if a redraw is requested explicitly (using window.request_redraw()).
-        // Event::AboutToWait => Triggered instantly after the previous event once new inputs have
-        // been processed. Useful for applications that draw continuously.
-
-        let now = Instant::now();
-        let time_passed = now - last_update_instant;
-        last_update_instant = now;
-
-        time_since_last_fps_print += time_passed;
-        if time_since_last_fps_print >= PRINT_FPS_EVERY {
-          time_since_last_fps_print -= PRINT_FPS_EVERY;
-          println!("FPS: {}", 1.0 / time_passed.as_secs_f32());
-        }
-
-        if wait_for_more_window_resizes {
-          wait_for_more_window_resizes = false;
-          std::thread::sleep(WAIT_AFTER_WINDOW_RESIZE_DURATION);
-          // return so the loop can register new events
-          return;
-        }
-
-        if status.is_running() {
-          if frame_i < 300 {
-            println!("\n\nRENDERING FRAME {}\n", frame_i);
-            status.get_renderer().render_next_frame();
+    .run(move |event, target| {
+      if !status.started() {
+        match event {
+          Event::Resumed => {
+            log::debug!("Starting application");
+            status.start(target);
           }
-          frame_i += 1;
+          _ => (),
         }
-      }
-      Event::WindowEvent { event, .. } => match event {
-        WindowEvent::CloseRequested => {
-          target.exit();
-        }
-        // WindowEvent::Occluded(occluded) => match status {
-        //   Status::NotStarted(init) => {
-        //     log::debug!("Starting application");
-        //     status = Status::Running;
-        //   }
-        //   Status::Paused => {
-        //     if !occluded {
-        //       status = Status::Running;
-        //     }
-        //   }
-        //   Status::Running => {
-        //     if occluded {
-        //       status = Status::Paused;
-        //     }
-        //   }
-        // },
-        WindowEvent::Resized(new_size) => {
-          if status.has_started() {
-            status.get_renderer().window_resized();
+      } else {
+        let status = status.unwrap_started();
+        match event {
+          Event::Suspended => {
+            // should completely pause the application
+            log::debug!("Application suspended");
+            status.set_suspended(target, true);
           }
-          if WAIT_AFTER_WINDOW_RESIZE_ENABLED
-            && (cur_window_size.width.abs_diff(new_size.width)
-              <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD
-              || cur_window_size.height.abs_diff(new_size.height)
-                <= WAIT_AFTER_WINDOW_RESIZE_THRESHOLD)
-          {
-            wait_for_more_window_resizes = true;
+          Event::Resumed => {
+            log::debug!("Application resumed");
+            status.set_suspended(target, false);
           }
+          Event::AboutToWait => {
+            // winit has two events that notify when a frame needs to be rendered:
+            // WindowEvent::RedrawRequested => Useful for applications that don't render often,
+            //  triggers only if the system requests for a rerender (for example during window resize)
+            //  or if a redraw is requested explicitly (using window.request_redraw()).
+            // Event::AboutToWait => Triggered instantly after the previous event once new inputs have
+            // been processed. Useful for applications that draw continuously.
 
-          cur_window_size = new_size;
-        }
-        WindowEvent::KeyboardInput { event, .. } => {
-          let pressed = event.state.is_pressed();
-          match event.physical_key {
-            // close on escape
-            PhysicalKey::Code(code) => match code {
-              KeyCode::Escape => target.exit(),
-              KeyCode::Pause => {
-                todo!();
+            if window_resize_handler.active
+              && window_resize_handler.last_activation_instant.elapsed()
+                >= FORCE_WINDOW_RESIZE_DURATION_THRESHOLD
+            {
+              status.set_waiting_for_window_events(target, false);
+              status.renderer.window_resized();
+              window_resize_handler.active = false;
+            }
+
+            if !status.should_draw() {
+              return;
+            }
+
+            let now = Instant::now();
+            let time_passed = now - last_update;
+            last_update = now;
+
+            time_since_last_fps_print += time_passed;
+            if time_since_last_fps_print >= PRINT_FPS_EVERY {
+              time_since_last_fps_print -= PRINT_FPS_EVERY;
+              println!("FPS: {}", 1.0 / time_passed.as_secs_f32());
+            }
+
+            if frame_i < usize::MAX {
+              // println!("\n\nRENDERING FRAME {}\n", frame_i);
+              status.renderer.render_next_frame();
+            }
+            frame_i += 1;
+          }
+          Event::WindowEvent { event, .. } => match event {
+            WindowEvent::CloseRequested => {
+              target.exit();
+            }
+            WindowEvent::Occluded(occluded) => {
+              status.set_occluded(target, occluded);
+            }
+            WindowEvent::Resized(new_size) => {
+              if WAIT_FOR_MULTIPLE_RESIZE_EVENTS_ENABLED {
+                let width_delta = new_size
+                  .width
+                  .abs_diff(window_resize_handler.last_activation_size.width);
+                let height_delta = new_size
+                  .height
+                  .abs_diff(window_resize_handler.last_activation_size.height);
+                let size_delta = width_delta.max(height_delta);
+
+                if size_delta > FORCE_WINDOW_RESIZE_SIZE_THRESHOLD {
+                  status.renderer.window_resized();
+
+                  if window_resize_handler.active {
+                    window_resize_handler.active = false;
+                    status.set_waiting_for_window_events(target, false);
+                  }
+                  window_resize_handler.last_activation_size = new_size;
+                  return;
+                }
+
+                if !window_resize_handler.active {
+                  status.set_waiting_for_window_events(target, true);
+
+                  window_resize_handler.active = true;
+                  window_resize_handler.last_activation_instant = Instant::now();
+                  window_resize_handler.last_activation_size = new_size;
+                }
+              } else {
+                status.renderer.window_resized();
               }
-              _ => {}
-            },
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+              let pressed = event.state.is_pressed();
+              // todo: implement step frame by frame functionality
+              match event.physical_key {
+                // close on escape
+                PhysicalKey::Code(code) => match code {
+                  KeyCode::Escape => target.exit(),
+                  KeyCode::Pause => {
+                    if pressed {
+                      if status.paused {
+                        log::info!("Unpaused!");
+                      } else {
+                        log::info!("Paused!");
+                      }
+                      status.set_paused(target, !status.paused);
+                    }
+                  }
+                  _ => {}
+                },
+                _ => {}
+              }
+            }
             _ => {}
-          }
+          },
+          _ => (),
         }
-        _ => {}
-      },
-      _ => (),
+      }
     })
     .expect("Failed to run event loop")
 }
@@ -245,6 +289,6 @@ fn main() {
   // make the event loop run continuously even if there is no new user input
   event_loop.set_control_flow(ControlFlow::Poll);
 
-  let status = ProgramStatus::new(&event_loop).unwrap(); // todo
+  let status = RenderStatus::new(&event_loop).unwrap(); // todo
   main_loop(event_loop, status);
 }

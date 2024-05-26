@@ -117,7 +117,10 @@ pub fn create_instance(
 }
 
 #[cfg(not(feature = "vl"))]
-pub fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, InstanceCreationError> {
+pub fn create_instance(
+  entry: &ash::Entry,
+  display_handle: DisplayHandle,
+) -> Result<ash::Instance, InstanceCreationError> {
   check_api_version(entry)?;
 
   let app_info = get_app_info();

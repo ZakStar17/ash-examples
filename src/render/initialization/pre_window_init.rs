@@ -4,10 +4,11 @@ use winit::event_loop::{EventLoop, EventLoopWindowTarget};
 use crate::render::{device_destroyable::ManuallyDestroyed, renderer::Renderer, SyncRenderer};
 use std::mem;
 
-use super::{DebugUtils, InstanceCreationError};
+use super::InstanceCreationError;
 
 use std::{
   self,
+  mem::MaybeUninit,
   ptr::{self, addr_of_mut},
 };
 
@@ -15,7 +16,7 @@ pub struct RenderInit {
   pub entry: ash::Entry,
   pub instance: ash::Instance,
   #[cfg(feature = "vl")]
-  pub debug_utils: DebugUtils,
+  pub debug_utils: super::DebugUtils,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -44,7 +45,7 @@ impl RenderInit {
     #[cfg(feature = "vl")]
     let (instance, debug_utils) = super::create_instance(&entry, display_handle)?;
     #[cfg(not(feature = "vl"))]
-    let instance = super::create_instance(&entry, event_loop.raw_display_handle())?;
+    let instance = super::create_instance(&entry, display_handle)?;
 
     Ok(Self {
       entry,
@@ -64,9 +65,7 @@ impl RenderInit {
 
   // take values out without calling drop
   #[cfg(feature = "vl")]
-  pub fn deconstruct(mut self) -> (ash::Entry, ash::Instance, DebugUtils) {
-    use std::mem::MaybeUninit;
-
+  pub fn deconstruct(mut self) -> (ash::Entry, ash::Instance, super::DebugUtils) {
     unsafe {
       // could't find a less stupid way of doing this
       let mut entry: MaybeUninit<ash::Entry> = MaybeUninit::uninit();

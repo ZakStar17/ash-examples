@@ -130,7 +130,7 @@ impl Renderer {
         width: INITIAL_WINDOW_WIDTH,
         height: INITIAL_WINDOW_HEIGHT,
       })
-      .with_resizable(false)
+      // .with_resizable(false)
       .build(target)?;
 
     let mut destructor = Destructor::new();
