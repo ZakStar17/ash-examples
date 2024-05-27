@@ -20,6 +20,7 @@ use std::ffi::CStr;
 
 pub use errors::{FrameRenderError, InitializationError};
 pub use initialization::{RenderInit, RenderInitError};
+pub use render_object::RenderPosition;
 pub use swapchain::AcquireNextImageError;
 pub use sync_renderer::SyncRenderer;
 

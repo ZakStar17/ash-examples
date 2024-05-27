@@ -1,14 +1,14 @@
 use std::{marker::PhantomData, ptr};
 
 use ash::vk;
+use winit::window::Window;
 
-use crate::utility::OnErr;
+use crate::{ferris::Ferris, utility::OnErr};
 
 use super::{
   create_objs::{create_semaphore, create_timeline_semaphore},
   device_destroyable::DeviceManuallyDestroyed,
   errors::InitializationError,
-  render_object::RenderPosition,
   renderer::Renderer,
   FrameRenderError, FRAMES_IN_FLIGHT,
 };
@@ -75,7 +75,11 @@ impl SyncRenderer {
     self.recreate_swapchain_next_frame = true;
   }
 
-  pub fn render_next_frame(&mut self) -> Result<(), FrameRenderError> {
+  pub fn window(&self) -> &Window {
+    &self.renderer.window
+  }
+
+  pub fn render_next_frame(&mut self, ferris: &Ferris) -> Result<(), FrameRenderError> {
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     self.last_frame_i = cur_frame_i;
     let next_timeline_value = self.timeline_index + Self::PER_FRAME_TIMELINE_INCREMENT;
@@ -135,7 +139,7 @@ impl SyncRenderer {
       self.renderer.record_graphics(
         cur_frame_i,
         image_index as usize,
-        &RenderPosition::new([-0.3, -0.3], [0.4, 0.3]),
+        &ferris.get_render_position(self.renderer.window.inner_size()),
       )?;
     }
 

@@ -27,7 +27,10 @@ use super::{
   descriptor_sets::DescriptorPool, errors::InitializationError,
 };
 
-pub use self::{ferris_model::FerrisModel, texture::ImageLoadError};
+pub use self::{
+  ferris_model::FerrisModel,
+  texture::{ImageLoadError, TEXTURE_FORMAT, TEXTURE_FORMAT_FEATURES},
+};
 
 #[derive(Debug)]
 pub struct GPUData {

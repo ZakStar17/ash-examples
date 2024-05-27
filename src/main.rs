@@ -1,9 +1,11 @@
 #![feature(vec_into_raw_parts)]
 
+mod ferris;
 mod render;
 mod utility;
 
 use ash::vk;
+use ferris::Ferris;
 use render::{
   AcquireNextImageError, FrameRenderError, InitializationError, RenderInit, RenderInitError,
   SyncRenderer,
@@ -45,7 +47,7 @@ const START_PAUSED: bool = false; // start application in a paused state
 // If a small resize happens (for example while resizing with the mouse) this usually means that
 // more are to come, and recreating objects each frame can make the application lag
 // If enabled, the render function will wait for more window events unless some threshold is passed
-const WAIT_FOR_MULTIPLE_RESIZE_EVENTS_ENABLED: bool = true;
+const WAIT_FOR_MULTIPLE_RESIZE_EVENTS_ENABLED: bool = false;
 const FORCE_WINDOW_RESIZE_SIZE_THRESHOLD: u32 = 20; // how many pixels before forcing update
                                                     // how much time before forcing update
 const FORCE_WINDOW_RESIZE_DURATION_THRESHOLD: Duration = Duration::from_millis(60);
@@ -152,6 +154,8 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
     },
   };
 
+  let mut ferris = Ferris::new([0.2, 0.0], true, true);
+
   let mut last_update = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
 
@@ -213,8 +217,10 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
             }
 
             if frame_i < usize::MAX {
+              ferris.update(time_passed, status.renderer.window().inner_size());
+
               // println!("\n\nRENDERING FRAME {}\n", frame_i);
-              if let Err(err) = status.renderer.render_next_frame() {
+              if let Err(err) = status.renderer.render_next_frame(&ferris) {
                 match err {
                   FrameRenderError::FailedToAcquireSwapchainImage(
                     AcquireNextImageError::OutOfDate,

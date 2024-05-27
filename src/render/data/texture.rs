@@ -17,9 +17,14 @@ use super::StagingMemoryAllocation;
 const TEXTURE_PATH: &str = "./ferris.png";
 pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 pub const TEXTURE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
-  vk::ImageUsageFlags,
+  vk::ImageUsageFlags =>
   vk::ImageUsageFlags::SAMPLED,
   vk::ImageUsageFlags::TRANSFER_DST
+);
+pub const TEXTURE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
+  vk::FormatFeatureFlags =>
+  vk::FormatFeatureFlags::TRANSFER_DST,
+  vk::FormatFeatureFlags::SAMPLED_IMAGE
 );
 
 fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), image::ImageError> {

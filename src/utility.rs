@@ -40,7 +40,7 @@ impl<T, E> OnErr<T, E> for Result<T, E> {
 }
 
 macro_rules! const_flag_bitor {
-  ($t:ty, $x:expr, $($y:expr),+) => {
+  ($t:ty => $x:expr, $($y:expr),+) => {
     // ash flags don't implement const bitor
     <$t>::from_raw(
       $x.as_raw() $(| $y.as_raw())+,
@@ -50,7 +50,6 @@ macro_rules! const_flag_bitor {
 pub(crate) use const_flag_bitor;
 
 // populate_array_with_expression!(a + b, 3) transforms into [a + b, a + b, a + b]
-#[macro_export]
 macro_rules! populate_array_with_expression {
   ($ex:expr, $arr_size:expr) => {{
     use std::mem::MaybeUninit;
@@ -61,4 +60,4 @@ macro_rules! populate_array_with_expression {
     unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) }
   }};
 }
-pub use populate_array_with_expression;
+pub(crate) use populate_array_with_expression;

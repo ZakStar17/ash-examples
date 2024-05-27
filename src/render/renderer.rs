@@ -9,6 +9,7 @@ use winit::{
 };
 
 use crate::{
+  ferris::Ferris,
   render::{
     command_pools::{
       GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
@@ -75,7 +76,7 @@ pub struct Renderer {
   pub device: ash::Device,
   pub queues: Queues,
 
-  window: Window,
+  pub window: Window,
   surface: Surface,
 
   pub swapchains: Swapchains,
@@ -131,6 +132,10 @@ impl Renderer {
       .with_inner_size(PhysicalSize {
         width: INITIAL_WINDOW_WIDTH,
         height: INITIAL_WINDOW_HEIGHT,
+      })
+      .with_min_inner_size(PhysicalSize {
+        width: Ferris::WIDTH,
+        height: Ferris::HEIGHT,
       })
       // .with_resizable(false)
       .build(target)?;

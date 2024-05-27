@@ -5,7 +5,7 @@ mod vendor;
 
 use std::{
   ffi::{c_void, CStr},
-  mem::MaybeUninit,
+  mem::{size_of, MaybeUninit},
   ptr::{self, addr_of_mut},
 };
 
@@ -17,13 +17,15 @@ pub use queues::{QueueFamilies, Queues};
 use self::vendor::Vendor;
 use crate::{
   render::{
-    errors::OutOfMemoryError, initialization::device::queues::QueueFamilyError,
-    REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
+    data::{TEXTURE_FORMAT, TEXTURE_FORMAT_FEATURES},
+    errors::OutOfMemoryError,
+    RenderPosition, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
   },
   utility::{self, i8_array_as_cstr},
 };
 
 use super::{Surface, SurfaceError};
+use queues::QueueFamilyError;
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
@@ -69,6 +71,15 @@ fn supports_required_extensions(
   Ok(true)
 }
 
+fn supports_texture_format(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+  let properties =
+    unsafe { instance.get_physical_device_format_properties(physical_device, TEXTURE_FORMAT) };
+
+  properties
+    .optimal_tiling_features
+    .contains(TEXTURE_FORMAT_FEATURES)
+}
+
 fn supports_swapchain(device: vk::PhysicalDevice, surface: &Surface) -> Result<bool, SurfaceError> {
   let formats = unsafe { surface.get_formats(device) }?;
   let present_modes = unsafe { surface.get_present_modes(device) }?;
@@ -98,6 +109,11 @@ fn check_physical_device_capabilities(
     return Ok(false);
   }
 
+  if !supports_texture_format(instance, physical_device) {
+    log::warn!("Skipped physical device: Device does not support texture format");
+    return Ok(false);
+  }
+
   if !supports_swapchain(physical_device, surface)? {
     log::warn!("Skipped physical device: Device does not support swapchain");
     return Ok(false);
@@ -110,6 +126,11 @@ fn check_physical_device_capabilities(
 
   if features.f13.synchronization2 != vk::TRUE {
     log::warn!("Skipped physical device: Device does not support synchronization features");
+    return Ok(false);
+  }
+
+  if (properties.p10.limits.max_push_constants_size as usize) < size_of::<RenderPosition>() {
+    log::warn!("Skipped physical device: Device does not support required push constant size");
     return Ok(false);
   }
 
