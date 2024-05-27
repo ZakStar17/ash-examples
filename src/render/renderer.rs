@@ -38,10 +38,13 @@ use super::{
   RenderInit, FRAMES_IN_FLIGHT,
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SwapchainRecreationError {
+  #[error("Out of memory")]
   OutOfMemory(OutOfMemoryError),
+  #[error("Failed to create a swapchain")]
   SwapchainError(SwapchainCreationError),
+  #[error("Failed to create a pipeline")]
   PipelineCreationError(PipelineCreationError),
 }
 
@@ -88,13 +91,12 @@ pub struct Renderer {
   gpu_data: GPUData,
 }
 
-const DESTROYABLE_COUNT: usize = 69; // todo
-struct Destructor {
-  objs: [MaybeUninit<*const dyn DeviceManuallyDestroyed>; DESTROYABLE_COUNT],
+struct Destructor<const N: usize> {
+  objs: [MaybeUninit<*const dyn DeviceManuallyDestroyed>; N],
   len: usize,
 }
 
-impl Destructor {
+impl<const N: usize> Destructor<N> {
   pub fn new() -> Self {
     Self {
       objs: unsafe { MaybeUninit::uninit().assume_init() },
@@ -133,7 +135,7 @@ impl Renderer {
       // .with_resizable(false)
       .build(target)?;
 
-    let mut destructor = Destructor::new();
+    let mut destructor: Destructor<13> = Destructor::new();
 
     #[cfg(feature = "vl")]
     let (entry, instance, debug_utils) = pre_window.deconstruct();
@@ -349,9 +351,8 @@ impl Renderer {
           .on_err(|_| self.swapchains.revert_recreate(&self.device))?,
       );
     } else if !changes.extent {
-        log::warn!("Recreating swapchain without any extent or format change");
-      }
-    
+      log::warn!("Recreating swapchain without any extent or format change");
+    }
 
     assert!(self.swapchains.get_image_views().len() == self.framebuffers.len());
 

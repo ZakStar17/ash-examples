@@ -10,7 +10,7 @@ use super::{
   errors::InitializationError,
   render_object::RenderPosition,
   renderer::Renderer,
-  FRAMES_IN_FLIGHT,
+  FrameRenderError, FRAMES_IN_FLIGHT,
 };
 
 pub struct SyncRenderer {
@@ -75,8 +75,7 @@ impl SyncRenderer {
     self.recreate_swapchain_next_frame = true;
   }
 
-  pub fn render_next_frame(&mut self) {
-    // todo: do error handling
+  pub fn render_next_frame(&mut self) -> Result<(), FrameRenderError> {
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     self.last_frame_i = cur_frame_i;
     let next_timeline_value = self.timeline_index + Self::PER_FRAME_TIMELINE_INCREMENT;
@@ -92,11 +91,7 @@ impl SyncRenderer {
         p_values: &self.timeline_index,
         _marker: PhantomData,
       };
-      self
-        .renderer
-        .device
-        .wait_semaphores(&wait_info, u64::MAX)
-        .unwrap();
+      self.renderer.device.wait_semaphores(&wait_info, u64::MAX)?
     }
 
     // current frame resources are now safe to use as they are not being used by the GPU
@@ -108,8 +103,7 @@ impl SyncRenderer {
 
     if self.recreate_swapchain_next_frame {
       unsafe {
-        // todo
-        self.renderer.recreate_swapchain().unwrap();
+        self.renderer.recreate_swapchain()?;
       }
       self.recreate_swapchain_next_frame = false;
       self.last_frame_recreated_swapchain = true;
@@ -127,26 +121,22 @@ impl SyncRenderer {
         }
         image_index
       }
-      Err(_) => {
+      Err(err) => {
         log::warn!("Failed to acquire next swapchain image");
         self.recreate_swapchain_next_frame = true;
 
-        // return Err(());
-        return;
+        return Err(err.into());
       }
     };
 
     // actual rendering
 
     unsafe {
-      self
-        .renderer
-        .record_graphics(
-          cur_frame_i,
-          image_index as usize,
-          &RenderPosition::new([-0.3, -0.3], [0.4, 0.3]),
-        )
-        .unwrap();
+      self.renderer.record_graphics(
+        cur_frame_i,
+        image_index as usize,
+        &RenderPosition::new([-0.3, -0.3], [0.4, 0.3]),
+      )?;
     }
 
     let command_buffers = [vk::CommandBufferSubmitInfo::default()
@@ -198,28 +188,17 @@ impl SyncRenderer {
     self.timeline_index = next_timeline_value;
 
     unsafe {
-      if let Err(vk_result) = self.renderer.swapchains.queue_present(
+      if let Err(err) = self.renderer.swapchains.queue_present(
         image_index,
         self.renderer.queues.presentation,
         &[self.presentable[cur_frame_i]],
       ) {
-        match vk_result {
-          vk::Result::ERROR_OUT_OF_DATE_KHR => {
-            // window resizes can happen while this function is running and be not detected in time
-            // other reasons may include format changes
-
-            log::warn!("Failed to present to swapchain: Swapchain is out of date");
-            self.recreate_swapchain_next_frame = true;
-
-            // errors of this type still signal sync objects accordingly
-            //return Err(());
-          }
-          other => panic!("Failed to present to swapchain: {:?}", other),
-        }
+        self.recreate_swapchain_next_frame = true;
+        return Err(err.into());
       }
     }
 
-    // Ok(())
+    Ok(())
   }
 }
 

@@ -8,7 +8,7 @@ use crate::{utility::OnErr, PREFERRED_PRESENTATION_METHOD};
 use super::{
   create_objs::create_image_view,
   device_destroyable::DeviceManuallyDestroyed,
-  errors::OutOfMemoryError,
+  errors::{error_chain_fmt, OutOfMemoryError},
   initialization::{
     device::{PhysicalDevice, QueueFamilies},
     Surface, SurfaceError,
@@ -19,7 +19,7 @@ use super::{
 //    the created window other API
 // VK_ERROR_COMPRESSION_EXHAUSTED_EXT shouldn't happen because there are no compressed image that
 //    are requested
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 pub enum SwapchainCreationError {
   #[error("Out of memory")]
   OutOfMemory(#[source] OutOfMemoryError),
@@ -30,6 +30,31 @@ pub enum SwapchainCreationError {
   SurfaceIsLost,
   #[error("Creation failed because of some other error")]
   GenericInitializationError,
+}
+impl std::fmt::Debug for SwapchainCreationError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
+}
+
+// VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT needs VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT
+#[derive(thiserror::Error)]
+pub enum AcquireNextImageError {
+  #[error("Swapchain is out of date and needs to be recreated")]
+  OutOfDate,
+
+  #[error("Out of memory")]
+  OutOfMemory(#[source] OutOfMemoryError),
+
+  #[error("Device is lost (https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#devsandqueues-lost-device)")]
+  DeviceIsLost,
+  #[error("Surface is lost and no longer available")]
+  SurfaceIsLost,
+}
+impl std::fmt::Debug for AcquireNextImageError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
 }
 
 impl From<vk::Result> for SwapchainCreationError {
@@ -47,6 +72,23 @@ impl From<vk::Result> for SwapchainCreationError {
       }
       vk::Result::ERROR_COMPRESSION_EXHAUSTED_EXT => {
         panic!("Swapchain creation returned VK_ERROR_COMPRESSION_EXHAUSTED_EXT")
+      }
+      _ => panic!(),
+    }
+  }
+}
+
+impl From<vk::Result> for AcquireNextImageError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_DATE_KHR => AcquireNextImageError::OutOfDate,
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        AcquireNextImageError::OutOfMemory(value.into())
+      }
+      vk::Result::ERROR_DEVICE_LOST => AcquireNextImageError::DeviceIsLost,
+      vk::Result::ERROR_SURFACE_LOST_KHR => AcquireNextImageError::SurfaceIsLost,
+      vk::Result::ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT => {
+        panic!("Acquire next image returned VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT")
       }
       _ => panic!(),
     }
@@ -96,8 +138,11 @@ impl Swapchains {
   pub unsafe fn acquire_next_image(
     &mut self,
     semaphore: vk::Semaphore,
-  ) -> Result<(u32, bool), vk::Result> {
-    self.current.acquire_next_image(semaphore, &self.loader)
+  ) -> Result<(u32, bool), AcquireNextImageError> {
+    self
+      .current
+      .acquire_next_image(semaphore, &self.loader)
+      .map_err(AcquireNextImageError::from)
   }
 
   pub unsafe fn recreate(
@@ -130,7 +175,7 @@ impl Swapchains {
     image_index: u32,
     present_queue: vk::Queue,
     wait_semaphores: &[vk::Semaphore],
-  ) -> Result<bool, vk::Result> {
+  ) -> Result<bool, AcquireNextImageError> {
     let present_info = vk::PresentInfoKHR {
       s_type: vk::StructureType::PRESENT_INFO_KHR,
       p_next: ptr::null(),
@@ -144,6 +189,7 @@ impl Swapchains {
     };
 
     unsafe { self.loader.queue_present(present_queue, &present_info) }
+      .map_err(AcquireNextImageError::from)
   }
 
   pub fn destroy_old(&mut self, device: &ash::Device) {
@@ -342,7 +388,6 @@ impl Swapchain {
 
     let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }?;
 
-    // todo: destroy swapchain
     let images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
       .map_err(OutOfMemoryError::from)
       .on_err(|_| unsafe { swapchain_loader.destroy_swapchain(swapchain, None) })?

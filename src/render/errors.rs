@@ -6,7 +6,11 @@ use crate::render::{
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
 
-use super::{data::ImageLoadError, swapchain::SwapchainCreationError};
+use super::{
+  data::ImageLoadError,
+  renderer::SwapchainRecreationError,
+  swapchain::{AcquireNextImageError, SwapchainCreationError},
+};
 
 pub fn error_chain_fmt(
   e: &impl std::error::Error,
@@ -219,5 +223,55 @@ impl From<vk::Result> for AllocationError {
 impl From<OutOfMemoryError> for AllocationError {
   fn from(value: OutOfMemoryError) -> Self {
     AllocationError::NotEnoughMemory(value)
+  }
+}
+
+#[derive(thiserror::Error)]
+pub enum FrameRenderError {
+  #[error("Out of memory")]
+  OutOfMemory(#[source] OutOfMemoryError),
+
+  #[error("Device is lost")]
+  DeviceLost,
+
+  #[error("Failed to acquire swapchain image")]
+  FailedToAcquireSwapchainImage(#[source] AcquireNextImageError),
+
+  #[error("Failed to recreate swapchain")]
+  FailedToRecreateSwapchain(#[source] SwapchainRecreationError),
+}
+impl std::fmt::Debug for FrameRenderError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
+}
+
+impl From<vk::Result> for FrameRenderError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        FrameRenderError::OutOfMemory(OutOfMemoryError::from(value))
+      }
+      vk::Result::ERROR_DEVICE_LOST => FrameRenderError::DeviceLost,
+      _ => panic!("Invalid cast from vk::Result to FrameRenderError"),
+    }
+  }
+}
+
+impl From<OutOfMemoryError> for FrameRenderError {
+  fn from(value: OutOfMemoryError) -> Self {
+    Self::OutOfMemory(value)
+  }
+}
+
+impl From<AcquireNextImageError> for FrameRenderError {
+  fn from(value: AcquireNextImageError) -> Self {
+    Self::FailedToAcquireSwapchainImage(value)
+  }
+}
+
+impl From<SwapchainRecreationError> for FrameRenderError {
+  fn from(value: SwapchainRecreationError) -> Self {
+    Self::FailedToRecreateSwapchain(value)
   }
 }

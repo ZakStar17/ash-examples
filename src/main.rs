@@ -4,7 +4,10 @@ mod render;
 mod utility;
 
 use ash::vk;
-use render::{RenderInit, RenderInitError, SyncRenderer};
+use render::{
+  AcquireNextImageError, FrameRenderError, InitializationError, RenderInit, RenderInitError,
+  SyncRenderer,
+};
 use std::{
   ffi::CStr,
   time::{Duration, Instant},
@@ -110,20 +113,20 @@ impl RenderStatus {
     Ok(RenderStatus::Initialized(render))
   }
 
-  pub fn start(&mut self, event_loop: &EventLoopWindowTarget<()>) {
-    take_mut::take(self, |old| match old {
+  pub fn start(self, event_loop: &EventLoopWindowTarget<()>) -> Result<Self, InitializationError> {
+    match self {
       RenderStatus::Initialized(init) => {
-        let renderer = init.start(event_loop);
-        Self::Started(StartedStatus {
+        let renderer = init.start(event_loop)?;
+        Ok(Self::Started(StartedStatus {
           renderer,
           paused: START_PAUSED,
           occluded: false,
           suspended: false,
           waiting_for_window_events: false,
-        })
+        }))
       }
       _ => panic!("Render started multiple times"),
-    });
+    }
   }
 
   pub fn unwrap_started(&mut self) -> &mut StartedStatus {
@@ -158,7 +161,13 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
       if !status.started() {
         if event == Event::Resumed {
           log::debug!("Starting application");
-          status.start(target);
+          take_mut::take(&mut status, |status| match status.start(target) {
+            Ok(v) => v,
+            Err(err) => {
+              log::error!("Failed to start rendering\n{}", err);
+              std::process::exit(1);
+            }
+          });
         }
       } else {
         let status = status.unwrap_started();
@@ -205,7 +214,24 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
 
             if frame_i < usize::MAX {
               // println!("\n\nRENDERING FRAME {}\n", frame_i);
-              status.renderer.render_next_frame();
+              if let Err(err) = status.renderer.render_next_frame() {
+                match err {
+                  FrameRenderError::FailedToAcquireSwapchainImage(
+                    AcquireNextImageError::OutOfDate,
+                  ) => {
+                    // window resizes can happen while this function is running and be not detected in time
+                    // other reasons may include format changes
+                    log::warn!("Failed to present to swapchain: Swapchain is out of date");
+                  }
+                  other => {
+                    log::error!(
+                      "Rendering a frame returned an unrecoverable error\n{}",
+                      other
+                    );
+                    std::process::exit(1);
+                  }
+                }
+              }
             }
             frame_i += 1;
           }
@@ -285,6 +311,12 @@ fn main() {
   // make the event loop run continuously even if there is no new user input
   event_loop.set_control_flow(ControlFlow::Poll);
 
-  let status = RenderStatus::new(&event_loop).unwrap(); // todo
+  let status = match RenderStatus::new(&event_loop) {
+    Ok(v) => v,
+    Err(err) => {
+      log::error!("Failed to initialize Vulkan\n{}", err);
+      std::process::exit(1);
+    }
+  };
   main_loop(event_loop, status);
 }

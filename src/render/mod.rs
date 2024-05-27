@@ -18,7 +18,9 @@ mod vertices;
 use ash::vk;
 use std::ffi::CStr;
 
+pub use errors::{FrameRenderError, InitializationError};
 pub use initialization::{RenderInit, RenderInitError};
+pub use swapchain::AcquireNextImageError;
 pub use sync_renderer::SyncRenderer;
 
 const FRAMES_IN_FLIGHT: usize = 2;
