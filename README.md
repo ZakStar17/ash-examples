@@ -1,6 +1,8 @@
 # Instance creation
 
-This example covers creating an instance, with or without validation layers enabled.
+This example covers creating an instance and passing a list of instance extensions and layers. This also includes creating a Debug Messenger which can pass down messages from validation layers when they are enabled.
+
+This example uses ash version `0.38`.
 
 You can run this example with:
 
