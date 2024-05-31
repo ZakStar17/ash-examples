@@ -129,7 +129,48 @@ In order words, with this configuration, transfer commands in B will execute aft
 
 ### Pipeline barriers
 
+Pipeline barriers are command that are recorded to a command buffer. They don't execute in any stage, and instead create execution or memory dependencies between pipeline stages.
+
+The `cmd_pipeline_barrier` is the original command while the `cmd_pipeline_barrier2` is the extended command which is enabled with the synchronization2 feature. Both of these commands work with memory barrier objects. The original command included the execution dependency in the command itself while the extended takes that dependency in each memory barrier object instead. Because execution and memory objects are closely related, meaning that the memory access masks that are allowed are dependent on the pipeline stages, this example will explain pipeline barriers in the context of the extended version, and it is easy to substitute the extended version for the original (just subdivide each `cmd_pipeline_barrier2` into `cmd_pipeline_barrier` commands that have the same execution dependency).
+
+#### Memory barriers
+
+The best way to understand pipeline barriers is with examples. Here is a basic memory barrier:
+
+```rust
+// ...clear commands
+
+let copy_after_clear = vk::MemoryBarrier2 {
+    src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+    dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
+    src_stage_mask: vk::PipelineStageFlags2::CLEAR,
+    dst_stage_mask: vk::PipelineStageFlags2::COPY,
+    ...
+};
+// dependency_info() is a helper function that creates a vk::DependencyInfo. See src/command_pools/mod.rs
+device.cmd_pipeline_barrier2(command_buffer, &dependency_info(&[], &[], &[prepare_image]));
+
+// ...copy commands
+```
+
+`src_stage_mask` and `dst_stage_mask` constitute a execution dependency. They say, "any stage indicated in `dst_stage_mask` should only begin after all stages in `src_stage_mask` finish. In this example, any "copy" command will start executing after all previous "clear" commands finish.
+
+`src_access_mask` and `dst_access_mask` constitute a memory dependency. Values in these masks can be something_WRITE or something_READ. They say:
+
+- If `src_access_mask` is _WRITE and `dst_access_mask` is _READ, then any memory written in any stage in `src_stage_mask` will be made available to read in all stages indicated in `dst_stage_mask`. This corresponds to doing a cache clean (a flush) and prevents read-after-write hazards.
+- If `src_access_mask` is _WRITE and `dst_access_mask` is _WRITE, then any memory written in any stage in `src_stage_mask` will be made available to be overwritten in all stages indicated in `dst_stage_mask`. This prevents write-after-write hazards (so that changes made by the first write don't get lost in the cache).
+
+Basically, all combinations of memory in `src_stage_mask` + `src_access_mask` will be made available to all combinations of memory `dst_stage_mask` + `dst_access_mask`. It doesn't make sense to indicate any _READ access in `src_access_mask` as it doesn't perform any memory changes that should be made available. In this example, all memory written by "clear" commands will be visible to any "copy" command when it executes.
+
+This mask barrier only affects commands that belong to the marked src_stages before the pipeline barrier and only affects the commands that belong to dst_stages after the barrier. Any other commands are free to execute in any order unless more dependencies are introduced.
+
+#### Buffer memory barriers
+
 // todo
+
+
+  They say, "make all memory accessed in the 
+
 
 
 The application can be resumed by the following steps:
