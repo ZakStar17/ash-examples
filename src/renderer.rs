@@ -2,7 +2,7 @@ use ash::vk;
 use std::{
   marker::PhantomData,
   ops::BitOr,
-  ptr::{self, addr_of},
+  ptr,
 };
 
 use crate::{
@@ -130,9 +130,9 @@ impl Renderer {
       p_wait_semaphores: ptr::null(),
       p_wait_dst_stage_mask: ptr::null(),
       command_buffer_count: 1,
-      p_command_buffers: addr_of!(self.command_pools.compute_pool.clear_img),
+      p_command_buffers: &self.command_pools.compute_pool.clear_img,
       signal_semaphore_count: 1,
-      p_signal_semaphores: addr_of!(image_clear_finished),
+      p_signal_semaphores: &image_clear_finished,
       _marker: PhantomData,
     };
     let wait_for = vk::PipelineStageFlags::TRANSFER;
@@ -140,10 +140,10 @@ impl Renderer {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
       wait_semaphore_count: 1,
-      p_wait_semaphores: addr_of!(image_clear_finished),
-      p_wait_dst_stage_mask: addr_of!(wait_for),
+      p_wait_semaphores: &image_clear_finished,
+      p_wait_dst_stage_mask: &wait_for,
       command_buffer_count: 1,
-      p_command_buffers: addr_of!(self.command_pools.transfer_pool.copy_image_to_buffer),
+      p_command_buffers: &self.command_pools.transfer_pool.copy_image_to_buffer,
       signal_semaphore_count: 0,
       p_signal_semaphores: ptr::null(),
       _marker: PhantomData,
