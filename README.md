@@ -16,9 +16,9 @@ You can run this example with:
 
 `RUST_LOG=debug cargo run --bin compute_image_clear`
 
-## Overview
+# Overview
 
-### Command buffers and command pools
+## Command buffers and command pools
 
 Host to device communications are expensive, so Vulkan aids to reduce the amount of communications sent by prerecording all possible commands beforehand and sending them all in a single batch. Regions of memory where commands are recorded are called command buffers. Work batches may consist of multiple command buffers, some of which may be reused between submissions or be executed multiple times simultaneously.
 
@@ -36,7 +36,7 @@ Command buffers have the notion of being "reset", in which their state is set to
 
 Command buffers can also be "primary" or "secondary". Secondary command buffers can be recorded as standalone operations inside other primary or secondary command buffers, but can't be submitted. They are useful if you have a set commonly reused operations inside a primary command buffer that is frequently rerecorded. 
 
-### Buffers and Images
+## Buffers and Images
 
 You can use two primary objects that hold data which can be accessed by a device, these being images and buffers. Buffers are just an array of arbitrary data, while images are 1, 2 or 3 dimensional collections of pixels that have a specific format, memory layout and can consist of multiple layers.
 
@@ -44,7 +44,7 @@ After a buffer or image is created, its memory should be allocated and bind sepa
 
 As this example only creates two objects (a buffer and an image) the memory allocation is quite simple, only needing one block for the image and one for the buffer.
 
-### Memory heaps and memory types
+## Memory heaps and memory types
 
 Each device will will probably contain different heaps which are physical locations like RAM and GPU local memory. Each of these heaps will contain one or more memory types which are logical locations with specific characteristics. An resource like an image may only reside in specific memory types because of its internal structure, which are queried after the resource is created. You can query the size of a heap but not more than that, so allocations may revolve to some trial and error if you are trying to allocate a very big memory block.
 
@@ -63,7 +63,7 @@ Memory that is not device local will usually have a lot worse performance becaus
 
 In this example, the image will be allocated preferably to memory with the `DEVICE_LOCAL_BIT` set, and the buffer to memory with the `HOST_COHERENT_BIT`, and if possible also the `HOST_CACHED_BIT`. Even if a preferred memory type doesn't exist, the code can always fallback to a more general type that can be allocated.
 
-### Vulkan's execution model
+## Vulkan's execution model
 
 GPUs have lots of caches and are complicated, and so is knowing when a command runs or if it has finished. When writing device commands is good to have in mind that:
 
@@ -164,9 +164,16 @@ Basically, all combinations of memory in `src_stage_mask` + `src_access_mask` wi
 
 This mask barrier only affects commands that belong to the marked src_stages before the pipeline barrier and only affects the commands that belong to dst_stages after the barrier. Any other commands are free to execute in any order unless more dependencies are introduced.
 
+
+// wrong 
+`HOST_READ` and `HOST_WRITE` are a bit special type of `vk::AccessFlags2`. `HOST_READ` makes memory available to the host and `HOST_WRITE` flushes memory written by the host. These are only needed if the memory type that is operated on doesn't have the `HOST_COHERENT_BIT` and  
+
 #### Buffer memory barriers
 
-// todo
+Buffer memory barriers are very similar to normal memory barriers. The only difference is that they restrict the execution and memory dependencies to just a subsection of a buffer instead of all memory objects.
+
+
+
 
 
   They say, "make all memory accessed in the 

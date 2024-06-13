@@ -1,9 +1,5 @@
 use ash::vk;
-use std::{
-  marker::PhantomData,
-  ops::BitOr,
-  ptr,
-};
+use std::{marker::PhantomData, ops::BitOr, ptr};
 
 use crate::{
   allocator::allocate_and_bind_memory,
@@ -32,9 +28,11 @@ pub struct Renderer {
 struct GPUData {
   clear_image: vk::Image,
   clear_image_memory: vk::DeviceMemory,
+
   final_buffer: vk::Buffer,
   final_buffer_size: u64,
   final_buffer_memory: vk::DeviceMemory,
+  final_buffer_memory_type_index: u32,
 }
 
 impl Renderer {
@@ -176,8 +174,10 @@ impl Renderer {
     Ok(())
   }
 
-  pub unsafe fn get_resulting_data<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), vk::Result> {
-    self.gpu_data.get_buffer_data(&self.device, f)
+  pub unsafe fn get_resulting_data(&self) -> Result<&[u8], vk::Result> {
+    self
+      .gpu_data
+      .map_buffer_after_completion(&self.device, &self.physical_device)
   }
 }
 
@@ -266,7 +266,7 @@ impl GPUData {
     let final_buffer_memory_alloc_result = allocate_and_bind_memory(
       device,
       physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
+      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_COHERENT),
       &[final_buffer],
       &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
       &[],
@@ -287,15 +287,16 @@ impl GPUData {
         &[],
       )
     });
-    let final_buffer_memory = match final_buffer_memory_alloc_result {
-      Ok(alloc) => alloc.memory,
-      Err(err) => {
-        unsafe {
-          destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
+    let (final_buffer_memory, final_buffer_memory_type_index) =
+      match final_buffer_memory_alloc_result {
+        Ok(alloc) => (alloc.memory, alloc.type_index),
+        Err(err) => {
+          unsafe {
+            destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
+          }
+          return Err(err);
         }
-        return Err(err);
-      }
-    };
+      };
 
     Ok(Self {
       clear_image,
@@ -303,16 +304,33 @@ impl GPUData {
       final_buffer,
       final_buffer_size: buffer_size,
       final_buffer_memory,
+      final_buffer_memory_type_index,
     })
   }
 
+  // returns a slice representing buffer contents after all operations have completed
   // map can fail with vk::Result::ERROR_MEMORY_MAP_FAILED
   // in most cases it may be possible to try mapping again a smaller range
-  pub unsafe fn get_buffer_data<F: FnOnce(&[u8])>(
+  pub unsafe fn map_buffer_after_completion(
     &self,
     device: &ash::Device,
-    f: F,
-  ) -> Result<(), vk::Result> {
+    physical_device: &PhysicalDevice,
+  ) -> Result<&[u8], vk::Result> {
+    if !physical_device.mem_properties.memory_types[self.final_buffer_memory_type_index as usize]
+      .property_flags
+      .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
+    {
+      let range = vk::MappedMemoryRange {
+        s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
+        p_next: ptr::null(),
+        memory: self.final_buffer_memory,
+        offset: 0,
+        size: vk::WHOLE_SIZE,
+        _marker: PhantomData,
+      };
+      device.invalidate_mapped_memory_ranges(&[range])?;
+    }
+
     let ptr = device.map_memory(
       self.final_buffer_memory,
       0,
@@ -320,15 +338,11 @@ impl GPUData {
       vk::WHOLE_SIZE,
       vk::MemoryMapFlags::empty(),
     )? as *const u8;
-    let data = std::slice::from_raw_parts(ptr, self.final_buffer_size as usize);
 
-    f(data);
-
-    unsafe {
-      device.unmap_memory(self.final_buffer_memory);
-    }
-
-    Ok(())
+    Ok(std::slice::from_raw_parts(
+      ptr,
+      self.final_buffer_size as usize,
+    ))
   }
 }
 
