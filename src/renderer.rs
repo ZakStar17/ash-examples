@@ -266,7 +266,7 @@ impl GPUData {
     let final_buffer_memory_alloc_result = allocate_and_bind_memory(
       device,
       physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_COHERENT),
+      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
       &[final_buffer],
       &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
       &[],

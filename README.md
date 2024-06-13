@@ -34,13 +34,13 @@ In a program execution, a command buffer may be in one of the following states (
 
 Command buffers have the notion of being "reset", in which their state is set to `Initial`. This can be done while the command buffer is in any state that is not `Pending`. Command buffers can be reset individually if a specific flag is set during command pool creation, but more often all command buffers in a command pool will be reset at the same time as it is more optimal.
 
-Command buffers can also be "primary" or "secondary". Secondary command buffers can be recorded as standalone operations inside other primary or secondary command buffers, but can't be submitted. They are useful if you have a set commonly reused operations inside a primary command buffer that is frequently rerecorded. 
+Command buffers can also be "primary" or "secondary". Secondary command buffers can be recorded as standalone operations inside other primary or secondary command buffers, but can't be submitted. They are useful if you have a set commonly reused operations inside a primary command buffer that is frequently rerecorded.
 
 ## Buffers and Images
 
 You can use two primary objects that hold data which can be accessed by a device, these being images and buffers. Buffers are just an array of arbitrary data, while images are 1, 2 or 3 dimensional collections of pixels that have a specific format, memory layout and can consist of multiple layers.
 
-After a buffer or image is created, its memory should be allocated and bind separately. Memory allocation and management is a manual task in Vulkan but you can use additional libraries to the job for you, like the [AMD Vulkan Memory Allocator (VMA)](https://github.com/gwihlidal/vk-mem-rs). The primary rule is that you should use as few allocations as possible and try to suballocate as much as you can, unless the objects that you are suballocating have different memory requirements or the memory block hit some device limit. This is primarily for performance reasons but also because some systems will have a relatively low device limit on the number of total allocations that you are allowed to perform.
+After a buffer or image is created, its memory should be allocated and bind separately. Memory allocation and management is a manual task in Vulkan but you can use additional libraries to the job for you, like the [AMD Vulkan Memory Allocator (VMA)](https://github.com/gwihlidal/vk-mem-rs). It is better to use as few allocations as possible and try to suballocate as much as you can, unless the objects that you are suballocating have different memory requirements or the memory block hit some device limit. This is primarily for performance reasons but also because some systems will have a relatively low device limit on the number of total allocations that you are allowed to perform.
 
 As this example only creates two objects (a buffer and an image) the memory allocation is quite simple, only needing one block for the image and one for the buffer.
 
@@ -50,35 +50,33 @@ Each device will will probably contain different heaps which are physical locati
 
 The most important properties of a memory type are:
 
- - `DEVICE_LOCAL_BIT`: The most efficient for device access.
- - `HOST_VISIBLE_BIT`: Can be mapped by the host, meaning it can be written and read by the host.
- - `HOST_COHERENT_BIT`: Memory writes will always be visible to the host and reads will be always be visible to the device (more explanations bellow).
- - `HOST_CACHED_BIT`: Memory is cached on the host and potentially faster. This is not incompatible with `HOST_COHERENT_BIT`.
+- `DEVICE_LOCAL_BIT`: The most efficient for device access.
+- `HOST_VISIBLE_BIT`: Can be mapped by the host, meaning it can be written and read by the host.
+- `HOST_COHERENT_BIT`: Memory writes will always be visible to the host and reads will be always be visible to the device (more explanations bellow).
+- `HOST_CACHED_BIT`: Memory is cached on the host and potentially faster. This is not incompatible with `HOST_COHERENT_BIT`.
 
 See https://docs.vulkan.org/spec/latest/chapters/memory.html#memory-device-properties for more information. There will be always one memory type with the `DEVICE_LOCAL_BIT` and one memory type with the `HOST_VISIBLE_BIT` and `HOST_COHERENT_BIT` flags.
 
-A memory heap will usually have more than one memory type with the same properties. This is because even though objects may reside in the same heap, that may not be the case for one memory type. Querying for memory types will return them in order of increased performance (given the same characteristics), so if you have more than one memory type that is compatible with your objects you can always take the first one.
+Created objects and images may only reside in a subset of all memory types depending on which attributes they are created with. Memory heaps may contain multiple different memory types with the same property flags, but each memory type may only support a specific set of images, for example. Even so, because memory types are generally ordered by performance, choosing a compatible memory type usually requires choosing the first one that is compatible with the object for which memory is being allocated.
 
 Memory that is not device local will usually have a lot worse performance because of the speed in which data may be accessed, specially for dedicated cards. Because of this, it will probably be more efficient to write something in a host accessible staging buffer and copy it to a device local buffer than have it be accessed directly, unless the memory is only used a few times.
 
-In this example, the image will be allocated preferably to memory with the `DEVICE_LOCAL_BIT` set, and the buffer to memory with the `HOST_COHERENT_BIT`, and if possible also the `HOST_CACHED_BIT`. Even if a preferred memory type doesn't exist, the code can always fallback to a more general type that can be allocated.
+In this example, the image will be allocated preferably to memory with the `DEVICE_LOCAL_BIT` set, and the buffer to memory with the `HOST_VISIBLE`, and if possible also the `HOST_CACHED_BIT`. Even if a preferred memory type doesn't exist, the code can always fallback to a more general type that can be allocated.
 
 ## Vulkan's execution model
 
-GPUs have lots of caches and are complicated, and so is knowing when a command runs or if it has finished. When writing device commands is good to have in mind that:
+Because of GPUs caching and parallelism, having operations follow a specific order and prevent data races is quite complicated. It is good to have in mind that:
 
- - Things may always run at the same time unless is explicitly stated otherwise;
- - Even if a command writes to a block of memory and another command tries to read the same block, it may read different things because that data is residing in different caches that have to otherwise be explicitly flushed;
+- Things may always run at the same time unless explicitly stated otherwise, implicitly (for operations that don't make sense to run at the same time) or explicitly (through synchronization objects);
+- Data may reside in different caches which will have to be explicitly flushed in order to avoid data race situations and other memory conflicts, like reading from a cache that has become invalid.
 
-Making sure that things run in order is called introducing an execution dependency and making sure caches are properly flushed and visible to commands is called an memory dependencies. In order to create these dependencies three types of synchronizations objects can be used:
+Synchronization objects can be used to introduce execution dependencies to make sure things run in order and memory dependencies to make sure memory is properly visible (meaning that caches are properly flushed). Some of these objects are:
 
 - Fences: They indicate to the host that a specific set of commands has finished execution.
 - Semaphores: They introduce memory and execution dependencies between queues (including queues from different queue families). There are extended semaphores called "timeline semaphores" that can also introduce execution dependencies between the host.
-- Pipeline barriers introduce memory and execution barriers in a queue. They are special as they are recorded to command buffers and can perform additional operations like image layout transitions and queue ownership transfers.
+- Pipeline barriers introduce memory and execution barriers in a queue. They are recorded to command buffers and can perform additional operations like image layout transitions and queue ownership transfers.
 
-Graphics operations can be a bit simpler in terms of execution and memory dependencies as these are more easily managed in a render pass, which will be covered in another example. Even so, creating a render pass and doing anything more complicated than rendering a triangle will always involve some execution and memory barriers that are written in the render pass or declared by pipeline barriers.
-
-You should have a close look at https://docs.vulkan.org/spec/latest/chapters/synchronization.html as this is by far the easiest thing to mess up while writing Vulkan code (even with validation layers).
+It is important to know well how these work (https://docs.vulkan.org/spec/latest/chapters/synchronization.html) as synchronization is very easy to mess up. Validation layers will usually catch errors like data races however these can be hard to fix without knowing for certain in which order do operations occur.
 
 ### Fences
 
@@ -86,7 +84,7 @@ Fences are really simple objects that can be in an signaled or unsignaled state.
 
 ### Pipeline stages
 
-GPUs execute work in stages. These can execute in some order for graphics operations but otherwise occur simultaneously and at any order. Even though pipelines won't be used in this example, other action commands (like copying buffer contents) still execute in one or more specific pipeline stages.
+GPUs execute work in stages. These can execute in some order for some operations (like during the different stages of a graphics pipeline) but otherwise occur simultaneously and at any order. Even though pipelines won't be used in this example, other action commands (like copying buffer contents) still execute in one or more specific pipeline stages.
 
 Vulkan used to only have a 32-bit mask of possible stage flags, but with the inclusion of the synchronization2 feature, more stages and a subset of the original ones where introduced in a extended 64-bit mask. For example, Vulkan used to only have the `PIPELINE_STAGE_TRANSFER_BIT` stage that encapsulated all transfer operations, but more concrete stages were introduced like `PIPELINE_STAGE_2_COPY_BIT` for copy operations and `PIPELINE_STAGE_2_CLEAR_BIT` for clear operations.
 
@@ -157,28 +155,41 @@ device.cmd_pipeline_barrier2(command_buffer, &dependency_info(&[], &[], &[prepar
 
 `src_access_mask` and `dst_access_mask` constitute a memory dependency. Values in these masks can be something_WRITE or something_READ. They say:
 
-- If `src_access_mask` is _WRITE and `dst_access_mask` is _READ, then any memory written in any stage in `src_stage_mask` will be made available to read in all stages indicated in `dst_stage_mask`. This corresponds to doing a cache clean (a flush) and prevents read-after-write hazards.
-- If `src_access_mask` is _WRITE and `dst_access_mask` is _WRITE, then any memory written in any stage in `src_stage_mask` will be made available to be overwritten in all stages indicated in `dst_stage_mask`. This prevents write-after-write hazards (so that changes made by the first write don't get lost in the cache).
+- If `src_access_mask` is `_WRITE` and `dst_access_mask` is `_READ`, then any memory written in any stage in `src_stage_mask` will be made available to read in all stages indicated in `dst_stage_mask`. This corresponds to doing a cache clean (a flush) and prevents read-after-write hazards.
+- If `src_access_mask` is `_WRITE` and `dst_access_mask` is `_WRITE`, then any memory written in any stage in `src_stage_mask` will be made available to be overwritten in all stages indicated in `dst_stage_mask`. This prevents write-after-write hazards (so that changes made by the first write don't get lost in the cache).
 
-Basically, all combinations of memory in `src_stage_mask` + `src_access_mask` will be made available to all combinations of memory `dst_stage_mask` + `dst_access_mask`. It doesn't make sense to indicate any _READ access in `src_access_mask` as it doesn't perform any memory changes that should be made available. In this example, all memory written by "clear" commands will be visible to any "copy" command when it executes.
+Basically, all combinations of memory in `src_stage_mask` + `src_access_mask` will be made available to all combinations of memory `dst_stage_mask` + `dst_access_mask`. It doesn't make sense to indicate any `_READ` access in `src_access_mask` as it doesn't perform any memory changes that should be made available. In this example, all memory written by "clear" commands will be visible to any "copy" command when it executes.
 
-This mask barrier only affects commands that belong to the marked src_stages before the pipeline barrier and only affects the commands that belong to dst_stages after the barrier. Any other commands are free to execute in any order unless more dependencies are introduced.
-
-
-// wrong 
-`HOST_READ` and `HOST_WRITE` are a bit special type of `vk::AccessFlags2`. `HOST_READ` makes memory available to the host and `HOST_WRITE` flushes memory written by the host. These are only needed if the memory type that is operated on doesn't have the `HOST_COHERENT_BIT` and  
+This mask barrier only affects commands that belong to the marked src_stages before the pipeline barrier and only affects the commands that belong to dst_stages after the barrier, unless the other commands also depend on the commands being affected. For example, if there exists a barrier that indicates that A must happen before B, introducing another barrier which states that B must happen before C will also imply that A must happen before C, creating an execution chain.
 
 #### Buffer memory barriers
 
 Buffer memory barriers are very similar to normal memory barriers. The only difference is that they restrict the execution and memory dependencies to just a subsection of a buffer instead of all memory objects.
 
+### Queue submission and host/device memory synchronization
 
+Memory between host and device may have to be synchronized two times, once as a [Domain operation](https://docs.vulkan.org/spec/latest/appendices/memorymodel.html#memory-model-vulkan-availability-visibility) (to make memory visible to the device or host) and once as a standard memory dependency (to make memory available to commands).
 
+When communicating between host and device, data may reside in the host domain or device domain. Unless the worked memory type is marked with the `HOST_COHERENT_BIT` flag, a explicit memory domain operation must be performed to synchronize data across domains (mapping and unmapping memory does not accomplish this):
 
+- `device.flush_mapped_memory_ranges(ranges)`: Makes all writes in the host domain available to the device domain.
+- `device.invalidate_mapped_memory_ranges(ranges)`: Makes all writes in the device domain (that have been made accessible) visible to the host domain.
 
-  They say, "make all memory accessed in the 
+To actually make host memory that is already in the device's domain available to commands or make command memory writes again visible to the device's domain (note that this doesn't have anything to do with where the object resides or if the memory type has the `HOST_COHERENT_BIT` flag) special access flags `HOST_READ` and `HOST_WRITE` are used. For example:
 
+- A memory dependency with `HOST_WRITE` as `src_access_mask` and `TRANSFER_READ` as `dst_access_mask` will make host writes available to be read by transfer commands.
+- A memory dependency with `SHADER_WRITE` as `src_access_mask` and `HOST_READ` as `dst_access_mask` will make shader writes available to the device's (general) domain.
 
+Submitting a batch in a queue submission will perform an implicit memory domain operation from host to device as well as an implicit visibility operation on all host writes. This means that `device.flush_mapped_memory_ranges(ranges)` and a memory dependency with `HOST_WRITE` as `src_access_mask` and `MEMORY_READ` as `dst_access_mask` are performed automatically when submitting work to a queue on all objects that belong to the submitted device. This means that flushing memory and making memory available from the `HOST_WRITE` access flag is not necessary to make the device be able to read memory properly.
+
+In a nutshell, explicit host-device synchronization is needed when:
+
+- A batch has been submitted, and while it is in execution, new writes performed by the host must be made visible and available to the device.
+- The host must access data written by the device.
+
+This example records an execution dependency (and if necessary also uses `device.invalidate_mapped_memory_ranges(ranges)`) so that the CPU can read data that has been written by the device and save it to a file.
+
+/////
 
 The application can be resumed by the following steps:
 
