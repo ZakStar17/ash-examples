@@ -10,13 +10,15 @@ Commands rundown:
 - Copy the image contents to the buffer.
 - Save the buffer contents to a file.
 
-This may seem quite simple, however it already requires pipeline barriers to synchronize operations like image layout transitions and ownership transfer between queues.
+This may seem quite simple, however it requires knowledge about memory and command synchronization in Vulkan and setting operations like image layout transitions and ownership transfer between queues.
+
+After the image contents are acquired in RAM, the file saving process is done using the [image crate](https://docs.rs/image/latest/image/), as this operation is not important to this example.
 
 You can run this example with:
 
 `RUST_LOG=debug cargo run --bin compute_image_clear`
 
-# Overview
+# Theory overview
 
 ## Command buffers and command pools
 
@@ -43,6 +45,14 @@ You can use two primary objects that hold data which can be accessed by a device
 After a buffer or image is created, its memory should be allocated and bind separately. Memory allocation and management is a manual task in Vulkan but you can use additional libraries to the job for you, like the [AMD Vulkan Memory Allocator (VMA)](https://github.com/gwihlidal/vk-mem-rs). It is better to use as few allocations as possible and try to suballocate as much as you can, unless the objects that you are suballocating have different memory requirements or the memory block hit some device limit. This is primarily for performance reasons but also because some systems will have a relatively low device limit on the number of total allocations that you are allowed to perform.
 
 As this example only creates two objects (a buffer and an image) the memory allocation is quite simple, only needing one block for the image and one for the buffer.
+
+### Image layouts
+
+Images are supported in opaque memory layouts defined by the implementation (driver). A command recorded in a command buffer can only operate on some specific set of image layouts and so an image layout may have to be transitioned multiple times in a command buffer.
+
+Images can be created in the `UNDEFINED` (undefined contents) or `PREINITIALIZED` (pre-written by the host) layouts, and after that the layout will have to be transitioned to one that is optimal and can be operated by the next command.
+
+There exists a `GENERAL` layout in which image contents are layed out linearly (row by row for 2D images). Most commands can operate on this layout, however won't be as efficient as transitioning the layout to a more optimal and using that one. In case the image contents are to be read by the host, it is generally better to copy the image contents to a buffer and have the host access the buffer instead.
 
 ## Memory heaps and memory types
 
@@ -143,7 +153,7 @@ let copy_after_clear = vk::MemoryBarrier2 {
     dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
     src_stage_mask: vk::PipelineStageFlags2::CLEAR,
     dst_stage_mask: vk::PipelineStageFlags2::COPY,
-    ...
+    ..vk::MemoryBarrier2::default(),
 };
 // dependency_info() is a helper function that creates a vk::DependencyInfo. See src/command_pools/mod.rs
 device.cmd_pipeline_barrier2(command_buffer, &dependency_info(&[], &[], &[prepare_image]));
@@ -162,11 +172,60 @@ Basically, all combinations of memory in `src_stage_mask` + `src_access_mask` wi
 
 This mask barrier only affects commands that belong to the marked src_stages before the pipeline barrier and only affects the commands that belong to dst_stages after the barrier, unless the other commands also depend on the commands being affected. For example, if there exists a barrier that indicates that A must happen before B, introducing another barrier which states that B must happen before C will also imply that A must happen before C, creating an execution chain.
 
-#### Buffer memory barriers
+#### Buffer and image memory barriers
 
-Buffer memory barriers are very similar to normal memory barriers. The only difference is that they restrict the execution and memory dependencies to just a subsection of a buffer instead of all memory objects.
+Buffer and image memory barriers work like normal barriers but restrict the memory dependency to only a region of a buffer or a subresource (aspects and layers) of an image. 
 
-### Queue submission and host/device memory synchronization
+These memory barriers can also perform [queue ownership transfers](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers) (see bellow) and in case of images can also do [image layout](https://docs.vulkan.org/spec/latest/chapters/resources.html#resources-image-layouts) transitions.
+
+Here is an example of an image barrier that also performs a layout transition (which is also used in this example):
+
+```rust
+// select only the color aspect of an image with one single layer and no mipmap levels
+let subresource_range = vk::ImageSubresourceRange {
+    aspect_mask: vk::ImageAspectFlags::COLOR,
+    base_mip_level: 0,
+    level_count: 1,
+    base_array_layer: 0,
+    layer_count: 1,
+};
+let prepare_image = vk::ImageMemoryBarrier2 {
+    src_access_mask: vk::AccessFlags2::NONE,
+    dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+    src_stage_mask: vk::PipelineStageFlags2::NONE,
+    dst_stage_mask: vk::PipelineStageFlags2::CLEAR,
+    old_layout: vk::ImageLayout::UNDEFINED,
+    new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+    image,
+    subresource_range,
+    ..vk::ImageMemoryBarrier2::default(),
+};
+device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[], &[prepare_image]));
+
+// clear commands can now properly use the TRANSFER_DST_OPTIMAL layout
+```
+
+This image memory barrier is equivalent to this memory barrier:
+
+```rust
+let non_image_specific_barrier = vk::MemoryBarrier2 {
+    src_access_mask: vk::AccessFlags2::NONE,
+    dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+    src_stage_mask: vk::PipelineStageFlags2::NONE,
+    dst_stage_mask: vk::PipelineStageFlags2::CLEAR,
+    ..vk::MemoryBarrier2::default(),
+};
+```
+
+However, it only affects the image and also performs an layout transition from `UNDEFINED` to `TRANSFER_DST_OPTIMAL`. Having `src_stage_mask` be `NONE` doesn't create any dependency between commands that may happen before (which would be useless in a standard memory barrier) but, because this barrier also performs an layout transition, it makes sense to have it so that the transition completes before any "clear" commands and so that the new layout is properly made available.
+
+If a `vk::ImageMemoryBarrier2` is used without a image layout transfer, `old_layout` and `new_layout` must be equal and set to the correct current image layout.
+
+`src_queue_family_index` and `dst_queue_family_index` are used for queue ownership transfers and should be set to `vk::QUEUE_FAMILY_IGNORED` if no ownership transfer operation is performed.
+
+## Queue submission memory guarantees and host/device memory synchronization
 
 Memory between host and device may have to be synchronized two times, once as a [Domain operation](https://docs.vulkan.org/spec/latest/appendices/memorymodel.html#memory-model-vulkan-availability-visibility) (to make memory visible to the device or host) and once as a standard memory dependency (to make memory available to commands).
 
@@ -189,26 +248,59 @@ In a nutshell, explicit host-device synchronization is needed when:
 
 This example records an execution dependency (and if necessary also uses `device.invalidate_mapped_memory_ranges(ranges)`) so that the CPU can read data that has been written by the device and save it to a file.
 
-/////
+## Queue ownership transfers
 
-The application can be resumed by the following steps:
+When objects are created without `vk::SharingMode::EXCLUSIVE`, reading data from a buffer range (a section of a buffer) or an image across different queue families returns undefined contents unless memory ownership is properly transferred.
 
-- Perform initialization: Create an instance, select the physical device, create a logical device, allocate command buffers (one for transfer and one for compute), create an image and a buffer and allocate memory for them.
-- Record all the necessary commands to the command buffers. This involves setting appropriate execution and memory barriers.
-- Submit the recorded work and wait for it to complete.
-- Map buffer contents, access and save them to a file. This is performed with the help of the [image crate](https://docs.rs/image/latest/image/).
+Buffers and images can have different memory layouts across queue family ownerships. Because of that, if for say that you have one section of a buffer, its contents can only be read properly by queues belonging to one queue family at a time, which is said to own the backing memory.
 
-## Initialization
+There is no point of transferring ownerships if the memory contents that you are working with can be discarded or be undefined, and performing queue ownerships transfers in this case is harmful. For example, say there is a case where a queue that only performs compute operations writes to an image and later the image is transferred to a queue that performs graphics operations. If the image has to be written again by the compute queue, there shouldn't be any ownership transfer between the graphics queue back to the compute queue unless, of course, the compute queue needs to read the image contents again after they been through the graphics queue.
 
-### Device selection
+Ownership transfer operations occur in two distinct pairs:
 
-New checks were added to check if the device supports the required image format and dimensions. In a more complete application it would be more common to fallback to using other formats and maybe subdivide the target image until it is supported.
+ - An release operation from the source queue family;
+ - An acquire operation from the destination queue family.
 
-### Image and buffer creation
+An acquire should always occur after an release in correct order and not at the same time. To accomplish this, it is easy to use a semaphore to define an dependency across the two queues.
 
-The image and buffer are created with sharing mode set to `vk::SharingMode::EXCLUSIVE`, meaning their ownership has to be managed by the command buffers.
+Both of the release and acquire operations are defined using pipeline barriers. The release pipeline barrier is written to the command buffer of the queue that first owns the object of which ownership is being transferred and the acquire pipeline barrier is written to the command buffer belonging to the target queue family.
 
-The two objects are allocated separately and as a whole. The created image will have its memory preferably allocated with device local flags, while the buffer's memory will always have the `HOST_VISIBLE` flag as it is necessary for the CPU to access the underlying memory.
+For the next example, let FAMILY_A be the queue family that currently owns an image, and FAMILY_B be the queue family that the image is being transferred onto.
+
+Both release and acquire barriers will have `src_queue_family_index` set to the FAMILY_A's index and `dst_queue_family_index` FAMILY_B's index. As for `subresource_range`, `old_layout` and `new_layout` must be equal between the two barriers, same thing for `offset` and `size` in buffer memory barriers. It is okay to perform an image layout transition during a queue ownership transfer, which would happen in between the release and acquire operations.
+
+For release, set `dst_access_mask` to `NONE`, and no commands that use the image should occur after the release operation in the source queue (as the image contents will be undefined). The `dst_stage_mask` can be set to anything supported by the queue that aids setting the execution dependency between queues (using for example a semaphore).
+
+```rust
+let release = vk::ImageMemoryBarrier2 {
+    ...
+    dst_stage_mask: vk::PipelineStageFlags2::TRANSFER, // to semaphore
+    dst_access_mask: vk::AccessFlags2::NONE,           // NONE for ownership release
+    src_queue_family_index: family_a_index,            // FAMILY_A
+    dst_queue_family_index: family_b_index,            // FAMILY_B
+    ...
+};
+```
+For acquire, set `src_access_mask` to `NONE`, and no commands that use the image should occur before the acquire operation in the source queue (as the image contents will be undefined). The `dst_stage_mask` should be set to the corresponding `dst_stage_mask` from the release operation or any other necessary to complete the memory dependency.
+
+```rust
+let src_acquire = vk::ImageMemoryBarrier2 {
+    ...
+    src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // from semaphore
+    src_access_mask: vk::AccessFlags2::NONE,           // NONE for ownership acquire
+    src_queue_family_index: family_a_index,            // FAMILY_A
+    dst_queue_family_index: family_b_index,            // FAMILY_B
+    ...
+};
+```
+
+# Example rundown
+
+### Device selection and object creations
+
+This example uses a common image format, namely `R8G8B8A8_UNORM`, which stores texel data in RGBA format with an normalized 8 bit value for each chanel. Even so, device selection checks if this format is supported with the required image format and dimensions. In a more complete application it would be more common to fallback to using other formats or, for example, divide images into smaller ones that are supported.
+
+// todo: explain each command buffer operations and the semaphore
 
 ### Command buffer pools
 
