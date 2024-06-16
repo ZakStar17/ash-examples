@@ -54,6 +54,12 @@ Images can be created in the `UNDEFINED` (undefined contents) or `PREINITIALIZED
 
 There exists a `GENERAL` layout in which image contents are layed out linearly (row by row for 2D images). Most commands can operate on this layout, however won't be as efficient as transitioning the layout to a more optimal and using that one. In case the image contents are to be read by the host, it is generally better to copy the image contents to a buffer and have the host access the buffer instead.
 
+### Image formats
+
+Formats define what information is stored in each texel. Only some formats may be supported in an implementation and some must be enabled with extensions.
+
+This example uses a common image format, namely `R8G8B8A8_UNORM`, which stores texel data in RGBA format with an normalized 8 bit value for each channel. Even so, it is good to have device selection check if this format is supported with the possible image usages and dimensions. In a case the format is not supported, the physical device is skipped in the selection process, but in a more complete application it would be more common to fallback to using other formats.
+
 ## Memory heaps and memory types
 
 Each device will will probably contain different heaps which are physical locations like RAM and GPU local memory. Each of these heaps will contain one or more memory types which are logical locations with specific characteristics. An resource like an image may only reside in specific memory types because of its internal structure, which are queried after the resource is created. You can query the size of a heap but not more than that, so allocations may revolve to some trial and error if you are trying to allocate a very big memory block.
@@ -174,7 +180,7 @@ This mask barrier only affects commands that belong to the marked src_stages bef
 
 #### Buffer and image memory barriers
 
-Buffer and image memory barriers work like normal barriers but restrict the memory dependency to only a region of a buffer or a subresource (aspects and layers) of an image. 
+Buffer and image memory barriers work like normal barriers but restrict the memory dependency to only a region of a buffer or a subresource (aspects and layers) of an image.
 
 These memory barriers can also perform [queue ownership transfers](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-queue-transfers) (see bellow) and in case of images can also do [image layout](https://docs.vulkan.org/spec/latest/chapters/resources.html#resources-image-layouts) transitions.
 
@@ -258,8 +264,8 @@ There is no point of transferring ownerships if the memory contents that you are
 
 Ownership transfer operations occur in two distinct pairs:
 
- - An release operation from the source queue family;
- - An acquire operation from the destination queue family.
+- An release operation from the source queue family;
+- An acquire operation from the destination queue family.
 
 An acquire should always occur after an release in correct order and not at the same time. To accomplish this, it is easy to use a semaphore to define an dependency across the two queues.
 
@@ -281,6 +287,7 @@ let release = vk::ImageMemoryBarrier2 {
     ...
 };
 ```
+
 For acquire, set `src_access_mask` to `NONE`, and no commands that use the image should occur before the acquire operation in the source queue (as the image contents will be undefined). The `dst_stage_mask` should be set to the corresponding `dst_stage_mask` from the release operation or any other necessary to complete the memory dependency.
 
 ```rust
@@ -296,41 +303,56 @@ let src_acquire = vk::ImageMemoryBarrier2 {
 
 # Example rundown
 
-### Device selection and object creations
+This example uses two queues from two different queue families, where one family only supports transfer operations and the other supports compute. The purpose is that the image clear operation is executed in the compute queue, while the copy from image to buffer operation is executed in the transfer queue.
 
-This example uses a common image format, namely `R8G8B8A8_UNORM`, which stores texel data in RGBA format with an normalized 8 bit value for each chanel. Even so, device selection checks if this format is supported with the required image format and dimensions. In a more complete application it would be more common to fallback to using other formats or, for example, divide images into smaller ones that are supported.
+A command pool must belong to only one queue family, so there has to be one pool for compute and one for transfer, each containing one command buffer.
 
-// todo: explain each command buffer operations and the semaphore
+### Recording the command buffers
 
-### Command buffer pools
+In the compute buffer (`src/command_pools/compute.rs`):
 
-The command buffers are each allocated in a separate pool, as they use different queues.
+- Prepare the image, switching its layout from `UNDEFINED` to `TRANSFER_DST_OPTIMAL` (the best layout for the next command). Make sure it completes before `CLEAR`, which is the pipeline stage of the next "clear image to a specific color" command, and memory is properly available.
 
-## Command buffer recording
+- Execute the clear command. It takes a color value, which here is a constant defined in `main.rs`.
 
-The compute command buffer will execute first and will be immediately followed by the transfer command buffer.
+- Transition the image layout again, this time from `TRANSFER_DST_OPTIMAL` to `TRANSFER_SRC_OPTIMAL`. If the compute queue and the transfer queue are different (they can be the same if the device doesn't support separate compute and transfer queue families) perform a queue ownership release between the compute queue family and the transfer queue family at the same time as the layout transition.
 
-Because the operations in this example have to execute linearly, there has to exist an execution barrier in order for commands to not run at the same time and adequate memory barriers to make sure written memory from a command is visible to a subsequent command.
+In the transfer buffer (`src/command_pools/transfer.rs`):
 
-Compute commands:
+- If compute and transfer queues are different, perform a queue ownership acquire and complete the queue ownership operation.
 
-- Execute an image memory barrier, changing the image layout to `vk::ImageLayout::TRANSFER_DST_OPTIMAL`.
-- Execute `cmd_clear_color_image`.
-- Execute another image memory barrier, performing a ownership transfer release on the image (from the compute to the transfer queue) and at the same time changing its layout to `vk::ImageLayout::TRANSFER_SRC_OPTIMAL`.
+- Make a full image to buffer copy.
 
-Transfer commands:
+- Flush buffer contents to host (they will be then fully available in the device domain).
 
-- Execute an image memory barrier, acquiring the image with its contents intact from the compute queue. This operation has to match the release barrier from the compute command buffer, meaning it also has to contain the image layout change.
-- Execute `cmd_copy_image_to_buffer`.
-- Execute an image memory barrier to flush the resulting buffer contents to the host, so that they can be accessed later.
+### Submitting the batches
 
-This example uses Vulkan 1.3 as well as the synchronization 2 feature, so each barrier object contains a execution scope (src/dst stage) as well as a memory scope (src/dst access), and enables the use of more synchronization flags.
+In order to synchronize the commands between the command buffers and make sure the release and acquire operations run in order, a semaphore is used. When submitting the batches:
 
-## Work submission
+- The compute batch signals this semaphore when all commands in a specific stage finish. Here it is set to `TRANSFER`, which is also the stage indicated in `dst_stage_mask` on the release operation in the compute buffer.
 
-Two submissions are performed, one for transfer and one for compute. Because these have operations that need to be synchronized between the two queues, a (binary) semaphore is created and used in order to guarantee execution order.
+- The transfer batch makes sure that all commands that are set to execute after `TRANSFER` only start after the semaphore is signaled. This includes the acquire operation and the copy (in case that the queue families are equal and the acquire is not executed).
 
-A fence is created and made to wait upon the second submission, which once finishes allows reading data from the buffer.
+A fence is created in order to wait on the transfer batch. There is no need to have another fence to wait on the compute batch, as the two batches are already synchronized between each other.
+
+### Mapping and reading buffer contents
+
+In order to actually read buffer contents, they have to be mapped first. This makes the contents accessible in virtual memory through a pointer. Buffers can remain mapped across batch submissions and the only reason to unmap a buffer is to get back the virtual space, which can help in case that other map operations start failing. It is an error to map an memory object that is already mapped and freeing a memory object implicitly unmaps its memory.
+
+Before the map operation, the application also invalidates the range of memory about to mapped if the memory type doesn't have the `HOST_COHERENT` flag, in order to make memory from the device domain visible to the host. There is no difference if you do this when the buffer is already mapped, and mapping doesn't automatically perform the visibility operation.
+
+After getting the pointer, the only thing that's needed is to transform it into a slice and send it to the `image::save_buffer` function.
+
+```rust
+let data = std::slice::from_raw_parts(ptr, buffer_size);
+image::save_buffer(
+    IMAGE_SAVE_PATH,
+    data,
+    IMAGE_WIDTH,
+    IMAGE_HEIGHT,
+    IMAGE_SAVE_TYPE,
+);
+```
 
 ## Cargo features
 
