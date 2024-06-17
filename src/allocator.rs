@@ -10,8 +10,8 @@ use crate::{
 #[allow(dead_code)]
 pub struct PackedAllocation {
   pub memory: vk::DeviceMemory,
-  pub memory_size: u64,
-  pub memory_type: u32,
+  pub size: u64,
+  pub type_index: u32,
   pub offsets: AllocationOffsets,
 }
 
@@ -48,9 +48,12 @@ pub fn allocate_and_bind_memory(
     .map(|mem_requirements| {
       mem_types_bitmask &= mem_requirements.memory_type_bits;
 
+      debug_assert!(mem_requirements.alignment % 2 == 0);
+
       // align internal offset to follow memory requirements
       let mut offset = total_size;
-      let align_error = offset % mem_requirements.alignment;
+      // strip right-most <alignment> bits from offset (alignment is always a power of 2)
+      let align_error = offset & (mem_requirements.alignment - 1);
       if align_error > 0 {
         offset += mem_requirements.alignment - align_error;
       }
@@ -109,8 +112,8 @@ pub fn allocate_and_bind_memory(
 
         return Ok(PackedAllocation {
           memory,
-          memory_size: total_size,
-          memory_type: mem_type_i as u32,
+          size: total_size,
+          type_index: mem_type_i as u32,
           offsets,
         });
       }

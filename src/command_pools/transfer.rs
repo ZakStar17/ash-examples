@@ -104,7 +104,8 @@ impl TransferCommandBufferPool {
       &[copy_region],
     );
 
-    // flush memory to host
+    // flush memory to host (device writes are not automatically made available)
+    // having the buffer reside in memory marked as coherent is not relevant to domain operations
     let flush_host = vk::BufferMemoryBarrier2 {
       s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
       p_next: ptr::null(),

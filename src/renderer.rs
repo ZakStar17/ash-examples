@@ -1,8 +1,5 @@
 use ash::vk;
-use std::{
-  marker::PhantomData,
-  ptr::{self},
-};
+use std::{marker::PhantomData, ptr};
 
 use crate::{
   command_pools::CommandPools,
@@ -221,8 +218,10 @@ impl Renderer {
     Ok(())
   }
 
-  pub unsafe fn get_resulting_data<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), vk::Result> {
-    self.gpu_data.get_buffer_data(&self.device, f)
+  pub unsafe fn get_resulting_data(&self) -> Result<&[u8], vk::Result> {
+    self
+      .gpu_data
+      .map_buffer_after_completion(&self.device, &self.physical_device)
   }
 }
 

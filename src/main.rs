@@ -78,22 +78,19 @@ fn initialize_and_run() -> Result<(), String> {
   println!("GPU finished!");
 
   println!("Saving file...");
-  let mut save_result = Ok(());
-  unsafe {
-    renderer.get_resulting_data(|data| {
-      save_result = image::save_buffer(
-        IMAGE_SAVE_PATH,
-        data,
-        IMAGE_WIDTH,
-        IMAGE_HEIGHT,
-        IMAGE_SAVE_TYPE,
-      );
-    })
-  }
-  .map_err(|err| format!("Failed to get resulting data: {}", err))?;
-  if let Err(err) = save_result {
-    return Err(format!("Failed to save image: {}", err));
-  }
+  let data = unsafe {
+    renderer
+      .get_resulting_data()
+      .map_err(|err| format!("Failed to get resulting data: {}", err))?
+  };
+  image::save_buffer(
+    IMAGE_SAVE_PATH,
+    data,
+    IMAGE_WIDTH,
+    IMAGE_HEIGHT,
+    IMAGE_SAVE_TYPE,
+  )
+  .map_err(|err| format!("Failed to save image: {}", err))?;
 
   Ok(())
 }

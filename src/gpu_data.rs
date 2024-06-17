@@ -8,7 +8,7 @@ use std::{
 use ash::vk;
 
 use crate::{
-  allocator::allocate_and_bind_memory,
+  allocator::{allocate_and_bind_memory, PackedAllocation},
   command_pools::TransferCommandBufferPool,
   create_objs::{create_buffer, create_fence, create_image, create_image_view},
   device_destroyable::{destroy, DeviceManuallyDestroyed},
@@ -38,6 +38,7 @@ pub struct FinalBuffer {
   pub buffer: vk::Buffer,
   memory: vk::DeviceMemory,
   size: u64,
+  memory_type_index: u32,
 }
 
 pub struct GPUData {
@@ -87,7 +88,7 @@ impl GPUData {
       index_buffer,
     )
     .on_err(|_| destroy_created_objects())?;
-    let final_buffer_memory = Self::allocate_host_memory(device, physical_device, final_buffer)
+    let final_buffer_alloc = Self::allocate_host_memory(device, physical_device, final_buffer)
       .on_err(|_| unsafe {
         destroy_created_objects();
 
@@ -101,7 +102,7 @@ impl GPUData {
       if triangle_model_memory != triangle_image_memory {
         triangle_model_memory.destroy_self(device);
       }
-      final_buffer_memory.destroy_self(device);
+      final_buffer_alloc.memory.destroy_self(device);
     };
 
     let triangle_image = TriangleImage::new(
@@ -116,7 +117,12 @@ impl GPUData {
       free_memories();
     })?;
     let triangle_model = TriangleModelData::new(vertex_buffer, index_buffer, triangle_model_memory);
-    let final_buffer = FinalBuffer::new(final_buffer, final_buffer_memory, buffer_size);
+    let final_buffer = FinalBuffer::new(
+      final_buffer,
+      final_buffer_alloc.memory,
+      buffer_size,
+      final_buffer_alloc.type_index,
+    );
 
     Ok(Self {
       triangle_image,
@@ -221,7 +227,7 @@ impl GPUData {
     device: &ash::Device,
     physical_device: &PhysicalDevice,
     final_buffer: vk::Buffer,
-  ) -> Result<vk::DeviceMemory, AllocationError> {
+  ) -> Result<PackedAllocation, AllocationError> {
     let final_buffer_memory_requirements =
       unsafe { device.get_buffer_memory_requirements(final_buffer) };
 
@@ -238,7 +244,7 @@ impl GPUData {
       ) {
         Ok(alloc) => {
           log::debug!("Final buffer memory allocated successfully");
-          alloc.memory
+          alloc
         }
         Err(_) => {
           let alloc = allocate_and_bind_memory(
@@ -251,7 +257,7 @@ impl GPUData {
             &[],
           )?;
           log::debug!("Final buffer memory allocated suboptimally");
-          alloc.memory
+          alloc
         }
       },
     )
@@ -310,7 +316,7 @@ impl GPUData {
         index_size as usize,
       );
 
-      let mem_type = physical_device.get_memory_type(staging_alloc.memory_type);
+      let mem_type = physical_device.get_memory_type(staging_alloc.type_index);
       if !mem_type
         .property_flags
         .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
@@ -399,13 +405,29 @@ impl GPUData {
     Ok(())
   }
 
+  // returns a slice representing buffer contents after all operations have completed
   // map can fail with vk::Result::ERROR_MEMORY_MAP_FAILED
   // in most cases it may be possible to try mapping again a smaller range
-  pub unsafe fn get_buffer_data<F: FnOnce(&[u8])>(
+  pub unsafe fn map_buffer_after_completion(
     &self,
     device: &ash::Device,
-    f: F,
-  ) -> Result<(), vk::Result> {
+    physical_device: &PhysicalDevice,
+  ) -> Result<&[u8], vk::Result> {
+    if !physical_device.mem_properties.memory_types[self.final_buffer.memory_type_index as usize]
+      .property_flags
+      .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
+    {
+      let range = vk::MappedMemoryRange {
+        s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
+        p_next: ptr::null(),
+        memory: self.final_buffer.memory,
+        offset: 0,
+        size: vk::WHOLE_SIZE,
+        _marker: PhantomData,
+      };
+      device.invalidate_mapped_memory_ranges(&[range])?;
+    }
+
     let ptr = device.map_memory(
       self.final_buffer.memory,
       0,
@@ -413,15 +435,11 @@ impl GPUData {
       vk::WHOLE_SIZE,
       vk::MemoryMapFlags::empty(),
     )? as *const u8;
-    let data = std::slice::from_raw_parts(ptr, self.final_buffer.size as usize);
 
-    f(data);
-
-    unsafe {
-      device.unmap_memory(self.final_buffer.memory);
-    }
-
-    Ok(())
+    Ok(std::slice::from_raw_parts(
+      ptr,
+      self.final_buffer.size as usize,
+    ))
   }
 }
 
@@ -487,11 +505,17 @@ impl DeviceManuallyDestroyed for TriangleModelData {
 }
 
 impl FinalBuffer {
-  pub fn new(buffer: vk::Buffer, memory: vk::DeviceMemory, size: u64) -> Self {
+  pub fn new(
+    buffer: vk::Buffer,
+    memory: vk::DeviceMemory,
+    size: u64,
+    memory_type_index: u32,
+  ) -> Self {
     Self {
       buffer,
       memory,
       size,
+      memory_type_index,
     }
   }
 }
