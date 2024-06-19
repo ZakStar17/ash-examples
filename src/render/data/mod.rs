@@ -260,7 +260,7 @@ impl GPUData {
 
     Ok(StagingMemoryAllocation {
       memory: allocation.memory,
-      memory_type: allocation.memory_type,
+      memory_type: allocation.type_index,
       texture_offset: *offsets_iter.next().unwrap(),
       vertex_offset: *offsets_iter.next().unwrap(),
       index_offset: *offsets_iter.next().unwrap(),
