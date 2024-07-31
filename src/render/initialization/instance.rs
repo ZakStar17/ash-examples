@@ -1,4 +1,5 @@
 use ash::vk;
+use itertools::Itertools;
 use raw_window_handle::DisplayHandle;
 use std::{
   ffi::{c_char, c_void, CStr},
@@ -141,6 +142,13 @@ fn create_instance_checked(
 ) -> Result<ash::Instance, InstanceCreationError> {
   check_api_version(entry)?;
 
+  log::debug!(
+    "[Instance creation] Requested Instance Extensions: {}",
+    extensions
+      .iter()
+      .map(|ptr| format!("{:?}", unsafe { CStr::from_ptr(*ptr) }))
+      .join(", "),
+  );
   // check that all extensions are available
   {
     let available = unsafe { entry.enumerate_instance_extension_properties(None) }
@@ -159,6 +167,13 @@ fn create_instance_checked(
     }
   };
 
+  log::debug!(
+    "[Instance creation] Requested Instance Layers: {}",
+    layers
+      .iter()
+      .map(|ptr| format!("{:?}", unsafe { CStr::from_ptr(*ptr) }))
+      .join(", "),
+  );
   // check that all layers are available
   {
     let available = unsafe { entry.enumerate_instance_layer_properties() }
@@ -183,7 +198,7 @@ fn create_instance_checked(
     .enabled_layer_names(layers);
   create_info.p_next = p_next;
 
-  log::debug!("Creating Instance");
+  log::debug!("[Instance creation] Creating Instance");
   let instance: ash::Instance =
     unsafe { entry.create_instance(&create_info, None) }.map_err(|err| match err {
       vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
@@ -197,5 +212,6 @@ fn create_instance_checked(
       _ => panic!(),
     })?;
 
+  log::debug!("[Instance creation] Successfully created the Vulkan Instance");
   Ok(instance)
 }

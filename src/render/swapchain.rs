@@ -470,6 +470,12 @@ fn select_swapchain_present_mode(
     return Ok(vk::PresentModeKHR::IMMEDIATE);
   }
 
+  if PREFERRED_PRESENTATION_METHOD == vk::PresentModeKHR::IMMEDIATE
+    && present_modes.contains(&vk::PresentModeKHR::MAILBOX)
+  {
+    return Ok(vk::PresentModeKHR::MAILBOX);
+  }
+
   // required to be available
   Ok(vk::PresentModeKHR::FIFO)
 }
