@@ -11,7 +11,7 @@ mod validation_layers;
 use ash::vk;
 use std::ffi::CStr;
 
-use crate::device::{create_logical_device, PhysicalDevice};
+use crate::device::{Device, PhysicalDevice};
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
@@ -31,8 +31,6 @@ const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 // somewhat arbitrary
 static APPLICATION_NAME: &CStr = c"Vulkan Device Creation";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
-
-static REQUIRED_DEVICE_EXTENSIONS: [&CStr; 0] = [];
 
 fn main() {
   env_logger::init();
@@ -68,7 +66,7 @@ fn main() {
     }
   };
 
-  let (logical_device, _queues) = match create_logical_device(&instance, &physical_device) {
+  let (logical_device, _queues) = match Device::create(&instance, &physical_device) {
     Ok(v) => v,
     Err(err) => {
       log::error!("Failed to create an logical device: {}", err);
