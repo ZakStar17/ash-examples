@@ -5,7 +5,7 @@ use crate::{
   allocator::allocate_and_bind_memory,
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
-  device::{create_logical_device, PhysicalDevice, Queues},
+  device::{Device, PhysicalDevice, Queues},
   device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
   entry,
   errors::{AllocationError, InitializationError, OutOfMemoryError},
@@ -19,7 +19,7 @@ pub struct Renderer {
   #[cfg(feature = "vl")]
   debug_utils: crate::validation_layers::DebugUtils,
   physical_device: PhysicalDevice,
-  device: ash::Device,
+  device: Device,
   queues: Queues,
   command_pools: CommandPools,
   gpu_data: GPUData,
@@ -64,7 +64,7 @@ impl Renderer {
       };
 
     let (device, queues) =
-      create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
+      Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
 
     let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
       destroy!(&device);
