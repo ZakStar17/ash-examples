@@ -206,7 +206,7 @@ impl Drop for Renderer {
 
 impl GPUData {
   pub fn new(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     image_width: u32,
     image_height: u32,
@@ -229,6 +229,7 @@ impl GPUData {
       &[],
       &[clear_image],
       &[unsafe { device.get_image_memory_requirements(clear_image) }],
+      0.3,
     )
     .or_else(|err| {
       log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
@@ -240,6 +241,7 @@ impl GPUData {
         &[],
         &[clear_image],
         &[unsafe { device.get_image_memory_requirements(clear_image) }],
+        0.3,
       )
     });
     let clear_image_memory = match clear_image_memory_alloc_result {
@@ -271,6 +273,7 @@ impl GPUData {
       &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
       &[],
       &[],
+      0.3,
     )
     .or_else(|err| {
       log::warn!(
@@ -285,6 +288,7 @@ impl GPUData {
         &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
         &[],
         &[],
+        0.3,
       )
     });
     let (final_buffer_memory, final_buffer_memory_type_index) =

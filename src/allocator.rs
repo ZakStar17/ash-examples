@@ -1,9 +1,9 @@
-use std::{marker::PhantomData, ptr};
+use std::{ffi::c_void, marker::PhantomData, ptr};
 
 use ash::vk;
 
 use crate::{
-  device::PhysicalDevice,
+  device::{Device, PhysicalDevice},
   errors::{AllocationError, OutOfMemoryError},
 };
 
@@ -31,14 +31,16 @@ impl AllocationOffsets {
 }
 
 // allocates vk::DeviceMemory and binds buffers and images to it with correct alignments
+// memory frequently written by the GPU should require higher priority
 pub fn allocate_and_bind_memory(
-  device: &ash::Device,
+  device: &Device,
   physical_device: &PhysicalDevice,
   memory_properties: vk::MemoryPropertyFlags,
   buffers: &[vk::Buffer],
   buffers_memory_requirements: &[vk::MemoryRequirements],
   images: &[vk::Image],
   images_memory_requirements: &[vk::MemoryRequirements],
+  priority: f32, // only set if VK_EXT_memory_priority is enabled
 ) -> Result<PackedAllocation, AllocationError> {
   let mut mem_types_bitmask = u32::MAX;
   let mut total_size = 0;
@@ -84,15 +86,29 @@ pub fn allocate_and_bind_memory(
       continue;
     }
 
-    let allocate_info = vk::MemoryAllocateInfo {
+    let mut allocate_info = vk::MemoryAllocateInfo {
       s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
       p_next: ptr::null(),
       allocation_size: total_size,
       memory_type_index: mem_type_i as u32,
       _marker: PhantomData,
     };
+
+    if device.enabled_extensions.memory_priority {
+      let priority_info = vk::MemoryPriorityAllocateInfoEXT::default().priority(priority);
+      allocate_info.p_next =
+        &priority_info as *const vk::MemoryPriorityAllocateInfoEXT as *const c_void;
+    }
     match unsafe { device.allocate_memory(&allocate_info, None) } {
       Ok(memory) => {
+        if let Some(loader) = device.pageable_device_local_memory_loader.as_ref() {
+          unsafe {
+            // set manually priority as well for the  pageable_device_local_memory extension
+            // only raw function pointers for now
+            (loader.fp().set_device_memory_priority_ext)(device.handle(), memory, priority);
+          }
+        }
+
         for (&buffer, &offset) in buffers.iter().zip(offsets.buffer_offsets().iter()) {
           if let Err(vk_err) = unsafe { device.bind_buffer_memory(buffer, memory, offset) } {
             unsafe {

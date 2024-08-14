@@ -13,6 +13,8 @@ use super::{EnabledDeviceExtensions, PhysicalDevice, Queues};
 pub struct Device {
   pub inner: ash::Device,
   pub enabled_extensions: EnabledDeviceExtensions,
+  // contains ash's extension loader if pageable_device_local_memory is enabled
+  pub pageable_device_local_memory_loader: Option<ash::ext::pageable_device_local_memory::Device>,
 }
 
 impl Deref for Device {
@@ -74,10 +76,19 @@ impl Device {
     log::debug!("Retrieving queues");
     let queues = unsafe { Queues::retrieve(&device, &physical_device.queue_families) };
 
+    let pageable_device_local_memory_loader = if to_enable_extensions.pageable_device_local_memory {
+      Some(ash::ext::pageable_device_local_memory::Device::new(
+        instance, &device,
+      ))
+    } else {
+      None
+    };
+
     Ok((
       Self {
         inner: device,
         enabled_extensions: to_enable_extensions,
+        pageable_device_local_memory_loader,
       },
       queues,
     ))

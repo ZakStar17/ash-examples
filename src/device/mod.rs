@@ -5,7 +5,7 @@ mod queues;
 mod vendor;
 
 use std::{
-  ffi::{c_void, CStr},
+  ffi::c_void,
   mem::MaybeUninit,
   ptr::{self, addr_of_mut},
 };
@@ -30,13 +30,10 @@ const REQUIRED_IMAGE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags::TRANSFER_DST
 );
 
-static MEMORY_PRIORITY: &CStr = c"VK_EXT_memory_priority";
-static PAGEABLE_DEVICE_LOCAL_MEMORY: &CStr = c"VK_EXT_pageable_device_local_memory";
-
 #[derive(Debug, Default)]
 pub struct EnabledDeviceExtensions {
-  memory_priority: bool,
-  pageable_device_local_memory: bool,
+  pub memory_priority: bool,
+  pub pageable_device_local_memory: bool,
   count: usize,
 }
 
@@ -57,11 +54,11 @@ impl EnabledDeviceExtensions {
     };
 
     let mut supported_count = 0;
-    if is_supported(MEMORY_PRIORITY) {
+    if is_supported(ash::ext::memory_priority::NAME) {
       supported.memory_priority = true;
       supported_count += 1;
     }
-    if is_supported(PAGEABLE_DEVICE_LOCAL_MEMORY) {
+    if is_supported(ash::ext::pageable_device_local_memory::NAME) {
       supported.pageable_device_local_memory = true;
       supported_count += 1;
     }
@@ -73,10 +70,10 @@ impl EnabledDeviceExtensions {
   pub fn get_extension_list(&self) -> Vec<*const i8> {
     let mut ptrs = Vec::with_capacity(self.count);
     if self.memory_priority {
-      ptrs.push(MEMORY_PRIORITY.as_ptr());
+      ptrs.push(ash::ext::memory_priority::NAME.as_ptr());
     }
     if self.pageable_device_local_memory {
-      ptrs.push(PAGEABLE_DEVICE_LOCAL_MEMORY.as_ptr());
+      ptrs.push(ash::ext::pageable_device_local_memory::NAME.as_ptr());
     }
     ptrs
   }
