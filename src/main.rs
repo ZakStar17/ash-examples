@@ -1,5 +1,5 @@
 #![feature(vec_into_raw_parts)]
-
+#[allow(clippy::too_many_arguments)]
 mod allocator;
 mod command_pools;
 mod create_objs;
@@ -33,8 +33,6 @@ const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 static APPLICATION_NAME: &CStr = c"Triangle image";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
-
-static REQUIRED_DEVICE_EXTENSIONS: [&CStr; 0] = [];
 
 const IMAGE_WIDTH: u32 = 1920;
 const IMAGE_HEIGHT: u32 = 1080;

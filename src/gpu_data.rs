@@ -13,12 +13,14 @@ use crate::{
   create_objs::{create_buffer, create_fence, create_image, create_image_view},
   device_destroyable::{destroy, DeviceManuallyDestroyed},
   errors::{AllocationError, OutOfMemoryError},
-  initialization::device::{PhysicalDevice, Queues},
+  initialization::device::{Device, PhysicalDevice, Queues},
   render_pass::create_framebuffer,
   utility::OnErr,
   vertices::Vertex,
   INDICES, VERTICES,
 };
+
+const CONSTANT_DATA_PRIORITY: f32 = 0.3;
 
 pub struct TriangleImage {
   pub image: vk::Image,
@@ -49,7 +51,7 @@ pub struct GPUData {
 
 impl GPUData {
   pub fn new(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     render_pass: vk::RenderPass,
     image_extent: vk::Extent2D,
@@ -132,7 +134,7 @@ impl GPUData {
   }
 
   fn allocate_device_memory(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     triangle_image: vk::Image,
     vertex_buffer: vk::Buffer,
@@ -153,6 +155,7 @@ impl GPUData {
       &[vertex_memory_requirements, index_memory_requirements],
       &[triangle_image],
       &[triangle_memory_requirements],
+      CONSTANT_DATA_PRIORITY,
     ) {
       Ok(alloc) => {
         log::debug!("Allocated full memory block");
@@ -172,6 +175,7 @@ impl GPUData {
       &[],
       &[triangle_image],
       &[triangle_memory_requirements],
+      CONSTANT_DATA_PRIORITY,
     ) {
       Ok(alloc) => {
         log::debug!("Triangle image memory allocated successfully");
@@ -186,6 +190,7 @@ impl GPUData {
           &[],
           &[triangle_image],
           &[triangle_memory_requirements],
+          CONSTANT_DATA_PRIORITY,
         )?;
         log::debug!("Triangle image memory allocated suboptimally");
         alloc.memory
@@ -200,6 +205,7 @@ impl GPUData {
       &[vertex_memory_requirements, index_memory_requirements],
       &[],
       &[],
+      CONSTANT_DATA_PRIORITY,
     ) {
       Ok(alloc) => {
         log::debug!("Triangle buffers memory allocated successfully");
@@ -214,6 +220,7 @@ impl GPUData {
           &[vertex_memory_requirements, index_memory_requirements],
           &[],
           &[],
+          CONSTANT_DATA_PRIORITY,
         )?;
         log::debug!("Triangle buffers memory allocated suboptimally");
         alloc.memory
@@ -224,7 +231,7 @@ impl GPUData {
   }
 
   fn allocate_host_memory(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     final_buffer: vk::Buffer,
   ) -> Result<PackedAllocation, AllocationError> {
@@ -241,6 +248,7 @@ impl GPUData {
         &[final_buffer_memory_requirements],
         &[],
         &[],
+        CONSTANT_DATA_PRIORITY,
       ) {
         Ok(alloc) => {
           log::debug!("Final buffer memory allocated successfully");
@@ -255,6 +263,7 @@ impl GPUData {
             &[final_buffer_memory_requirements],
             &[],
             &[],
+            CONSTANT_DATA_PRIORITY,
           )?;
           log::debug!("Final buffer memory allocated suboptimally");
           alloc
@@ -265,7 +274,7 @@ impl GPUData {
 
   pub fn initialize_memory(
     &mut self,
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     queues: &Queues,
     command_pool: &mut TransferCommandBufferPool,
@@ -290,6 +299,7 @@ impl GPUData {
       &[vertex_src_requirements, index_src_requirements],
       &[],
       &[],
+      CONSTANT_DATA_PRIORITY,
     )
     .on_err(|_| destroy_created_objs())?;
     let vertex_offset = staging_alloc.offsets.buffer_offsets()[0];

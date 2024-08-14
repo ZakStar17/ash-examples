@@ -9,7 +9,7 @@ use crate::{
   gpu_data::GPUData,
   initialization::{
     self, create_instance,
-    device::{create_logical_device, PhysicalDevice, Queues},
+    device::{Device, PhysicalDevice, Queues},
   },
   pipelines::{self, GraphicsPipeline},
   render_pass::create_render_pass,
@@ -22,7 +22,7 @@ pub struct Renderer {
   #[cfg(feature = "vl")]
   debug_utils: crate::initialization::DebugUtils,
   physical_device: PhysicalDevice,
-  device: ash::Device,
+  device: Device,
   queues: Queues,
 
   render_pass: vk::RenderPass,
@@ -60,7 +60,7 @@ impl Renderer {
       };
 
     let (device, queues) =
-      create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
+      Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
 
     let render_pass = create_render_pass(&device).on_err(|_| unsafe {
       destroy!(&device);
