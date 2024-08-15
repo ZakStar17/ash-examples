@@ -24,13 +24,15 @@ use self::texture::{LoadedImage, Texture};
 
 use super::{
   command_pools::TemporaryGraphicsCommandPool, create_objs::create_semaphore,
-  descriptor_sets::DescriptorPool, errors::InitializationError,
+  descriptor_sets::DescriptorPool, errors::InitializationError, initialization::device::Device,
 };
 
 pub use self::{
   ferris_model::FerrisModel,
   texture::{ImageLoadError, TEXTURE_FORMAT, TEXTURE_FORMAT_FEATURES},
 };
+
+const CONSTANT_DEVICE_MEMORY_PRIORITY: f32 = 0.3;
 
 #[derive(Debug)]
 pub struct GPUData {
@@ -48,7 +50,7 @@ pub struct StagingMemoryAllocation {
 
 impl GPUData {
   pub fn new(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     queues: &Queues,
     descriptor_pool: &mut DescriptorPool,
@@ -135,7 +137,7 @@ impl GPUData {
   }
 
   fn allocate_device_memory(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     texture_image: vk::Image,
     vertex_buffer: vk::Buffer,
@@ -156,6 +158,7 @@ impl GPUData {
       &[vertex_memory_requirements, index_memory_requirements],
       &[texture_image],
       &[texture_memory_requirements],
+      CONSTANT_DEVICE_MEMORY_PRIORITY,
     ) {
       Ok(alloc) => {
         log::debug!("Allocated full memory block");
@@ -175,6 +178,7 @@ impl GPUData {
       &[],
       &[texture_image],
       &[texture_memory_requirements],
+      CONSTANT_DEVICE_MEMORY_PRIORITY,
     ) {
       Ok(alloc) => {
         log::debug!("Texture image memory allocated successfully");
@@ -189,6 +193,7 @@ impl GPUData {
           &[],
           &[texture_image],
           &[texture_memory_requirements],
+          CONSTANT_DEVICE_MEMORY_PRIORITY,
         )?;
         log::debug!("Texture image memory allocated suboptimally");
         alloc.memory
@@ -203,6 +208,7 @@ impl GPUData {
       &[vertex_memory_requirements, index_memory_requirements],
       &[],
       &[],
+      CONSTANT_DEVICE_MEMORY_PRIORITY,
     ) {
       Ok(alloc) => {
         log::debug!("Texture buffers memory allocated successfully");
@@ -217,6 +223,7 @@ impl GPUData {
           &[vertex_memory_requirements, index_memory_requirements],
           &[],
           &[],
+          CONSTANT_DEVICE_MEMORY_PRIORITY,
         )?;
         log::debug!("Texture buffers memory allocated suboptimally");
         alloc.memory
@@ -230,7 +237,7 @@ impl GPUData {
   // a more concrete way of doing this would be (in a case which a big allocation isn't possible)
   //    to allocate, dispatch and free each object separately to not use much memory
   fn allocate_staging_memory(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     texture_buffer: vk::Buffer,
     vertex_buffer: vk::Buffer,
@@ -255,6 +262,7 @@ impl GPUData {
       ],
       &[],
       &[],
+      CONSTANT_DEVICE_MEMORY_PRIORITY,
     )?;
     let mut offsets_iter = allocation.offsets.buffer_offsets().iter();
 
@@ -268,7 +276,7 @@ impl GPUData {
   }
 
   fn create_and_populate_staging_objects(
-    device: &ash::Device,
+    device: &Device,
     physical_device: &PhysicalDevice,
     texture_image: &LoadedImage,
   ) -> Result<(StagingMemoryAllocation, vk::Buffer, vk::Buffer, vk::Buffer), AllocationError> {

@@ -19,7 +19,7 @@ use crate::{
     errors::{InitializationError, OutOfMemoryError},
     initialization::{
       self,
-      device::{create_logical_device, PhysicalDevice, Queues},
+      device::{Device, PhysicalDevice, Queues},
     },
     pipelines::{self, GraphicsPipeline},
     render_pass::{
@@ -73,7 +73,7 @@ pub struct Renderer {
   #[cfg(feature = "vl")]
   debug_utils: initialization::DebugUtils,
   physical_device: PhysicalDevice,
-  pub device: ash::Device,
+  pub device: Device,
   pub queues: Queues,
 
   pub window: Window,
@@ -176,7 +176,7 @@ impl Renderer {
     };
 
     let (device, queues) =
-      create_logical_device(&instance, &physical_device).on_err(|_| destroy_instance())?;
+      Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
     destructor.push(&device);
 
     let swapchains = Swapchains::new(

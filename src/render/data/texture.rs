@@ -28,7 +28,7 @@ pub const TEXTURE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
 );
 
 fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), image::ImageError> {
-  let img = image::io::Reader::open(TEXTURE_PATH)?
+  let img = image::ImageReader::open(TEXTURE_PATH)?
     .decode()?
     .into_rgba8();
   let width = img.width();

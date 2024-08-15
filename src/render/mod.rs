@@ -36,5 +36,3 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 ];
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
-
-const REQUIRED_DEVICE_EXTENSIONS: [&CStr; 1] = [c"VK_KHR_swapchain"];

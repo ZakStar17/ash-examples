@@ -1,231 +1,78 @@
+mod device_selector;
 mod logical_device;
 mod physical_device;
 mod queues;
 mod vendor;
 
 use std::{
-  ffi::{c_void, CStr},
-  mem::{size_of, MaybeUninit},
+  ffi::c_void,
+  mem::MaybeUninit,
   ptr::{self, addr_of_mut},
 };
 
 use ash::vk;
-pub use logical_device::create_logical_device;
+use device_selector::select_physical_device;
+pub use logical_device::Device;
 pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
-use self::vendor::Vendor;
-use crate::{
-  render::{
-    data::{TEXTURE_FORMAT, TEXTURE_FORMAT_FEATURES},
-    errors::OutOfMemoryError,
-    RenderPosition, REQUIRED_DEVICE_EXTENSIONS, TARGET_API_VERSION,
-  },
-  utility::{self, i8_array_as_cstr},
-};
+use crate::utility;
 
-use super::{Surface, SurfaceError};
-use queues::QueueFamilyError;
-
-fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
-  let vendor = Vendor::from_id(properties.vendor_id);
-  let driver_version = vendor.parse_driver_version(properties.driver_version);
-
-  log::info!(
-    "\nFound physical device \"{:?}\":
-      API Version: {},
-      Vendor: {},
-      Driver Version: {},
-      ID: {},
-      Type: {},",
-    unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }, // expected to be a valid cstr
-    utility::parse_vulkan_api_version(properties.api_version),
-    vendor.to_string(),
-    driver_version,
-    properties.device_id,
-    match properties.device_type {
-      vk::PhysicalDeviceType::INTEGRATED_GPU => "Integrated GPU",
-      vk::PhysicalDeviceType::DISCRETE_GPU => "Discrete GPU",
-      vk::PhysicalDeviceType::VIRTUAL_GPU => "Virtual GPU",
-      vk::PhysicalDeviceType::CPU => "CPU",
-      _ => "Unknown",
-    },
-  );
+#[derive(Debug, Default)]
+pub struct EnabledDeviceExtensions {
+  pub memory_priority: bool,
+  pub pageable_device_local_memory: bool,
+  pub swapchain: bool,
+  count: usize,
 }
 
-fn supports_required_extensions(
-  instance: &ash::Instance,
-  device: vk::PhysicalDevice,
-) -> Result<bool, OutOfMemoryError> {
-  let properties = unsafe { instance.enumerate_device_extension_properties(device)? };
+impl EnabledDeviceExtensions {
+  pub fn mark_supported_by_physical_device(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+  ) -> Result<Self, vk::Result> {
+    let properties = unsafe { instance.enumerate_device_extension_properties(physical_device)? };
 
-  for req in REQUIRED_DEVICE_EXTENSIONS {
-    if !properties
-      .iter()
-      .any(|props| unsafe { i8_array_as_cstr(&props.extension_name) }.unwrap() == req)
-    {
-      return Ok(false);
+    let mut supported = Self::default();
+
+    // a bit inefficient as it retests for valid cstrings but at least doesn't do any allocations
+    let is_supported = |ext| {
+      properties
+        .iter()
+        .any(|props| unsafe { utility::i8_array_as_cstr(&props.extension_name) }.unwrap() == ext)
+    };
+
+    let mut supported_count = 0;
+    if is_supported(ash::ext::memory_priority::NAME) {
+      supported.memory_priority = true;
+      supported_count += 1;
     }
+    if is_supported(ash::ext::pageable_device_local_memory::NAME) {
+      supported.pageable_device_local_memory = true;
+      supported_count += 1;
+    }
+    if is_supported(ash::khr::swapchain::NAME) {
+      supported.swapchain = true;
+      supported_count += 1;
+    }
+
+    supported.count = supported_count;
+    Ok(supported)
   }
 
-  Ok(true)
-}
-
-fn supports_texture_format(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
-  let properties =
-    unsafe { instance.get_physical_device_format_properties(physical_device, TEXTURE_FORMAT) };
-
-  properties
-    .optimal_tiling_features
-    .contains(TEXTURE_FORMAT_FEATURES)
-}
-
-fn supports_swapchain(device: vk::PhysicalDevice, surface: &Surface) -> Result<bool, SurfaceError> {
-  let formats = unsafe { surface.get_formats(device) }?;
-  let present_modes = unsafe { surface.get_present_modes(device) }?;
-
-  Ok(!formats.is_empty() && !present_modes.is_empty())
-}
-
-fn check_physical_device_capabilities(
-  instance: &ash::Instance,
-  surface: &Surface,
-  physical_device: vk::PhysicalDevice,
-  properties: &PhysicalDeviceProperties,
-  features: &PhysicalDeviceFeatures,
-) -> Result<bool, SurfaceError> {
-  // Filter devices that are strictly not supported
-  // Check for any features or limits required by the application
-
-  if properties.p10.api_version < TARGET_API_VERSION {
-    log::info!(
-      "Skipped physical device: Device API version is less than targeted by the application"
-    );
-    return Ok(false);
+  pub fn get_extension_list(&self) -> Vec<*const i8> {
+    let mut ptrs = Vec::with_capacity(self.count);
+    if self.memory_priority {
+      ptrs.push(ash::ext::memory_priority::NAME.as_ptr());
+    }
+    if self.pageable_device_local_memory {
+      ptrs.push(ash::ext::pageable_device_local_memory::NAME.as_ptr());
+    }
+    if self.swapchain {
+      ptrs.push(ash::khr::swapchain::NAME.as_ptr());
+    }
+    ptrs
   }
-
-  if !supports_required_extensions(instance, physical_device).map_err(SurfaceError::OutOfMemory)? {
-    log::info!("Skipped physical device: Device does not support all required extensions");
-    return Ok(false);
-  }
-
-  if !supports_texture_format(instance, physical_device) {
-    log::warn!("Skipped physical device: Device does not support texture format");
-    return Ok(false);
-  }
-
-  if !supports_swapchain(physical_device, surface)? {
-    log::warn!("Skipped physical device: Device does not support swapchain");
-    return Ok(false);
-  }
-
-  if features.f12.timeline_semaphore != vk::TRUE {
-    log::warn!("Skipped physical device: Device does not support timeline semaphores");
-    return Ok(false);
-  }
-
-  if features.f13.synchronization2 != vk::TRUE {
-    log::warn!("Skipped physical device: Device does not support synchronization features");
-    return Ok(false);
-  }
-
-  if (properties.p10.limits.max_push_constants_size as usize) < size_of::<RenderPosition>() {
-    log::warn!("Skipped physical device: Device does not support required push constant size");
-    return Ok(false);
-  }
-
-  Ok(true)
-}
-
-unsafe fn select_physical_device<'a>(
-  instance: &'a ash::Instance,
-  surface: &'a Surface,
-) -> Result<
-  Option<(
-    vk::PhysicalDevice,
-    PhysicalDeviceProperties<'a>,
-    PhysicalDeviceFeatures<'a>,
-    QueueFamilies,
-  )>,
-  vk::Result,
-> {
-  Ok(
-    instance
-      .enumerate_physical_devices()?
-      .into_iter()
-      .filter_map(|physical_device| {
-        // Filter devices that are strictly not supported
-        // Check for any features or limits required by the application
-
-        let properties = get_extended_properties(instance, physical_device);
-        log_device_properties(&properties.p10);
-        let features = get_extended_features(instance, physical_device);
-
-        match check_physical_device_capabilities(
-          instance,
-          surface,
-          physical_device,
-          &properties,
-          &features,
-        ) {
-          Ok(all_good) => {
-            if all_good {
-              Some((physical_device, properties, features))
-            } else {
-              None
-            }
-          }
-          Err(err) => {
-            log::error!("Device selection error: {:?}", err);
-            None
-          }
-        }
-      })
-      .filter_map(|(physical_device, properties, features)| {
-        // filter devices that do not have required queue families
-        match QueueFamilies::get_from_physical_device(instance, physical_device, surface) {
-          Err(err) => {
-            match err {
-              QueueFamilyError::DoesNotSupportRequiredQueueFamilies => log::info!(
-                "Skipped physical device: Device does not contain required queue families"
-              ),
-              QueueFamilyError::SurfaceError(err) => log::error!(
-                "Device selection error during queue family retrieval: {:?}",
-                err
-              ),
-            }
-            None
-          }
-          Ok(families) => Some((physical_device, properties, features, families)),
-        }
-      })
-      .min_by_key(|(physical_device, _properties, _features, families)| {
-        // Assign a score to each device and select the best one available
-        // A full application may use multiple metrics like limits, queue families and even the
-        // device id to rank each device that a user can have
-
-        let queue_family_importance = 3;
-        let device_score_importance = 0;
-
-        // rank devices by number of specialized queue families
-        let queue_score = if families.transfer.is_some() { 0 } else { 1 };
-
-        // rank devices by commonly most powerful device type
-        let device_score = match instance
-          .get_physical_device_properties(*physical_device)
-          .device_type
-        {
-          vk::PhysicalDeviceType::DISCRETE_GPU => 0,
-          vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
-          vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
-          vk::PhysicalDeviceType::CPU => 3,
-          vk::PhysicalDeviceType::OTHER => 4,
-          _ => 5,
-        };
-
-        (queue_score << queue_family_importance) + (device_score << device_score_importance)
-      }),
-  )
 }
 
 #[allow(unused)]
