@@ -43,7 +43,7 @@ impl GraphicsCommandBufferPool {
     extent: vk::Extent2D,
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
-    pool: &DescriptorPool,
+    descriptor_pool: &DescriptorPool,
     data: &ConstantData,
     position: &RenderPosition, // Ferris's position
   ) -> Result<(), OutOfMemoryError> {
@@ -77,7 +77,7 @@ impl GraphicsCommandBufferPool {
         vk::PipelineBindPoint::GRAPHICS,
         pipeline.layout,
         0,
-        &[pool.texture_set],
+        &[descriptor_pool.texture_set],
         &[],
       );
       device.cmd_push_constants(

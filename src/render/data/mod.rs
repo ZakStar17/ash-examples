@@ -14,7 +14,6 @@ use crate::{
     command_pools::TransferCommandBufferPool,
     create_objs::create_fence,
     device_destroyable::{destroy, DeviceManuallyDestroyed},
-    errors::OutOfMemoryError,
     initialization::device::{PhysicalDevice, Queues},
   },
   utility::{const_flag_bitor, OnErr},
@@ -47,14 +46,6 @@ pub const TEXTURE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags::SAMPLED_IMAGE
 );
 
-#[derive(Debug, thiserror::Error)]
-pub enum ImageLoadError {
-  #[error("Out of memory")]
-  OutOfMemory(#[source] OutOfMemoryError),
-  #[error("Image crate error")]
-  ImageError(#[source] image::ImageError),
-}
-
 fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), image::ImageError> {
   let img = image::ImageReader::open(TEXTURE_PATH)?
     .decode()?
@@ -74,13 +65,12 @@ pub fn create_and_populate_constant_data(
   transfer_pool: &mut TransferCommandBufferPool,
   graphics_pool: &mut TemporaryGraphicsCommandPool,
 ) -> Result<ConstantData, InitializationError> {
-  let (image_width, image_height, image_bytes) =
-    read_texture_bytes_as_rgba8().map_err(ImageLoadError::ImageError)?;
+  let (image_width, image_height, image_bytes) = read_texture_bytes_as_rgba8()?;
 
   let staging =
     StagingData::create_and_allocate(device, physical_device, image_bytes.len() as u64)?;
   unsafe { staging.populate(device, &image_bytes) }
-    .on_err(|_| unsafe { staging.destroy_self(device) });
+    .on_err(|_| unsafe { staging.destroy_self(device) })?;
 
   let final_ =
     ConstantData::create_and_allocate(device, physical_device, image_width, image_height)?;

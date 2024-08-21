@@ -14,6 +14,7 @@ use crate::{
     command_pools::{
       GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
     },
+    data::create_and_populate_constant_data,
     device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
     errors::{InitializationError, OutOfMemoryError},
     initialization::{
@@ -30,7 +31,13 @@ use crate::{
 };
 
 use super::{
-  data::ConstantData, descriptor_sets::DescriptorPool, initialization::Surface, pipelines::PipelineCreationError, render_object::RenderPosition, swapchain::{SwapchainCreationError, Swapchains}, RenderInit, FRAMES_IN_FLIGHT
+  data::ConstantData,
+  descriptor_sets::DescriptorPool,
+  initialization::Surface,
+  pipelines::PipelineCreationError,
+  render_object::RenderPosition,
+  swapchain::{SwapchainCreationError, Swapchains},
+  RenderInit, FRAMES_IN_FLIGHT,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -193,10 +200,6 @@ impl Renderer {
       .map(|_| vk::Framebuffer::null())
       .collect();
 
-    let mut descriptor_pool =
-      DescriptorPool::new(&device).on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(&descriptor_pool);
-
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
       pipelines::create_pipeline_cache(&device, &physical_device)
@@ -207,6 +210,45 @@ impl Renderer {
       log::info!("Cache initialized as empty");
     }
     destructor.push(&pipeline_cache);
+
+    let data = {
+      let mut temp_transfer_pool =
+        TransferCommandBufferPool::create(&device, &physical_device.queue_families)
+          .on_err(|_| unsafe { destructor.fire(&device) })?;
+      let mut temp_graphics_pool =
+        TemporaryGraphicsCommandPool::create(&device, &physical_device.queue_families).on_err(
+          |_| unsafe {
+            temp_transfer_pool.destroy_self(&device);
+            destructor.fire(&device);
+          },
+        )?;
+
+      let data = create_and_populate_constant_data(
+        &device,
+        &physical_device,
+        &queues,
+        &mut temp_transfer_pool,
+        &mut temp_graphics_pool,
+      )
+      .on_err(|_| unsafe {
+        temp_transfer_pool.destroy_self(&device);
+        temp_graphics_pool.destroy_self(&device);
+        destructor.fire(&device)
+      })?;
+
+      log::debug!("GPU data addresses: {:#?}", data);
+
+      unsafe {
+        temp_transfer_pool.destroy_self(&device);
+        temp_graphics_pool.destroy_self(&device);
+      }
+
+      data
+    };
+
+    let descriptor_pool = DescriptorPool::new(&device, data.texture_view)
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(&descriptor_pool);
 
     log::debug!("Creating pipeline");
     let graphics_pipeline = GraphicsPipeline::new(
@@ -230,41 +272,6 @@ impl Renderer {
     let command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT] =
       [command_pool_1, command_pool_2];
 
-    let data = {
-      let mut temp_transfer_pool =
-        TransferCommandBufferPool::create(&device, &physical_device.queue_families)
-          .on_err(|_| unsafe { destructor.fire(&device) })?;
-      let mut temp_graphics_pool =
-        TemporaryGraphicsCommandPool::create(&device, &physical_device.queue_families).on_err(
-          |_| unsafe {
-            temp_transfer_pool.destroy_self(&device);
-            destructor.fire(&device);
-          },
-        )?;
-
-      let data = GPUData::new(
-        &device,
-        &physical_device,
-        &queues,
-        &mut descriptor_pool,
-        &mut temp_transfer_pool,
-        &mut temp_graphics_pool,
-      )
-      .on_err(|_| unsafe {
-        temp_transfer_pool.destroy_self(&device);
-        temp_graphics_pool.destroy_self(&device);
-        destructor.fire(&device);
-      })?;
-      log::debug!("GPU data addresses: {:#?}", data);
-
-      unsafe {
-        temp_transfer_pool.destroy_self(&device);
-        temp_graphics_pool.destroy_self(&device);
-      }
-
-      data
-    };
-
     Ok(Self {
       window,
       surface,
@@ -276,7 +283,7 @@ impl Renderer {
       device,
       queues,
       command_pools,
-      gpu_data: data,
+      data,
       render_pass,
       pipeline: graphics_pipeline,
       pipeline_cache,
@@ -300,7 +307,8 @@ impl Renderer {
       self.swapchains.get_extent(),
       self.framebuffers[image_i],
       &self.pipeline,
-      &self.gpu_data,
+      &self.descriptor_pool,
+      &self.data,
       position,
     )?;
     Ok(())
@@ -448,11 +456,11 @@ impl Drop for Renderer {
 
       self.command_pools.destroy_self(&self.device);
 
-      self.gpu_data.destroy_self(&self.device);
-
       self.pipeline.destroy_self(&self.device);
       self.pipeline_cache.destroy_self(&self.device);
       self.descriptor_pool.destroy_self(&self.device);
+
+      self.data.destroy_self(&self.device);
 
       self.framebuffers.destroy_self(&self.device);
       self.render_pass.destroy_self(&self.device);

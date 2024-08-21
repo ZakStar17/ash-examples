@@ -7,7 +7,6 @@ use crate::render::{
 };
 
 use super::{
-  data::ImageLoadError,
   renderer::SwapchainRecreationError,
   swapchain::{AcquireNextImageError, SwapchainCreationError},
 };
@@ -89,7 +88,7 @@ pub enum InitializationError {
   IOError(#[source] std::io::Error),
 
   #[error("Image error")]
-  ImageError(#[source] ImageLoadError),
+  ImageError(#[source] image::ImageError),
 
   // undefined behavior / driver or application bug (see vl)
   #[error("Device is lost")]
@@ -133,8 +132,8 @@ impl From<SwapchainCreationError> for InitializationError {
   }
 }
 
-impl From<ImageLoadError> for InitializationError {
-  fn from(value: ImageLoadError) -> Self {
+impl From<image::ImageError> for InitializationError {
+  fn from(value: image::ImageError) -> Self {
     InitializationError::ImageError(value)
   }
 }
