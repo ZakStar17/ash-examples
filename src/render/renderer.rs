@@ -14,7 +14,6 @@ use crate::{
     command_pools::{
       GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
     },
-    data::GPUData,
     device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
     errors::{InitializationError, OutOfMemoryError},
     initialization::{
@@ -31,12 +30,7 @@ use crate::{
 };
 
 use super::{
-  descriptor_sets::DescriptorPool,
-  initialization::Surface,
-  pipelines::PipelineCreationError,
-  render_object::RenderPosition,
-  swapchain::{SwapchainCreationError, Swapchains},
-  RenderInit, FRAMES_IN_FLIGHT,
+  data::ConstantData, descriptor_sets::DescriptorPool, initialization::Surface, pipelines::PipelineCreationError, render_object::RenderPosition, swapchain::{SwapchainCreationError, Swapchains}, RenderInit, FRAMES_IN_FLIGHT
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -84,12 +78,12 @@ pub struct Renderer {
   framebuffers: Box<[vk::Framebuffer]>,
   old_framebuffers: (bool, Box<[vk::Framebuffer]>),
 
-  descriptor_pool: DescriptorPool,
   pipeline_cache: vk::PipelineCache,
   pipeline: GraphicsPipeline,
   pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
 
-  gpu_data: GPUData,
+  data: ConstantData,
+  descriptor_pool: DescriptorPool,
 }
 
 struct Destructor<const N: usize> {

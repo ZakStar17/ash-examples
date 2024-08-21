@@ -4,6 +4,8 @@ use ash::vk;
 
 use crate::render::{device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError};
 
+use super::texture_write_descriptor_set;
+
 fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemoryError> {
   let sampler_create_info = vk::SamplerCreateInfo {
     s_type: vk::StructureType::SAMPLER_CREATE_INFO,
@@ -32,12 +34,14 @@ fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemo
 pub struct DescriptorPool {
   pub texture_layout: vk::DescriptorSetLayout,
   texture_sampler: vk::Sampler,
+  pub texture_set: vk::DescriptorSet,
 
   pool: vk::DescriptorPool,
 }
 
 impl DescriptorPool {
-  const SET_COUNT: u32 = 3;
+  // this pool only allocates one set and does not reallocate
+  const SET_COUNT: u32 = Self::SIZES[0].descriptor_count;
 
   const SIZES: [vk::DescriptorPoolSize; 1] = [vk::DescriptorPoolSize {
     ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -57,7 +61,7 @@ impl DescriptorPool {
     }]
   }
 
-  pub fn new(device: &ash::Device) -> Result<Self, OutOfMemoryError> {
+  pub fn new(device: &ash::Device, texture_view: vk::ImageView) -> Result<Self, OutOfMemoryError> {
     let texture_sampler = create_texture_sampler(device)?;
 
     let texture_layout = Self::create_graphics_layout(device, texture_sampler)?;
@@ -75,27 +79,20 @@ impl DescriptorPool {
       unsafe { device.create_descriptor_pool(&pool_create_info, None) }
     }?;
 
+    let set = allocate_sets(device, pool, &[texture_layout])?[0];
+    let write = texture_write_descriptor_set(set, texture_view, 0); // same binding as in layout
+                                                                    // update texture set
+    unsafe {
+      let contextualized = write.contextualize();
+      device.update_descriptor_sets(&[contextualized], &[]);
+    }
+
     Ok(Self {
       texture_sampler,
       texture_layout,
+      texture_set: set,
       pool,
     })
-  }
-
-  pub fn allocate_sets(
-    &mut self,
-    device: &ash::Device,
-    layouts: &[vk::DescriptorSetLayout],
-  ) -> Result<Vec<vk::DescriptorSet>, vk::Result> {
-    let allocate_info = vk::DescriptorSetAllocateInfo {
-      s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
-      p_next: ptr::null(),
-      descriptor_pool: self.pool,
-      descriptor_set_count: layouts.len() as u32,
-      p_set_layouts: layouts.as_ptr(),
-      _marker: PhantomData,
-    };
-    unsafe { device.allocate_descriptor_sets(&allocate_info) }
   }
 
   fn create_graphics_layout(
@@ -130,4 +127,34 @@ fn create_layout(
     _marker: PhantomData,
   };
   unsafe { device.create_descriptor_set_layout(&create_info, None) }.map_err(|err| err.into())
+}
+
+fn allocate_sets(
+  device: &ash::Device,
+  pool: vk::DescriptorPool,
+  layouts: &[vk::DescriptorSetLayout],
+) -> Result<Vec<vk::DescriptorSet>, OutOfMemoryError> {
+  let allocate_info = vk::DescriptorSetAllocateInfo {
+    s_type: vk::StructureType::DESCRIPTOR_SET_ALLOCATE_INFO,
+    p_next: ptr::null(),
+    descriptor_pool: pool,
+    descriptor_set_count: layouts.len() as u32,
+    p_set_layouts: layouts.as_ptr(),
+    _marker: PhantomData,
+  };
+  unsafe { device.allocate_descriptor_sets(&allocate_info) }.map_err(|err| {
+    match err {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        OutOfMemoryError::from(err)
+      }
+      vk::Result::ERROR_FRAGMENTED_POOL => {
+        panic!("Unexpected fragmentation in pool. Is this application performing reallocations?")
+      }
+      vk::Result::ERROR_OUT_OF_POOL_MEMORY => {
+        // application probably allocated too many sets or SET_COUNT / SIZES is wrong
+        panic!("Out of pool memory")
+      }
+      _ => panic!(),
+    }
+  })
 }

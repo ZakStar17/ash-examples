@@ -12,7 +12,8 @@ use crate::{
 };
 
 use super::{
-  queues::QueueFamilyError, vendor::Vendor, EnabledDeviceExtensions, PhysicalDeviceFeatures, PhysicalDeviceProperties, QueueFamilies
+  queues::QueueFamilyError, vendor::Vendor, EnabledDeviceExtensions, PhysicalDeviceFeatures,
+  PhysicalDeviceProperties, QueueFamilies,
 };
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
@@ -63,7 +64,7 @@ fn check_physical_device_capabilities(
   physical_device: vk::PhysicalDevice,
   properties: &PhysicalDeviceProperties,
   features: &PhysicalDeviceFeatures,
-  supported_extensions: &EnabledDeviceExtensions
+  supported_extensions: &EnabledDeviceExtensions,
 ) -> Result<bool, SurfaceError> {
   // Filter devices that are strictly not supported
   // Check for any features or limits required by the application
@@ -126,7 +127,10 @@ pub unsafe fn select_physical_device<'a>(
         let properties = super::get_extended_properties(instance, physical_device);
         log_device_properties(&properties.p10);
         let features = super::get_extended_features(instance, physical_device);
-        let supported_extensions = match EnabledDeviceExtensions::mark_supported_by_physical_device(instance, physical_device) {
+        let supported_extensions = match EnabledDeviceExtensions::mark_supported_by_physical_device(
+          instance,
+          physical_device,
+        ) {
           Ok(v) => v,
           Err(err) => {
             log::error!("Device selection error: {:?}", err);
@@ -140,7 +144,7 @@ pub unsafe fn select_physical_device<'a>(
           physical_device,
           &properties,
           &features,
-          &supported_extensions
+          &supported_extensions,
         ) {
           Ok(all_good) => {
             if all_good {
