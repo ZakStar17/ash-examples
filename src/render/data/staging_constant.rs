@@ -27,7 +27,7 @@ pub struct StagingData {
 }
 
 #[derive(Debug)]
-pub struct StagingMemoryAllocation {
+struct StagingMemoryAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_type: u32,
   pub texture_offset: u64,

@@ -41,12 +41,18 @@ pub struct DescriptorPool {
 
 impl DescriptorPool {
   // this pool only allocates one set and does not reallocate
-  const SET_COUNT: u32 = Self::SIZES[0].descriptor_count;
+  const SET_COUNT: u32 = Self::SIZES[0].descriptor_count + Self::SIZES[1].descriptor_count;
 
-  const SIZES: [vk::DescriptorPoolSize; 1] = [vk::DescriptorPoolSize {
-    ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-    descriptor_count: 1,
-  }];
+  const SIZES: [vk::DescriptorPoolSize; 2] = [
+    vk::DescriptorPoolSize {
+      ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+      descriptor_count: 1,
+    },
+    vk::DescriptorPoolSize {
+      ty: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 2, // todo
+    },
+  ];
 
   fn graphics_layout_bindings<'a>(
     texture_sampler: *const vk::Sampler,

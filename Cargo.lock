@@ -187,6 +187,7 @@ dependencies = [
  "image",
  "itertools 0.13.0",
  "log",
+ "rand",
  "raw-window-handle",
  "take_mut",
  "thiserror",

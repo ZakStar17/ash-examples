@@ -30,6 +30,47 @@ macro_rules! destroy {
 }
 pub(crate) use destroy;
 
+// create_destroyable_array!(device, <exp>, 3) transforms into [<exp>, <exp>, <exp>]
+// If any <exp> returns an error, all previous <exp> results get destroyed with
+// DeviceManuallyDestroyed::destroy_self()
+//
+// example:
+//    Here "v" implements DeviceManuallyDestroyed
+//    "f" is a function that returns Ok(v) the first time and Err(err) the second time it is called
+//    ```
+//      let a = create_destroyable_array!(device, f(), 3);
+//    ```
+//    a's final value is Err(err);
+//    f got called two times;
+//    v was created and then destroyed with the trait's function
+//
+macro_rules! create_destroyable_array {
+  ($device:tt, $ex:expr, $arr_size:tt) => {{
+    use crate::render::device_destroyable::DeviceManuallyDestroyed;
+    use std::mem::MaybeUninit;
+
+    let mut tmp: [MaybeUninit<_>; $arr_size] = unsafe { MaybeUninit::uninit().assume_init() };
+    let mut macro_res = Ok(());
+    for i in 0..$arr_size {
+      let exp_result: Result<_, _> = $ex;
+      tmp[i] = match exp_result {
+        Ok(v) => MaybeUninit::new(v),
+        Err(err) => {
+          for j in 0..i {
+            unsafe {
+              DeviceManuallyDestroyed::destroy_self(&tmp[j].assume_init(), $device);
+            }
+          }
+          macro_res = Err(err);
+          break;
+        }
+      };
+    }
+    macro_res.map(|_| unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) })
+  }};
+}
+pub(crate) use create_destroyable_array;
+
 impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     for value in self.iter() {

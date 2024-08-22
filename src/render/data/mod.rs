@@ -1,3 +1,4 @@
+mod compute;
 mod constant;
 mod staging_constant;
 
