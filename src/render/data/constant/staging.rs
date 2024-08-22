@@ -14,7 +14,7 @@ use crate::{
   utility::OnErr,
 };
 
-use super::{INDEX_SIZE, VERTEX_SIZE};
+use super::super::{INDEX_SIZE, VERTEX_SIZE};
 
 const STAGING_MEMORY_PRIORITY: f32 = 0.3;
 
@@ -27,7 +27,7 @@ pub struct StagingData {
 }
 
 #[derive(Debug)]
-struct StagingMemoryAllocation {
+pub struct StagingMemoryAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_type: u32,
   pub texture_offset: u64,

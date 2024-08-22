@@ -1,3 +1,6 @@
+mod device;
+mod host;
+
 use std::{mem::offset_of, ops::BitOr, ptr::NonNull};
 
 use ash::vk;

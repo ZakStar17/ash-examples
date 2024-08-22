@@ -14,7 +14,7 @@ use crate::{
     command_pools::{
       GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
     },
-    data::create_and_populate_constant_data,
+    data::constant::create_and_populate_constant_data,
     device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
     errors::{InitializationError, OutOfMemoryError},
     initialization::{
@@ -31,7 +31,7 @@ use crate::{
 };
 
 use super::{
-  data::ConstantData,
+  data::constant::ConstantData,
   descriptor_sets::DescriptorPool,
   initialization::Surface,
   pipelines::PipelineCreationError,
