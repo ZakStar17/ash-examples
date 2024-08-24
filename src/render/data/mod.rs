@@ -7,7 +7,10 @@ use ash::vk;
 
 use crate::utility::const_flag_bitor;
 
-use super::render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, QUAD_VERTICES_SIZE};
+use super::{
+  device_destroyable::DeviceManuallyDestroyed,
+  render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, QUAD_VERTICES_SIZE},
+};
 
 pub const VERTEX_SIZE: u64 = QUAD_VERTICES_SIZE as u64;
 pub const INDEX_SIZE: u64 = QUAD_INDICES_SIZE as u64;
@@ -31,4 +34,10 @@ pub const TEXTURE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
 pub struct MappedHostBuffer<T> {
   pub buffer: vk::Buffer,
   pub data_ptr: NonNull<T>,
+}
+
+impl<T> DeviceManuallyDestroyed for MappedHostBuffer<T> {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    self.buffer.destroy_self(device);
+  }
 }

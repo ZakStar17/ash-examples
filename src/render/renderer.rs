@@ -31,7 +31,7 @@ use crate::{
 };
 
 use super::{
-  data::constant::ConstantData,
+  data::{compute::ComputeData, constant::ConstantData},
   descriptor_sets::DescriptorPool,
   initialization::Surface,
   pipelines::PipelineCreationError,
@@ -89,7 +89,8 @@ pub struct Renderer {
   pipeline: GraphicsPipeline,
   pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
 
-  data: ConstantData,
+  constant_data: ConstantData,
+  compute_data: ComputeData,
   descriptor_pool: DescriptorPool,
 }
 
@@ -211,7 +212,7 @@ impl Renderer {
     }
     destructor.push(&pipeline_cache);
 
-    let data = {
+    let constant_data = {
       let mut temp_transfer_pool =
         TransferCommandBufferPool::create(&device, &physical_device.queue_families)
           .on_err(|_| unsafe { destructor.fire(&device) })?;
@@ -246,7 +247,9 @@ impl Renderer {
       data
     };
 
-    let descriptor_pool = DescriptorPool::new(&device, data.texture_view)
+    let compute_data = ComputeData::new(&device, &physical_device)?;
+
+    let descriptor_pool = DescriptorPool::new(&device, constant_data.texture_view)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&descriptor_pool);
 
@@ -283,7 +286,8 @@ impl Renderer {
       device,
       queues,
       command_pools,
-      data,
+      constant_data,
+      compute_data,
       render_pass,
       pipeline: graphics_pipeline,
       pipeline_cache,
@@ -308,7 +312,7 @@ impl Renderer {
       self.framebuffers[image_i],
       &self.pipeline,
       &self.descriptor_pool,
-      &self.data,
+      &self.constant_data,
       position,
     )?;
     Ok(())
@@ -460,7 +464,8 @@ impl Drop for Renderer {
       self.pipeline_cache.destroy_self(&self.device);
       self.descriptor_pool.destroy_self(&self.device);
 
-      self.data.destroy_self(&self.device);
+      self.constant_data.destroy_self(&self.device);
+      self.compute_data.destroy_self(&self.device);
 
       self.framebuffers.destroy_self(&self.device);
       self.render_pass.destroy_self(&self.device);

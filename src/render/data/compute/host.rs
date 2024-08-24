@@ -1,7 +1,6 @@
-use std::{ops::BitOr, ptr::NonNull};
+use std::ptr::NonNull;
 
 use ash::vk;
-use rand::rngs::ThreadRng;
 
 use crate::{
   render::{
@@ -15,7 +14,7 @@ use crate::{
   utility::{self, OnErr},
 };
 
-use super::MappedHostBuffer;
+use super::super::MappedHostBuffer;
 
 // host accessible data after shader dispatch
 #[repr(C)]
@@ -42,30 +41,7 @@ impl HostComputeData {
 }
 
 #[derive(Debug)]
-pub struct DeviceComputeData {
-  pub memory: vk::DeviceMemory,
-  pub instance_capacity: u64,
-  // instance data that always belongs to the compute family
-  pub instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT],
-  // instance data that gets copied from instance_compute to be used in graphics
-  pub instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
-  // cpus generate (pseudo)random values more easily than gpus, so these are generated in
-  // cpu memory and then copied to the gpu
-  pub device_random_values: [vk::Buffer; FRAMES_IN_FLIGHT],
-}
-
-#[derive(Debug)]
-pub struct ComputeData {
-  host: HostComputeData,
-  device: DeviceComputeData,
-
-  target_bullet_count: usize,
-  cur_bullet_count: usize,
-  rng: ThreadRng,
-}
-
-#[derive(Debug)]
-struct StagingMemoryAllocation {
+struct MemoryAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_type: u32,
   pub storage_output_offsets: [u64; FRAMES_IN_FLIGHT],
@@ -82,7 +58,7 @@ impl HostComputeData {
       create_buffer(
         device,
         size_of::<ComputeOutput>() as u64,
-        vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::STORAGE_BUFFER)
+        vk::BufferUsageFlags::STORAGE_BUFFER
       ),
       FRAMES_IN_FLIGHT
     )?;
@@ -142,7 +118,7 @@ impl HostComputeData {
     physical_device: &PhysicalDevice,
     storage_output: [vk::Buffer; FRAMES_IN_FLIGHT],
     staging_new_random_values: vk::Buffer,
-  ) -> Result<StagingMemoryAllocation, AllocationError> {
+  ) -> Result<MemoryAllocation, AllocationError> {
     const TOTAL_BUFFERS: usize = 1 + FRAMES_IN_FLIGHT;
     let storage_output_requirements =
       storage_output.map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
@@ -172,11 +148,20 @@ impl HostComputeData {
       utility::fill_array_with_expression!(*offsets_iter.next().unwrap(), FRAMES_IN_FLIGHT);
     let staging_random_values_offset = *offsets_iter.next().unwrap();
 
-    Ok(StagingMemoryAllocation {
+    Ok(MemoryAllocation {
       memory: allocation.memory,
       memory_type: allocation.type_index,
       storage_output_offsets,
       staging_random_values_offset,
     })
+  }
+}
+
+impl DeviceManuallyDestroyed for HostComputeData {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    self.staging_random_values.destroy_self(device);
+    self.storage_output.destroy_self(device);
+
+    self.memory.destroy_self(device);
   }
 }
