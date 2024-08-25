@@ -25,6 +25,7 @@ use crate::{
     render_pass::{
       create_framebuffer, create_framebuffers_from_swapchain_images, create_render_pass,
     },
+    render_targets::RenderTargets,
   },
   utility::OnErr,
   INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
@@ -81,7 +82,9 @@ pub struct Renderer {
   surface: Surface,
 
   pub swapchains: Swapchains,
+
   render_pass: vk::RenderPass,
+  render_targets: RenderTargets,
   framebuffers: Box<[vk::Framebuffer]>,
   old_framebuffers: (bool, Box<[vk::Framebuffer]>),
 
@@ -194,6 +197,8 @@ impl Renderer {
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&render_pass);
 
+    let render_targets = RenderTargets::new(&device, &physical_device, render_pass)?;
+
     let framebuffers = create_framebuffers_from_swapchain_images(&device, &swapchains, render_pass)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&framebuffers);
@@ -295,6 +300,7 @@ impl Renderer {
       descriptor_pool,
       framebuffers,
       old_framebuffers: (false, old_framebuffers),
+      render_targets,
     })
   }
 
@@ -468,6 +474,7 @@ impl Drop for Renderer {
       self.compute_data.destroy_self(&self.device);
 
       self.framebuffers.destroy_self(&self.device);
+      self.render_targets.destroy_self(&self.device);
       self.render_pass.destroy_self(&self.device);
       self.swapchains.destroy_self(&self.device);
 

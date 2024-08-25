@@ -6,7 +6,9 @@ use crate::{
   render::{
     allocator::allocate_and_bind_memory,
     create_objs::create_buffer,
-    device_destroyable::{create_destroyable_array, destroy, DeviceManuallyDestroyed},
+    device_destroyable::{
+      destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed,
+    },
     errors::AllocationError,
     initialization::device::{Device, PhysicalDevice},
     FRAMES_IN_FLIGHT,
@@ -37,7 +39,7 @@ impl DeviceComputeData {
     device: &Device,
     physical_device: &PhysicalDevice,
   ) -> Result<Self, AllocationError> {
-    let instance_compute = create_destroyable_array!(
+    let instance_compute = fill_destroyable_array_with_expression!(
       device,
       create_buffer(
         device,
@@ -46,7 +48,7 @@ impl DeviceComputeData {
       ),
       FRAMES_IN_FLIGHT
     )?;
-    let instance_graphics = create_destroyable_array!(
+    let instance_graphics = fill_destroyable_array_with_expression!(
       device,
       create_buffer(
         device,
@@ -56,7 +58,7 @@ impl DeviceComputeData {
       FRAMES_IN_FLIGHT
     )
     .on_err(|_| unsafe { instance_compute.destroy_self(device) })?;
-    let device_random_values = create_destroyable_array!(
+    let device_random_values = fill_destroyable_array_with_expression!(
       device,
       create_buffer(
         device,

@@ -77,7 +77,7 @@ macro_rules! fill_array_with_expression {
     for i in 0..$arr_size {
       tmp[i] = MaybeUninit::new($ex);
     }
-    unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) }
+    unsafe { std::mem::transmute::<[MaybeUninit<_>; $arr_size], [_; $arr_size]>(tmp) }
   }};
 }
 pub(crate) use fill_array_with_expression;

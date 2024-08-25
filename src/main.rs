@@ -28,6 +28,8 @@ const WINDOW_TITLE: &str = "Bouncy Ferris";
 const INITIAL_WINDOW_WIDTH: u32 = 800;
 const INITIAL_WINDOW_HEIGHT: u32 = 800;
 
+const RESOLUTION: [u32; 2] = [800, 800];
+
 const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };

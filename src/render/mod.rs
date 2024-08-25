@@ -9,6 +9,7 @@ mod initialization;
 mod pipelines;
 mod render_object;
 mod render_pass;
+mod render_targets;
 mod renderer;
 mod shaders;
 mod swapchain;
@@ -36,3 +37,5 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 ];
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
+
+const RENDER_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;

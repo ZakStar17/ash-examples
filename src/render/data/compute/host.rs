@@ -6,7 +6,9 @@ use crate::{
   render::{
     allocator::allocate_and_bind_memory,
     create_objs::create_buffer,
-    device_destroyable::{create_destroyable_array, destroy, DeviceManuallyDestroyed},
+    device_destroyable::{
+      destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed,
+    },
     errors::AllocationError,
     initialization::device::{Device, PhysicalDevice},
     FRAMES_IN_FLIGHT,
@@ -53,7 +55,7 @@ impl HostComputeData {
     device: &Device,
     physical_device: &PhysicalDevice,
   ) -> Result<Self, AllocationError> {
-    let storage_output_buffers = create_destroyable_array!(
+    let storage_output_buffers = fill_destroyable_array_with_expression!(
       device,
       create_buffer(
         device,
