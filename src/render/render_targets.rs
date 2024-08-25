@@ -25,6 +25,7 @@ use super::{
 
 // images that the main graphics pipeline draws to
 // these are then copied to the swapchain image
+#[derive(Debug)]
 pub struct RenderTargets {
   pub images: [vk::Image; FRAMES_IN_FLIGHT],
   pub memory: vk::DeviceMemory,

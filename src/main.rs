@@ -33,6 +33,11 @@ const RESOLUTION: [u32; 2] = [800, 800];
 const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
 };
+// color exterior the game area
+// (that appears if window is resized to a size with ratio different that in RESOLUTION)
+const OUT_OF_BOUNDS_AREA_COLOR: vk::ClearColorValue = vk::ClearColorValue {
+  float32: [0.0, 0.0, 0.0, 1.0],
+};
 
 // see https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
 // FIFO_KHR is required to be supported and functions as vsync
@@ -219,7 +224,13 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
             }
 
             if frame_i < usize::MAX {
-              ferris.update(time_passed, status.renderer.window().inner_size());
+              ferris.update(
+                time_passed,
+                PhysicalSize {
+                  width: RESOLUTION[0],
+                  height: RESOLUTION[1],
+                },
+              );
 
               // println!("\n\nRENDERING FRAME {}\n", frame_i);
               if let Err(err) = status.renderer.render_next_frame(&ferris) {

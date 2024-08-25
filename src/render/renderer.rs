@@ -22,10 +22,9 @@ use crate::{
       device::{Device, PhysicalDevice, Queues},
     },
     pipelines::{self, GraphicsPipeline},
-    render_pass::{
-      create_framebuffer, create_framebuffers_from_swapchain_images, create_render_pass,
-    },
+    render_pass::{create_framebuffer, create_render_pass},
     render_targets::RenderTargets,
+    SWAPCHAIN_IMAGE_USAGES,
   },
   utility::OnErr,
   INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
@@ -85,8 +84,6 @@ pub struct Renderer {
 
   render_pass: vk::RenderPass,
   render_targets: RenderTargets,
-  framebuffers: Box<[vk::Framebuffer]>,
-  old_framebuffers: (bool, Box<[vk::Framebuffer]>),
 
   pipeline_cache: vk::PipelineCache,
   pipeline: GraphicsPipeline,
@@ -190,21 +187,18 @@ impl Renderer {
       &device,
       &surface,
       window.inner_size(),
+      SWAPCHAIN_IMAGE_USAGES,
     )?;
     destructor.push(&swapchains);
 
-    let render_pass = create_render_pass(&device, swapchains.get_format())
-      .on_err(|_| unsafe { destructor.fire(&device) })?;
+    let render_pass =
+      create_render_pass(&device).on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&render_pass);
 
-    let render_targets = RenderTargets::new(&device, &physical_device, render_pass)?;
-
-    let framebuffers = create_framebuffers_from_swapchain_images(&device, &swapchains, render_pass)
+    let render_targets = RenderTargets::new(&device, &physical_device, render_pass)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(&framebuffers);
-    let old_framebuffers = (0..swapchains.get_image_views().len())
-      .map(|_| vk::Framebuffer::null())
-      .collect();
+    log::debug!("Created render targets:\n{:#?}", render_targets);
+    destructor.push(&render_targets);
 
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
@@ -298,8 +292,6 @@ impl Renderer {
       pipeline_cache,
       swapchains,
       descriptor_pool,
-      framebuffers,
-      old_framebuffers: (false, old_framebuffers),
       render_targets,
     })
   }
@@ -312,10 +304,12 @@ impl Renderer {
   ) -> Result<(), OutOfMemoryError> {
     self.command_pools[frame_i].reset(&self.device)?;
     self.command_pools[frame_i].record_main(
+      frame_i,
       &self.device,
       self.render_pass,
+      &self.render_targets,
+      self.swapchains.get_images()[image_i],
       self.swapchains.get_extent(),
-      self.framebuffers[image_i],
       &self.pipeline,
       &self.descriptor_pool,
       &self.constant_data,
@@ -333,97 +327,17 @@ impl Renderer {
       assert!(FRAMES_IN_FLIGHT == 2);
     }
 
-    // this function shouldn't be called if old objects haven't been destroyed
-    assert!(!self.old_framebuffers.0);
-
     // old swapchain becomes retired
     let changes = self.swapchains.recreate(
       &self.physical_device,
       &self.device,
       &self.surface,
       self.window.inner_size(),
+      SWAPCHAIN_IMAGE_USAGES,
     )?;
 
-    let mut new_render_pass = None;
-
-    if changes.format {
-      log::info!("Changing swapchain format");
-
-      // this shouldn't happen regularly, so its okay to stop all rendering so that the render pass can be recreated
-      self
-        .device
-        .device_wait_idle()
-        .on_err(|_| self.swapchains.revert_recreate(&self.device))
-        .map_err(|vkerr| match vkerr {
-          vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
-            SwapchainCreationError::OutOfMemory(vkerr.into())
-          }
-          vk::Result::ERROR_DEVICE_LOST => SwapchainCreationError::DeviceIsLost,
-          _ => panic!(),
-        })?;
-
-      // recreate all objects that depend on image format (but not on extent)
-      new_render_pass = Some(
-        create_render_pass(&self.device, self.swapchains.get_format())
-          .on_err(|_| self.swapchains.revert_recreate(&self.device))?,
-      );
-    } else if !changes.extent {
+    if !changes.format && !changes.extent {
       log::warn!("Recreating swapchain without any extent or format change");
-    }
-
-    assert!(self.swapchains.get_image_views().len() == self.framebuffers.len());
-
-    // recreate framebuffers
-    for (i, &view) in self.swapchains.get_image_views().iter().enumerate() {
-      self.old_framebuffers.1[i] = match create_framebuffer(
-        &self.device,
-        self.render_pass,
-        view,
-        self.swapchains.get_extent(),
-      ) {
-        Ok(v) => v,
-        Err(err) => unsafe {
-          for framebuffer in self.old_framebuffers.1[0..i].iter() {
-            framebuffer.destroy_self(&self.device);
-          }
-
-          if let Some(render_pass) = new_render_pass {
-            render_pass.destroy_self(&self.device);
-          }
-          self.swapchains.revert_recreate(&self.device);
-
-          return Err(err.into());
-        },
-      };
-    }
-
-    if changes.extent || changes.format {
-      match self.pipeline.recreate(
-        &self.device,
-        self.pipeline_cache,
-        self.render_pass,
-        self.swapchains.get_extent(),
-      ) {
-        Ok(v) => v,
-        Err(err) => unsafe {
-          for framebuffer in self.old_framebuffers.1.iter() {
-            framebuffer.destroy_self(&self.device);
-          }
-          if let Some(render_pass) = new_render_pass {
-            render_pass.destroy_self(&self.device);
-          }
-          self.swapchains.revert_recreate(&self.device);
-
-          return Err(err.into());
-        },
-      }
-    }
-
-    mem::swap(&mut self.framebuffers, &mut self.old_framebuffers.1);
-    self.old_framebuffers.0 = true;
-    if let Some(new) = new_render_pass {
-      self.render_pass.destroy_self(&self.device);
-      self.render_pass = new;
     }
 
     Ok(())
@@ -432,15 +346,6 @@ impl Renderer {
   // destroy old objects that resulted of a swapchain recreation
   // this should only be called when they stop being in use
   pub unsafe fn destroy_old(&mut self) {
-    self.pipeline.destroy_old(&self.device);
-
-    if self.old_framebuffers.0 {
-      for fb in self.old_framebuffers.1.iter() {
-        fb.destroy_self(&self.device);
-      }
-      self.old_framebuffers.0 = false;
-    }
-
     self.swapchains.destroy_old(&self.device);
   }
 }
@@ -473,7 +378,6 @@ impl Drop for Renderer {
       self.constant_data.destroy_self(&self.device);
       self.compute_data.destroy_self(&self.device);
 
-      self.framebuffers.destroy_self(&self.device);
       self.render_targets.destroy_self(&self.device);
       self.render_pass.destroy_self(&self.device);
       self.swapchains.destroy_self(&self.device);

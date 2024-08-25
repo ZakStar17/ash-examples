@@ -1,9 +1,9 @@
 use std::{marker::PhantomData, ptr};
 
 use ash::vk;
-use winit::window::Window;
+use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{ferris::Ferris, utility::OnErr};
+use crate::{ferris::Ferris, utility::OnErr, RESOLUTION};
 
 use super::{
   create_objs::{create_semaphore, create_timeline_semaphore},
@@ -139,7 +139,10 @@ impl SyncRenderer {
       self.renderer.record_graphics(
         cur_frame_i,
         image_index as usize,
-        &ferris.get_render_position(self.renderer.window.inner_size()),
+        &ferris.get_render_position(PhysicalSize {
+          width: RESOLUTION[0],
+          height: RESOLUTION[1],
+        }),
       )?;
     }
 
