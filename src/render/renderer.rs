@@ -25,6 +25,7 @@ use crate::{
     render_pass::{
       create_framebuffer, create_framebuffers_from_swapchain_images, create_render_pass,
     },
+    SWAPCHAIN_IMAGE_USAGES,
   },
   utility::OnErr,
   INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
@@ -186,6 +187,7 @@ impl Renderer {
       &device,
       &surface,
       window.inner_size(),
+      SWAPCHAIN_IMAGE_USAGES,
     )?;
     destructor.push(&swapchains);
 
@@ -332,6 +334,7 @@ impl Renderer {
       &self.device,
       &self.surface,
       self.window.inner_size(),
+      SWAPCHAIN_IMAGE_USAGES,
     )?;
 
     let mut new_render_pass = None;

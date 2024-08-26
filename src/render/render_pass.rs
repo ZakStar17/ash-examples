@@ -31,12 +31,15 @@ pub fn create_render_pass(
     .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
     .color_attachments(&attachment_ref)];
 
+  // set so that the render pass will only write to the swapchain image after it becomes available
   let dependencies = [
-    // change access flags to attachment before subpass begins
+    // change access flags to attachment before subbass begins
     vk::SubpassDependency {
       src_subpass: vk::SUBPASS_EXTERNAL,
       dst_subpass: 0, // image_subpass
+      // stage that the image will become available (as set in SyncRenderer)
       src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+      // the stage where contents are actually written to the image
       dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
       src_access_mask: vk::AccessFlags::NONE,
       dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,

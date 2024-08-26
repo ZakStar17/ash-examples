@@ -36,3 +36,6 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 ];
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
+
+// in this example the swapchain images are only used as color attachments
+const SWAPCHAIN_IMAGE_USAGES: vk::ImageUsageFlags = vk::ImageUsageFlags::COLOR_ATTACHMENT;

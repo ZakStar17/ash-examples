@@ -86,11 +86,6 @@ fn check_physical_device_capabilities(
     return Ok(false);
   }
 
-  if features.f12.timeline_semaphore != vk::TRUE {
-    log::warn!("Skipped physical device: Device does not support timeline semaphores");
-    return Ok(false);
-  }
-
   if features.f13.synchronization2 != vk::TRUE {
     log::warn!("Skipped physical device: Device does not support synchronization features");
     return Ok(false);

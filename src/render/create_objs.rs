@@ -1,7 +1,6 @@
 use std::{
-  ffi::c_void,
   marker::PhantomData,
-  ptr::{self, addr_of},
+  ptr::{self},
 };
 
 use ash::vk;
@@ -13,32 +12,11 @@ pub fn create_semaphore(device: &ash::Device) -> Result<vk::Semaphore, OutOfMemo
   unsafe { device.create_semaphore(&create_info, None) }.map_err(|err| err.into())
 }
 
-pub fn create_timeline_semaphore(
+pub fn create_fence(
   device: &ash::Device,
-  initial_value: u64,
-) -> Result<vk::Semaphore, OutOfMemoryError> {
-  let typ = vk::SemaphoreTypeCreateInfo {
-    s_type: vk::StructureType::SEMAPHORE_TYPE_CREATE_INFO,
-    p_next: ptr::null(),
-    semaphore_type: vk::SemaphoreType::TIMELINE,
-    initial_value,
-    _marker: PhantomData,
-  };
-  let create_info = vk::SemaphoreCreateInfo {
-    s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
-    p_next: addr_of!(typ) as *const c_void,
-    flags: vk::SemaphoreCreateFlags::empty(),
-    _marker: PhantomData,
-  };
-  unsafe {
-    device
-      .create_semaphore(&create_info, None)
-      .map_err(|vkerr| vkerr.into())
-  }
-}
-
-pub fn create_fence(device: &ash::Device) -> Result<vk::Fence, OutOfMemoryError> {
-  let create_info = vk::FenceCreateInfo::default();
+  flags: vk::FenceCreateFlags,
+) -> Result<vk::Fence, OutOfMemoryError> {
+  let create_info = vk::FenceCreateInfo::default().flags(flags);
   unsafe { device.create_fence(&create_info, None) }.map_err(|err| err.into())
 }
 

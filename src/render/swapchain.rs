@@ -123,10 +123,18 @@ impl Swapchains {
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
+    image_usages: vk::ImageUsageFlags,
   ) -> Result<Self, SwapchainCreationError> {
     let loader = ash::khr::swapchain::Device::new(instance, device);
 
-    let current = Swapchain::create(physical_device, device, surface, &loader, window_size)?;
+    let current = Swapchain::create(
+      physical_device,
+      device,
+      surface,
+      &loader,
+      window_size,
+      image_usages,
+    )?;
 
     Ok(Self {
       loader,
@@ -151,11 +159,16 @@ impl Swapchains {
     device: &ash::Device,
     surface: &Surface,
     window_size: PhysicalSize<u32>,
+    image_usages: vk::ImageUsageFlags,
   ) -> Result<RecreationChanges, SwapchainCreationError> {
-    let (old, changes) =
-      self
-        .current
-        .recreate(physical_device, device, surface, &self.loader, window_size)?;
+    let (old, changes) = self.current.recreate(
+      physical_device,
+      device,
+      surface,
+      &self.loader,
+      window_size,
+      image_usages,
+    )?;
 
     self.old = Some(old);
     Ok(changes)
@@ -212,6 +225,10 @@ impl Swapchains {
   pub fn get_image_views(&self) -> &[vk::ImageView] {
     &self.current.image_views
   }
+
+  pub fn get_images(&self) -> &[vk::Image] {
+    &self.current.images
+  }
 }
 
 impl DeviceManuallyDestroyed for Swapchains {
@@ -252,6 +269,7 @@ impl Swapchain {
     surface: &Surface,
     swapchain_loader: &ash::khr::swapchain::Device,
     window_size: PhysicalSize<u32>,
+    image_usages: vk::ImageUsageFlags,
   ) -> Result<Self, SwapchainCreationError> {
     let capabilities = unsafe { surface.get_capabilities(**physical_device) }?;
     let image_format = select_swapchain_image_format(**physical_device, surface)?;
@@ -273,6 +291,7 @@ impl Swapchain {
       swapchain_loader,
       capabilities,
       image_format,
+      image_usages,
       present_mode,
       extent,
       vk::SwapchainKHR::null(),
@@ -286,6 +305,7 @@ impl Swapchain {
     surface: &Surface,
     swapchain_loader: &ash::khr::swapchain::Device,
     window_size: PhysicalSize<u32>,
+    image_usages: vk::ImageUsageFlags,
   ) -> Result<(Self, RecreationChanges), SwapchainCreationError> {
     let capabilities = unsafe { surface.get_capabilities(**physical_device) }?;
     let image_format = select_swapchain_image_format(**physical_device, surface)?;
@@ -312,6 +332,7 @@ impl Swapchain {
       swapchain_loader,
       capabilities,
       image_format,
+      image_usages,
       present_mode,
       extent,
       self.inner,
@@ -332,6 +353,7 @@ impl Swapchain {
     swapchain_loader: &ash::khr::swapchain::Device,
     capabilities: vk::SurfaceCapabilitiesKHR,
     image_format: vk::SurfaceFormatKHR,
+    image_usages: vk::ImageUsageFlags,
     present_mode: vk::PresentModeKHR,
     extent: vk::Extent2D,
     old_swapchain: vk::SwapchainKHR,
@@ -354,7 +376,7 @@ impl Swapchain {
       image_format: image_format.format,
       image_extent: extent,
       image_array_layers: 1,
-      image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+      image_usage: image_usages,
 
       image_sharing_mode: vk::SharingMode::EXCLUSIVE,
       // ignored when SharingMode is EXCLUSIVE
@@ -412,6 +434,12 @@ impl Swapchain {
 
       image_views.into_boxed_slice()
     };
+
+    log::debug!(
+      "Created swapchain with\nimages: {:?}\nimage views: {:?}",
+      images,
+      image_views
+    );
 
     Ok(Self {
       inner: swapchain,

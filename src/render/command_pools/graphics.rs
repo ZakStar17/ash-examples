@@ -52,6 +52,7 @@ impl GraphicsCommandBufferPool {
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
+    // in this case the render pass takes care of all internal queue synchronization
     {
       let clear_value = vk::ClearValue {
         color: BACKGROUND_COLOR,
