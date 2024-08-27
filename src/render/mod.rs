@@ -41,4 +41,5 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
 const RENDER_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
+
 const SWAPCHAIN_IMAGE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(vk::ImageUsageFlags => vk::ImageUsageFlags::COLOR_ATTACHMENT, vk::ImageUsageFlags::TRANSFER_DST);

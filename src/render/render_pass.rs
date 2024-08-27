@@ -29,17 +29,7 @@ pub fn create_render_pass(device: &ash::Device) -> Result<vk::RenderPass, OutOfM
     .color_attachments(&attachment_ref)];
 
   let dependencies = [
-    // change access flags to attachment before subpass begins
-    vk::SubpassDependency {
-      src_subpass: vk::SUBPASS_EXTERNAL,
-      dst_subpass: 0,
-      src_stage_mask: vk::PipelineStageFlags::TRANSFER,
-      dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-      src_access_mask: vk::AccessFlags::TRANSFER_READ,
-      dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-      dependency_flags: vk::DependencyFlags::empty(),
-    },
-    // wait for subpass to finish before doing any transfer
+    // finish subpass before doing the blit operation
     vk::SubpassDependency {
       src_subpass: 0,
       dst_subpass: vk::SUBPASS_EXTERNAL,

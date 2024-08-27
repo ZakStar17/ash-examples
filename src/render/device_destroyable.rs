@@ -45,7 +45,7 @@ pub(crate) use destroy;
 //    v was created and then destroyed with the trait's function
 //
 macro_rules! fill_destroyable_array_with_expression {
-  ($device:tt, $ex:expr, $arr_size:tt) => {{
+  ($device:expr, $ex:expr, $arr_size:tt) => {{
     use crate::render::device_destroyable::DeviceManuallyDestroyed;
     use std::mem::MaybeUninit;
 

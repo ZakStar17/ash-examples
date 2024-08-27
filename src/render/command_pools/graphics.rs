@@ -61,6 +61,7 @@ impl GraphicsCommandBufferPool {
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
+    // in this case the render pass takes care of all internal queue synchronization
     {
       let clear_value = vk::ClearValue {
         color: BACKGROUND_COLOR,
@@ -239,7 +240,7 @@ impl GraphicsCommandBufferPool {
         src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
         dst_access_mask: vk::AccessFlags2::NONE,
         src_stage_mask: vk::PipelineStageFlags2::BLIT,
-        dst_stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS, // presentable semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT, // presentable semaphore
         old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,

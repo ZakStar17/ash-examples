@@ -3,11 +3,11 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{ferris::Ferris, utility::OnErr, RESOLUTION};
+use crate::{ferris::Ferris, render::create_objs::create_fence, utility::OnErr, RESOLUTION};
 
 use super::{
-  create_objs::{create_semaphore, create_timeline_semaphore},
-  device_destroyable::DeviceManuallyDestroyed,
+  create_objs::create_semaphore,
+  device_destroyable::{destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed},
   errors::InitializationError,
   renderer::Renderer,
   FrameRenderError, FRAMES_IN_FLIGHT,
@@ -16,8 +16,7 @@ use super::{
 pub struct SyncRenderer {
   pub renderer: Renderer,
   last_frame_i: usize,
-  timeline: vk::Semaphore,
-  timeline_index: u64,
+  frame_fences: [vk::Fence; FRAMES_IN_FLIGHT],
 
   // swapchain semaphores
   image_available: [vk::Semaphore; FRAMES_IN_FLIGHT],
@@ -31,37 +30,31 @@ pub struct SyncRenderer {
 }
 
 impl SyncRenderer {
-  // by how much timeline_index is incremented each frame
-  const PER_FRAME_TIMELINE_INCREMENT: u64 = 1;
-
   pub fn new(renderer: Renderer) -> Result<Self, InitializationError> {
-    let initial_timeline_index = 0;
-    let timeline = create_timeline_semaphore(&renderer.device, initial_timeline_index)?;
+    let device = &renderer.device;
+    let frame_fences = fill_destroyable_array_with_expression!(
+      device,
+      create_fence(device, vk::FenceCreateFlags::SIGNALED),
+      FRAMES_IN_FLIGHT
+    )?;
 
-    let available_sem_1 = create_semaphore(&renderer.device)
-      .on_err(|_| unsafe { timeline.destroy_self(&renderer.device) })?;
-    let available_sem_2 = create_semaphore(&renderer.device).on_err(|_| unsafe {
-      timeline.destroy_self(&renderer.device);
-      available_sem_1.destroy_self(&renderer.device);
-    })?;
-    let image_available = [available_sem_1, available_sem_2];
-
-    let presentable_sem_1 = create_semaphore(&renderer.device).on_err(|_| unsafe {
-      timeline.destroy_self(&renderer.device);
-      image_available.destroy_self(&renderer.device);
-    })?;
-    let presentable_sem_2 = create_semaphore(&renderer.device).on_err(|_| unsafe {
-      timeline.destroy_self(&renderer.device);
-      image_available.destroy_self(&renderer.device);
-      presentable_sem_1.destroy_self(&renderer.device);
-    })?;
-    let presentable = [presentable_sem_1, presentable_sem_2];
+    let image_available = fill_destroyable_array_with_expression!(
+      &renderer.device,
+      create_semaphore(device),
+      FRAMES_IN_FLIGHT
+    )
+    .on_err(|_| unsafe { frame_fences.destroy_self(device) })?;
+    let presentable = fill_destroyable_array_with_expression!(
+      &renderer.device,
+      create_semaphore(device),
+      FRAMES_IN_FLIGHT
+    )
+    .on_err(|_| unsafe { destroy!(device => frame_fences.as_ref(), image_available.as_ref()) })?;
 
     Ok(Self {
       renderer,
-      last_frame_i: 1,
-      timeline,
-      timeline_index: initial_timeline_index,
+      last_frame_i: 1, // 1 so that the first frame starts at 0
+      frame_fences,
 
       image_available,
       presentable,
@@ -80,22 +73,42 @@ impl SyncRenderer {
   }
 
   pub fn render_next_frame(&mut self, ferris: &Ferris) -> Result<(), FrameRenderError> {
+    // there are two (corresponding to the number of frames in flight) sets of frames
+    // in this example each frame set only owns its own graphics command buffer and nothing else, but
+    // as a command buffer can only hold the recording of one specific frame, one current frame
+    // needs to wait for the previous one of the same set to be able to record its commands.
+
+    // swapchain images indices are not related to the index of the current frame. Each time a
+    // frame occurs the swapchain can give any image that will become available.
+
+    // example: given sets A and B one possible situation would be:
+    //  frame 0: belongs to set A and it is given a swapchain image index of 0.
+    //      Doesn't wait for anything to begin rendering. *
+    //  frame 1: belongs to set B and its given a swapchain image index of 1.
+    //      Doesn't wait for anything to begin rendering. *
+    //  frame 2: belongs to set A and its given a swapchain image index of 2.
+    //      Waits for resources belonging to set A. In this case, waits so that frame 0 finishes
+    //      and the command buffer becomes available to be rerecorded. *
+    //  frame 3: belongs to set B and its given a swapchain image index of 0.
+    //      Waits for resources belonging to set B. In this case, waits so that frame 1 finishes
+    //      and the command buffer becomes available to be rerecorded. *
+    //  ...
+    // * Each frame also has to wait for the corresponding image to become truly available, as it
+    //  could be still being used in presentation.
+
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     self.last_frame_i = cur_frame_i;
-    let next_timeline_value = self.timeline_index + Self::PER_FRAME_TIMELINE_INCREMENT;
 
-    // wait for last frame to finish rendering
+    // wait for frame of the same set (that holds current frame resources) to finish rendering
     unsafe {
-      let wait_info = vk::SemaphoreWaitInfo {
-        s_type: vk::StructureType::SEMAPHORE_WAIT_INFO,
-        p_next: ptr::null(),
-        flags: vk::SemaphoreWaitFlags::empty(),
-        semaphore_count: 1,
-        p_semaphores: &self.timeline,
-        p_values: &self.timeline_index,
-        _marker: PhantomData,
-      };
-      self.renderer.device.wait_semaphores(&wait_info, u64::MAX)?
+      self
+        .renderer
+        .device
+        .wait_for_fences(&[self.frame_fences[cur_frame_i]], true, u64::MAX)?;
+      self
+        .renderer
+        .device
+        .reset_fences(&[self.frame_fences[cur_frame_i]])?;
     }
 
     // current frame resources are now safe to use as they are not being used by the GPU
@@ -148,30 +161,33 @@ impl SyncRenderer {
 
     let command_buffers = [vk::CommandBufferSubmitInfo::default()
       .command_buffer(self.renderer.command_pools[cur_frame_i].main)];
-    let wait_semaphores = [vk::SemaphoreSubmitInfo {
-      s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
-      p_next: ptr::null(),
-      semaphore: self.image_available[cur_frame_i],
-      value: 0,                                                     // ignored
-      stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT, // todo: explain why
-      device_index: 0,                                              // ignored
-      _marker: PhantomData,
-    }];
+
+    let wait_semaphores = [
+      // wait for image to become ready for writes
+      // the stage_mask will be synched with any dependencies existing in the command buffer
+      // recording
+      vk::SemaphoreSubmitInfo {
+        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+        p_next: ptr::null(),
+        semaphore: self.image_available[cur_frame_i],
+        value: 0, // ignored
+        // stage where the swapchain image stops being used by the presentation operation
+        // see notes in https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-semaphores-waiting
+        stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+        device_index: 0, // ignored
+        _marker: PhantomData,
+      },
+    ];
+
     let signal_semaphores = [
+      // when can the presentation operation start using the image
       vk::SemaphoreSubmitInfo {
         s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
         p_next: ptr::null(),
         semaphore: self.presentable[cur_frame_i],
-        value: 0,
-        stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
-        device_index: 0, // ignored
-        _marker: PhantomData,
-      },
-      vk::SemaphoreSubmitInfo {
-        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
-        p_next: ptr::null(),
-        semaphore: self.timeline,
-        value: next_timeline_value,
+        value: 0, // ignored
+        // last stages that affect the current swapchain image
+        // todo: why can't it be COLOR_ATTACHMENT_OUTPUT? what stage affects the image after that>
         stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
         device_index: 0, // ignored
         _marker: PhantomData,
@@ -182,17 +198,12 @@ impl SyncRenderer {
       .wait_semaphore_infos(&wait_semaphores)
       .signal_semaphore_infos(&signal_semaphores);
     unsafe {
-      self
-        .renderer
-        .device
-        .queue_submit2(
-          self.renderer.queues.graphics,
-          &[submit_info],
-          vk::Fence::null(),
-        )
-        .unwrap();
+      self.renderer.device.queue_submit2(
+        self.renderer.queues.graphics,
+        &[submit_info],
+        self.frame_fences[cur_frame_i],
+      )?;
     }
-    self.timeline_index = next_timeline_value;
 
     unsafe {
       if let Err(err) = self.renderer.swapchains.queue_present(
@@ -211,20 +222,15 @@ impl SyncRenderer {
 
 impl Drop for SyncRenderer {
   fn drop(&mut self) {
+    let device = &self.renderer.device;
     unsafe {
-      self
-        .renderer
-        .device
+      device
         .device_wait_idle()
         .expect("Failed to wait for device idleness while dropping SyncRenderer");
 
-      self.timeline.destroy_self(&self.renderer.device);
-      for sem in self.image_available {
-        sem.destroy_self(&self.renderer.device);
-      }
-      for sem in self.presentable {
-        sem.destroy_self(&self.renderer.device);
-      }
+      self.frame_fences.destroy_self(device);
+      self.image_available.destroy_self(device);
+      self.presentable.destroy_self(device);
     }
   }
 }

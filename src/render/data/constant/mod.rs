@@ -117,9 +117,9 @@ pub fn create_and_populate_constant_data(
   if physical_device.queue_families.get_graphics_index()
     != physical_device.queue_families.get_transfer_index()
   {
-    let texture_finished = create_fence(device)?;
+    let texture_finished = create_fence(device, vk::FenceCreateFlags::empty())?;
     let ferris_finished =
-      create_fence(device).on_err(|_| unsafe { texture_finished.destroy_self(device) })?;
+      create_fence(device, vk::FenceCreateFlags::empty()).on_err(|_| unsafe { texture_finished.destroy_self(device) })?;
     let wait_texture_transfer = create_semaphore(device)
       .on_err(|_| unsafe { destroy!(device => &texture_finished, &ferris_finished) })?;
     let destroy_objects = || unsafe {
@@ -145,7 +145,7 @@ pub fn create_and_populate_constant_data(
       destroy_objects();
     }
   } else {
-    let all_finished = create_fence(device)?;
+    let all_finished = create_fence(device, vk::FenceCreateFlags::empty())?;
 
     let texture_submit_info = vk::SubmitInfo::default().command_buffers(&load_texture);
 

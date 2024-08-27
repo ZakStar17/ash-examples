@@ -29,7 +29,6 @@ pub struct StagingData {
 #[derive(Debug)]
 pub struct StagingMemoryAllocation {
   pub memory: vk::DeviceMemory,
-  pub memory_type: u32,
   pub texture_offset: u64,
   pub vertex_offset: u64,
   pub index_offset: u64,
@@ -130,7 +129,6 @@ impl StagingData {
 
     Ok(StagingMemoryAllocation {
       memory: allocation.memory,
-      memory_type: allocation.type_index,
       vertex_offset,
       index_offset,
       texture_offset,

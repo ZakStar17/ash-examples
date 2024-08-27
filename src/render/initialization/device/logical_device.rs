@@ -44,7 +44,6 @@ impl Device {
     // enabled features
     let features10 = vk::PhysicalDeviceFeatures::default();
     let mut features12 = vk::PhysicalDeviceVulkan12Features {
-      timeline_semaphore: vk::TRUE,
       ..Default::default()
     };
     let mut features13 = vk::PhysicalDeviceVulkan13Features {
