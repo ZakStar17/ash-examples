@@ -105,10 +105,6 @@ impl SyncRenderer {
         .renderer
         .device
         .wait_for_fences(&[self.frame_fences[cur_frame_i]], true, u64::MAX)?;
-      self
-        .renderer
-        .device
-        .reset_fences(&[self.frame_fences[cur_frame_i]])?;
     }
 
     // current frame resources are now safe to use as they are not being used by the GPU
@@ -145,6 +141,14 @@ impl SyncRenderer {
         return Err(err.into());
       }
     };
+
+    unsafe {
+      // only reset after making sure the fence is going to be signalled again
+      self
+      .renderer
+      .device
+      .reset_fences(&[self.frame_fences[cur_frame_i]])?;
+    }
 
     // actual rendering
 
@@ -184,7 +188,6 @@ impl SyncRenderer {
         semaphore: self.presentable[cur_frame_i],
         value: 0, // ignored
         // last stages that affect the current swapchain image
-        // todo: why can't it be COLOR_ATTACHMENT_OUTPUT? what stage affects the image after that>
         stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
         device_index: 0, // ignored
         _marker: PhantomData,
