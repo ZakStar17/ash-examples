@@ -9,6 +9,7 @@ mod initialization;
 mod pipelines;
 mod render_object;
 mod render_pass;
+mod render_targets;
 mod renderer;
 mod shaders;
 mod swapchain;
@@ -24,6 +25,8 @@ pub use render_object::RenderPosition;
 pub use swapchain::AcquireNextImageError;
 pub use sync_renderer::SyncRenderer;
 
+use crate::{utility::const_flag_bitor, RESOLUTION};
+
 const FRAMES_IN_FLIGHT: usize = 2;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -37,5 +40,9 @@ const ADDITIONAL_VALIDATION_FEATURES: [vk::ValidationFeatureEnableEXT; 2] = [
 
 const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 
-// in this example the swapchain images are only used as color attachments
-const SWAPCHAIN_IMAGE_USAGES: vk::ImageUsageFlags = vk::ImageUsageFlags::COLOR_ATTACHMENT;
+const SWAPCHAIN_IMAGE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(vk::ImageUsageFlags => vk::ImageUsageFlags::COLOR_ATTACHMENT, vk::ImageUsageFlags::TRANSFER_DST);
+
+const RENDER_EXTENT: vk::Extent2D = vk::Extent2D {
+  width: RESOLUTION[0],
+  height: RESOLUTION[1],
+};

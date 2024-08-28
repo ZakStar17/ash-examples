@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr};
+use std::{cmp::Ordering, marker::PhantomData, ptr};
 
 use ash::vk;
 
@@ -11,9 +11,13 @@ use crate::{
     initialization::device::QueueFamilies,
     pipelines::GraphicsPipeline,
     render_object::RenderPosition,
+    render_targets::RenderTargets,
+    RENDER_EXTENT,
   },
-  utility, BACKGROUND_COLOR,
+  utility, BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
 };
+
+use super::dependency_info;
 
 pub struct GraphicsCommandBufferPool {
   pool: vk::CommandPool,
@@ -38,11 +42,17 @@ impl GraphicsCommandBufferPool {
 
   pub unsafe fn record_main(
     &mut self,
+    frame_i: usize,
     device: &ash::Device,
+
     render_pass: vk::RenderPass,
-    extent: vk::Extent2D,
-    framebuffer: vk::Framebuffer,
+    render_targets: &RenderTargets,
+
+    swapchain_image: vk::Image,
+    swapchain_extent: vk::Extent2D,
+
     pipeline: &GraphicsPipeline,
+
     descriptor_pool: &DescriptorPool,
     data: &ConstantData,
     position: &RenderPosition, // Ferris's position
@@ -51,6 +61,13 @@ impl GraphicsCommandBufferPool {
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
+
+    let render_width = RENDER_EXTENT.width as i32;
+    let render_height = RENDER_EXTENT.height as i32;
+    let swapchain_width = swapchain_extent.width as i32;
+    let swapchain_height = swapchain_extent.height as i32;
+
+    let just_copying = render_width == swapchain_width || render_height == swapchain_height;
 
     // in this case the render pass takes care of all internal queue synchronization
     {
@@ -61,11 +78,11 @@ impl GraphicsCommandBufferPool {
         s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
         p_next: ptr::null(),
         render_pass,
-        framebuffer,
+        framebuffer: render_targets.framebuffers[frame_i],
         // whole image
         render_area: vk::Rect2D {
           offset: vk::Offset2D { x: 0, y: 0 },
-          extent,
+          extent: RENDER_EXTENT,
         },
         clear_value_count: 1,
         p_clear_values: &clear_value,
@@ -96,6 +113,139 @@ impl GraphicsCommandBufferPool {
       device.cmd_end_render_pass(cb);
     }
 
+    // 1 mip_level / 1 array layer
+    let subresource_range = vk::ImageSubresourceRange {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      base_mip_level: 0,
+      level_count: 1,
+      base_array_layer: 0,
+      layer_count: 1,
+    };
+
+    // prepare and clear swapchain image
+    {
+      let swapchain_transfer_dst_layout = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::NONE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT, // image_available semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::CLEAR,
+        old_layout: vk::ImageLayout::UNDEFINED,
+        new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image: swapchain_image,
+        subresource_range,
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(
+        cb,
+        &dependency_info(&[], &[], &[swapchain_transfer_dst_layout]),
+      );
+
+      device.cmd_clear_color_image(
+        cb,
+        swapchain_image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &OUT_OF_BOUNDS_AREA_COLOR,
+        &[subresource_range],
+      );
+
+      let flush_clear = vk::MemoryBarrier2 {
+        s_type: vk::StructureType::MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        src_stage_mask: vk::PipelineStageFlags2::CLEAR,
+        dst_stage_mask: if just_copying {
+          vk::PipelineStageFlags2::COPY
+        } else {
+          vk::PipelineStageFlags2::BLIT
+        },
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[flush_clear], &[], &[]));
+    }
+
+    let layers = vk::ImageSubresourceLayers {
+      aspect_mask: vk::ImageAspectFlags::COLOR,
+      mip_level: 0,
+      base_array_layer: 0,
+      layer_count: 1,
+    };
+    if just_copying {
+      let x_offset = (render_width - swapchain_width).abs() / 2;
+      let y_offset = (render_height - swapchain_height).abs() / 2;
+      let region = vk::ImageCopy {
+        src_subresource: layers,
+        src_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+        dst_subresource: layers,
+        dst_offset: vk::Offset3D {
+          x: x_offset,
+          y: y_offset,
+          z: 0,
+        },
+        extent: vk::Extent3D {
+          width: RENDER_EXTENT.width,
+          height: RENDER_EXTENT.height,
+          depth: 1,
+        },
+      };
+      device.cmd_copy_image(
+        cb,
+        render_targets.images[frame_i],
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        swapchain_image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &[region],
+      )
+    } else {
+      let blit_region = get_centered_blit_region(
+        render_width,
+        render_height,
+        swapchain_width,
+        swapchain_height,
+        layers,
+        layers,
+      );
+      device.cmd_blit_image(
+        cb,
+        render_targets.images[frame_i],
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        swapchain_image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &[blit_region],
+        vk::Filter::NEAREST,
+      );
+    }
+
+    {
+      let swapchain_presentation_layout = vk::ImageMemoryBarrier2 {
+        s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::NONE,
+        src_stage_mask: if just_copying {
+          vk::PipelineStageFlags2::COPY
+        } else {
+          vk::PipelineStageFlags2::BLIT
+        },
+        dst_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image: swapchain_image,
+        subresource_range,
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(
+        cb,
+        &dependency_info(&[], &[], &[swapchain_presentation_layout]),
+      );
+    }
+
     device.end_command_buffer(cb)?;
     Ok(())
   }
@@ -104,5 +254,67 @@ impl GraphicsCommandBufferPool {
 impl DeviceManuallyDestroyed for GraphicsCommandBufferPool {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_command_pool(self.pool, None);
+  }
+}
+
+fn get_centered_blit_region(
+  src_width: i32,
+  src_height: i32,
+  dst_width: i32,
+  dst_height: i32,
+  src_subresource: vk::ImageSubresourceLayers,
+  dst_subresource: vk::ImageSubresourceLayers,
+) -> vk::ImageBlit {
+  let width_diff = dst_width - src_width;
+  let height_diff = dst_height - src_height;
+  let dst_start;
+  let dst_end;
+  match width_diff.cmp(&height_diff) {
+    Ordering::Greater => {
+      // clamp to height
+      let ratio = dst_height as f32 / src_height as f32;
+      let resized_width = (src_width as f32 * ratio) as i32;
+
+      let half = (dst_width - resized_width) / 2;
+      dst_start = [half, 0];
+      dst_end = [half + resized_width, dst_height];
+    }
+    Ordering::Equal => {
+      dst_start = [0, 0];
+      dst_end = [dst_width, dst_height];
+    }
+    Ordering::Less => {
+      // clamp to width
+      let ratio = dst_width as f32 / src_width as f32;
+      let resized_height = (src_height as f32 * ratio) as i32;
+
+      let half = (dst_height - resized_height) / 2;
+      dst_start = [0, half];
+      dst_end = [dst_width, half + resized_height];
+    }
+  }
+  vk::ImageBlit {
+    src_subresource,
+    src_offsets: [
+      vk::Offset3D { x: 0, y: 0, z: 0 },
+      vk::Offset3D {
+        x: src_width,
+        y: src_height,
+        z: 1,
+      },
+    ],
+    dst_subresource,
+    dst_offsets: [
+      vk::Offset3D {
+        x: dst_start[0],
+        y: dst_start[1],
+        z: 0,
+      },
+      vk::Offset3D {
+        x: dst_end[0],
+        y: dst_end[1],
+        z: 1,
+      },
+    ],
   }
 }

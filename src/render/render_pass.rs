@@ -4,22 +4,20 @@ use ash::vk;
 
 use crate::render::errors::OutOfMemoryError;
 
-use super::{device_destroyable::DeviceManuallyDestroyed, swapchain::Swapchains};
-
 pub fn create_render_pass(
   device: &ash::Device,
-  surface_format: vk::Format,
+  format: vk::Format,
 ) -> Result<vk::RenderPass, OutOfMemoryError> {
   let image_attachment = [vk::AttachmentDescription {
     flags: vk::AttachmentDescriptionFlags::empty(),
-    format: surface_format,
+    format,
     samples: vk::SampleCountFlags::TYPE_1,
     load_op: vk::AttachmentLoadOp::CLEAR,
     store_op: vk::AttachmentStoreOp::STORE,
     stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
     stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
     initial_layout: vk::ImageLayout::UNDEFINED,
-    final_layout: vk::ImageLayout::PRESENT_SRC_KHR, // layout after render pass finishes
+    final_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL, // layout after render pass finishes
   }];
 
   let attachment_ref = [vk::AttachmentReference {
@@ -31,18 +29,15 @@ pub fn create_render_pass(
     .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
     .color_attachments(&attachment_ref)];
 
-  // set so that the render pass will only write to the swapchain image after it becomes available
   let dependencies = [
-    // change access flags to attachment before subbass begins
+    // finish subpass before doing the blit (or copy) operation
     vk::SubpassDependency {
-      src_subpass: vk::SUBPASS_EXTERNAL,
-      dst_subpass: 0, // image_subpass
-      // stage that the image will become available (as set in SyncRenderer)
+      src_subpass: 0,
+      dst_subpass: vk::SUBPASS_EXTERNAL,
       src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-      // the stage where contents are actually written to the image
-      dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-      src_access_mask: vk::AccessFlags::NONE,
-      dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+      dst_stage_mask: vk::PipelineStageFlags::TRANSFER, // blit / copy
+      src_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+      dst_access_mask: vk::AccessFlags::TRANSFER_READ,
       dependency_flags: vk::DependencyFlags::empty(),
     },
   ];
@@ -81,29 +76,4 @@ pub fn create_framebuffer(
       .create_framebuffer(&create_info, None)
       .map_err(|err| err.into())
   }
-}
-
-pub fn create_framebuffers_from_swapchain_images(
-  device: &ash::Device,
-  swapchains: &Swapchains,
-  render_pass: vk::RenderPass,
-) -> Result<Box<[vk::Framebuffer]>, OutOfMemoryError> {
-  let mut framebuffers: Vec<vk::Framebuffer> =
-    Vec::with_capacity(swapchains.get_image_views().len());
-
-  for &view in swapchains.get_image_views().iter() {
-    framebuffers.push(
-      match create_framebuffer(device, render_pass, view, swapchains.get_extent()) {
-        Ok(value) => value,
-        Err(err) => unsafe {
-          for framebuffer in framebuffers {
-            framebuffer.destroy_self(device);
-          }
-          return Err(err);
-        },
-      },
-    )
-  }
-
-  Ok(framebuffers.into_boxed_slice())
 }

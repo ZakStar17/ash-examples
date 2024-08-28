@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr};
 
 use ash::vk;
-use winit::window::Window;
+use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{ferris::Ferris, render::create_objs::create_fence, utility::OnErr};
 
@@ -10,7 +10,7 @@ use super::{
   device_destroyable::{destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed},
   errors::InitializationError,
   renderer::Renderer,
-  FrameRenderError, FRAMES_IN_FLIGHT,
+  FrameRenderError, FRAMES_IN_FLIGHT, RENDER_EXTENT,
 };
 
 pub struct SyncRenderer {
@@ -105,10 +105,6 @@ impl SyncRenderer {
         .renderer
         .device
         .wait_for_fences(&[self.frame_fences[cur_frame_i]], true, u64::MAX)?;
-      self
-        .renderer
-        .device
-        .reset_fences(&[self.frame_fences[cur_frame_i]])?;
     }
 
     // current frame resources are now safe to use as they are not being used by the GPU
@@ -146,13 +142,23 @@ impl SyncRenderer {
       }
     };
 
+    unsafe {
+      self
+        .renderer
+        .device
+        .reset_fences(&[self.frame_fences[cur_frame_i]])?;
+    }
+
     // actual rendering
 
     unsafe {
       self.renderer.record_graphics(
         cur_frame_i,
         image_index as usize,
-        &ferris.get_render_position(self.renderer.window.inner_size()),
+        &ferris.get_render_position(PhysicalSize {
+          width: RENDER_EXTENT.width,
+          height: RENDER_EXTENT.height,
+        }),
       )?;
     }
 
@@ -184,7 +190,6 @@ impl SyncRenderer {
         semaphore: self.presentable[cur_frame_i],
         value: 0, // ignored
         // last stages that affect the current swapchain image
-        // todo: why can't it be COLOR_ATTACHMENT_OUTPUT? what stage affects the image after that>
         stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
         device_index: 0, // ignored
         _marker: PhantomData,
