@@ -143,10 +143,11 @@ impl SyncRenderer {
     };
 
     unsafe {
+      // only reset after making sure the fence is going to be signalled again
       self
-        .renderer
-        .device
-        .reset_fences(&[self.frame_fences[cur_frame_i]])?;
+      .renderer
+      .device
+      .reset_fences(&[self.frame_fences[cur_frame_i]])?;
     }
 
     // actual rendering
