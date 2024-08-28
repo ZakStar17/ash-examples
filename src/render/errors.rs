@@ -2,7 +2,7 @@ use ash::vk;
 use raw_window_handle::HandleError;
 
 use super::{
-  allocator::DeviceMemoryInitializationError,
+  allocator::{AllocationError, DeviceMemoryInitializationError},
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
   swapchain::{AcquireNextImageError, SwapchainCreationError},
@@ -149,6 +149,12 @@ impl std::fmt::Debug for InitializationError {
 impl From<winit::error::OsError> for InitializationError {
   fn from(value: winit::error::OsError) -> Self {
     InitializationError::WindowError(WindowError::OsError(value))
+  }
+}
+
+impl From<AllocationError> for InitializationError {
+  fn from(value: AllocationError) -> Self {
+    InitializationError::AllocationFailed(value.into())
   }
 }
 

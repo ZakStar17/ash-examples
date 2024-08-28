@@ -83,10 +83,7 @@ fn create_and_copy_from_staging_buffers(
       device,
       physical_device,
       [
-        (
-          texture_data.as_ptr(),
-          texture_data.len() as u64,
-        ),
+        (texture_data.as_ptr(), texture_data.len() as u64),
         (VERTICES.as_ptr() as *const u8, VERTICES_SIZE),
         (QUAD_INDICES.as_ptr() as *const u8, QUAD_INDICES_SIZE),
       ],

@@ -131,7 +131,7 @@ pub(crate) use fill_destroyable_array_with_expression_using_default;
 macro_rules! fill_destroyable_array_from_iter {
   ($device:tt, $iter:expr, $arr_size:tt) => {{
     let mut iter = $iter; // make sure $iter isn't creating new iterators every time
-    crate::device_destroyable::fill_destroyable_array_with_expression!(
+    crate::render::device_destroyable::fill_destroyable_array_with_expression!(
       $device,
       iter.next().unwrap(),
       $arr_size
