@@ -15,7 +15,9 @@ use crate::{
       GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
     },
     data::create_and_populate_constant_data,
-    device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
+    device_destroyable::{
+      destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
+    },
     errors::{InitializationError, OutOfMemoryError},
     initialization::{
       self,
@@ -263,16 +265,13 @@ impl Renderer {
     .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&graphics_pipeline);
 
-    let command_pool_1 =
-      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families)
-        .on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(&command_pool_1);
-    let command_pool_2 =
-      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families)
-        .on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(&command_pool_2);
-    let command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT] =
-      [command_pool_1, command_pool_2];
+    let command_pools = fill_destroyable_array_with_expression!(
+      &device,
+      GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
+      FRAMES_IN_FLIGHT
+    )
+    .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(command_pools.as_ptr());
 
     Ok(Self {
       window,
