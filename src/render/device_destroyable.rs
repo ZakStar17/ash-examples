@@ -50,23 +50,35 @@ macro_rules! fill_destroyable_array_with_expression {
     use std::mem::MaybeUninit;
 
     let mut tmp: [MaybeUninit<_>; $arr_size] = unsafe { MaybeUninit::uninit().assume_init() };
-    let mut macro_res = Ok(());
-    for i in 0..$arr_size {
+    let mut i = 0;
+    let mut last_error = Ok(());
+    while i < $arr_size {
       let exp_result: Result<_, _> = $ex;
-      tmp[i] = match exp_result {
-        Ok(v) => MaybeUninit::new(v),
+      match exp_result {
+        Ok(v) => {
+          tmp[i] = MaybeUninit::new(v);
+        }
         Err(err) => {
-          for j in 0..i {
-            unsafe {
-              DeviceManuallyDestroyed::destroy_self(&tmp[j].assume_init(), $device);
-            }
-          }
-          macro_res = Err(err);
+          last_error = Err(err);
           break;
         }
       };
+      i += 1;
     }
-    macro_res.map(|_| unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) })
+
+    if let Err(err) = last_error {
+      for (j, item) in tmp.into_iter().enumerate() {
+        if j >= i {
+          break;
+        }
+        unsafe {
+          DeviceManuallyDestroyed::destroy_self(&item.assume_init(), $device);
+        }
+      }
+      Err(err)
+    } else {
+      Ok(unsafe { std::mem::transmute::<[MaybeUninit<_>; $arr_size], [_; $arr_size]>(tmp) })
+    }
   }};
 }
 pub(crate) use fill_destroyable_array_with_expression;
@@ -78,27 +90,8 @@ pub(crate) use fill_destroyable_array_with_expression;
 // iter remaining items count has to be less or equal to $arr_size
 macro_rules! fill_destroyable_array_from_iter {
   ($device:tt, $iter:expr, $arr_size:tt) => {{
-    use crate::render::device_destroyable::DeviceManuallyDestroyed;
-    use std::mem::MaybeUninit;
-
-    let mut tmp: [MaybeUninit<_>; $arr_size] = unsafe { MaybeUninit::uninit().assume_init() };
-    let mut macro_res = Ok(());
-    let mut iter = $iter;
-    for i in 0..$arr_size {
-      tmp[i] = match iter.next().unwrap() {
-        Ok(v) => MaybeUninit::new(v),
-        Err(err) => {
-          for j in 0..i {
-            unsafe {
-              DeviceManuallyDestroyed::destroy_self(&tmp[j].assume_init(), $device);
-            }
-          }
-          macro_res = Err(err);
-          break;
-        }
-      };
-    }
-    macro_res.map(|_| unsafe { std::mem::transmute::<_, [_; $arr_size]>(tmp) })
+    let mut iter = $iter; // make sure $iter isn't creating new iterators every time
+    fill_destroyable_array_with_expression!($device, iter.next().unwrap(), $arr_size)
   }};
 }
 pub(crate) use fill_destroyable_array_from_iter;
