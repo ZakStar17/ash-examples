@@ -1,9 +1,11 @@
 mod constant;
+mod screenshot_buffer;
 mod staging_constant;
 
 use std::{
   marker::PhantomData,
-  ptr::{self},
+  ops::Deref,
+  ptr::{self, NonNull},
 };
 
 use ash::vk;
@@ -28,6 +30,7 @@ use super::{
 };
 
 pub use constant::ConstantData;
+pub use screenshot_buffer::ScreenshotBuffer;
 
 pub const VERTEX_SIZE: u64 = QUAD_VERTICES_SIZE as u64;
 pub const INDEX_SIZE: u64 = QUAD_INDICES_SIZE as u64;
@@ -56,6 +59,27 @@ fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), image::ImageErro
   let bytes = img.into_raw();
   assert!(bytes.len() == width as usize * height as usize * 4);
   Ok((width, height, bytes))
+}
+
+// buffer and its mapped ptr
+#[derive(Debug)]
+pub struct MappedHostBuffer<T> {
+  pub buffer: vk::Buffer,
+  pub data_ptr: NonNull<T>,
+}
+
+impl<T> Deref for MappedHostBuffer<T> {
+  type Target = vk::Buffer;
+
+  fn deref(&self) -> &Self::Target {
+    &self.buffer
+  }
+}
+
+impl<T> DeviceManuallyDestroyed for MappedHostBuffer<T> {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    self.buffer.destroy_self(device);
+  }
 }
 
 pub fn create_and_populate_constant_data(

@@ -310,6 +310,9 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
                       status.set_paused(target, !status.paused);
                     }
                   }
+                  KeyCode::F2 | KeyCode::F12 => {
+                    status.renderer.screenshot();
+                  }
                   _ => {}
                 }
               }

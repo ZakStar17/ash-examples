@@ -46,3 +46,7 @@ const RENDER_EXTENT: vk::Extent2D = vk::Extent2D {
   width: RESOLUTION[0],
   height: RESOLUTION[1],
 };
+
+// minimum memory size of an image that can be rendered to with the specified resolution
+const IMAGE_WITH_RESOLUTION_MINIMAL_SIZE: u64 =
+  RENDER_EXTENT.width as u64 * RENDER_EXTENT.height as u64 * 4;

@@ -27,6 +27,9 @@ pub struct SyncRenderer {
   last_frame_recreated_swapchain: bool,
   // will have the new window size
   recreate_swapchain_next_frame: bool,
+
+  save_next_frame: bool,
+  saving_frame: Option<usize>, // Some(frame_i) if frame's screenshot is being saved
 }
 
 impl SyncRenderer {
@@ -61,6 +64,8 @@ impl SyncRenderer {
 
       last_frame_recreated_swapchain: false,
       recreate_swapchain_next_frame: false,
+      save_next_frame: false,
+      saving_frame: None,
     })
   }
 
@@ -122,6 +127,14 @@ impl SyncRenderer {
       self.last_frame_recreated_swapchain = true;
     }
 
+    if let Some(frame) = self.saving_frame {
+      if frame == cur_frame_i {
+        self.saving_frame = None;
+        self.renderer.save_screenshot_buffer_as_rgba8()?;
+        println!("Saved frame {}", frame);
+      }
+    }
+
     let image_index = match unsafe {
       self
         .renderer
@@ -153,6 +166,13 @@ impl SyncRenderer {
     // actual rendering
 
     unsafe {
+      let mut record_screenshot = false;
+      if self.save_next_frame && self.saving_frame == None {
+        println!("recording");
+        self.save_next_frame = false;
+        self.saving_frame = Some(cur_frame_i);
+        record_screenshot = true;
+      }
       self.renderer.record_graphics(
         cur_frame_i,
         image_index as usize,
@@ -160,6 +180,7 @@ impl SyncRenderer {
           width: RENDER_EXTENT.width,
           height: RENDER_EXTENT.height,
         }),
+        record_screenshot,
       )?;
     }
 
@@ -220,6 +241,14 @@ impl SyncRenderer {
     }
 
     Ok(())
+  }
+
+  pub fn screenshot(&mut self) {
+    if self.save_next_frame {
+      println!("New screenshot failed, currently processing previous screenshot request");
+    } else {
+      self.save_next_frame = true;
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-use std::mem::{self, MaybeUninit};
+use std::mem::MaybeUninit;
 
 use ash::vk;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -9,37 +9,31 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris,
-  render::{
-    command_pools::{
-      GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
-    },
-    data::create_and_populate_constant_data,
-    device_destroyable::{
-      destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
-    },
-    errors::{InitializationError, OutOfMemoryError},
-    initialization::{
-      self,
-      device::{Device, PhysicalDevice, Queues},
-    },
-    pipelines::{self, GraphicsPipeline},
-    render_pass::create_render_pass,
-    RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
-  },
-  utility::OnErr,
-  INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
+  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION,
+  WINDOW_TITLE,
 };
 
 use super::{
-  data::ConstantData,
+  command_pools::{
+    GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
+  },
+  data::{create_and_populate_constant_data, ConstantData, ScreenshotBuffer},
   descriptor_sets::DescriptorPool,
-  initialization::Surface,
-  pipelines::PipelineCreationError,
+  device_destroyable::{
+    destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
+  },
+  errors::{InitializationError, OutOfMemoryError},
+  initialization::{
+    self,
+    device::{Device, PhysicalDevice, Queues},
+    Surface,
+  },
+  pipelines::{self, GraphicsPipeline, PipelineCreationError},
   render_object::RenderPosition,
+  render_pass::create_render_pass,
   render_targets::RenderTargets,
   swapchain::{SwapchainCreationError, Swapchains},
-  RenderInit, FRAMES_IN_FLIGHT,
+  RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -93,6 +87,8 @@ pub struct Renderer {
 
   data: ConstantData,
   descriptor_pool: DescriptorPool,
+
+  screenshot_buffer: ScreenshotBuffer,
 }
 
 struct Destructor<const N: usize> {
@@ -143,7 +139,7 @@ impl Renderer {
       // .with_resizable(false)
       .build(target)?;
 
-    let mut destructor: Destructor<13> = Destructor::new();
+    let mut destructor: Destructor<15> = Destructor::new();
 
     #[cfg(feature = "vl")]
     let (entry, instance, debug_utils) = pre_window.deconstruct();
@@ -271,6 +267,10 @@ impl Renderer {
     .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(command_pools.as_ptr());
 
+    let screenshot_buffer = ScreenshotBuffer::new(&device, &physical_device)
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(&screenshot_buffer);
+
     Ok(Self {
       window,
       surface,
@@ -289,6 +289,7 @@ impl Renderer {
       swapchains,
       descriptor_pool,
       render_targets,
+      screenshot_buffer,
     })
   }
 
@@ -297,6 +298,7 @@ impl Renderer {
     frame_i: usize,
     image_i: usize,
     position: &RenderPosition,
+    save_to_screenshot_buffer: bool,
   ) -> Result<(), OutOfMemoryError> {
     self.command_pools[frame_i].reset(&self.device)?;
     self.command_pools[frame_i].record_main(
@@ -310,6 +312,11 @@ impl Renderer {
       &self.descriptor_pool,
       &self.data,
       position,
+      if save_to_screenshot_buffer {
+        Some(*self.screenshot_buffer.buffer)
+      } else {
+        None
+      },
     )?;
     Ok(())
   }
@@ -415,6 +422,30 @@ impl Renderer {
 
     self.swapchains.destroy_old(&self.device);
   }
+
+  // safety: screenshot buffer should not be in use
+  pub fn save_screenshot_buffer_as_rgba8(&self) -> Result<(), OutOfMemoryError> {
+    let data = unsafe {
+      self
+        .screenshot_buffer
+        .invalidate_memory(&self.device, &self.physical_device)?;
+      self.screenshot_buffer.read_memory()
+    };
+
+    println!("starting saving");
+    // todo
+    image::save_buffer(
+      "last_screenshot.png",
+      data,
+      RESOLUTION[0],
+      RESOLUTION[1],
+      image::ColorType::Rgba8,
+    )
+    .unwrap();
+    println!("finished saving");
+
+    Ok(())
+  }
 }
 
 impl Drop for Renderer {
@@ -435,6 +466,8 @@ impl Drop for Renderer {
       {
         log::error!("Failed to save pipeline cache: {:?}", err);
       }
+
+      self.screenshot_buffer.destroy_self(&self.device);
 
       self.command_pools.destroy_self(&self.device);
 
