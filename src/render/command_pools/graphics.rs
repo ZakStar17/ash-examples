@@ -56,6 +56,8 @@ impl GraphicsCommandBufferPool {
     descriptor_pool: &DescriptorPool,
     data: &GPUData,
     position: &RenderPosition, // Ferris's position
+
+    screenshot_buffer: Option<vk::Buffer>,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.main;
     let begin_info =
@@ -174,6 +176,65 @@ impl GraphicsCommandBufferPool {
       base_array_layer: 0,
       layer_count: 1,
     };
+
+    // screenshot
+    if let Some(buffer) = screenshot_buffer {
+      // full image
+      let region = vk::BufferImageCopy {
+        image_subresource: layers,
+        image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+        image_extent: vk::Extent3D {
+          width: RENDER_EXTENT.width,
+          height: RENDER_EXTENT.height,
+          depth: 1,
+        },
+        buffer_offset: 0,
+        buffer_image_height: 0, // densely packed
+        buffer_row_length: 0,
+      };
+      device.cmd_copy_image_to_buffer(
+        cb,
+        render_targets.images[frame_i],
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        buffer,
+        &[region],
+      );
+
+      let flush_to_host = vk::BufferMemoryBarrier2 {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::HOST_READ,
+        src_stage_mask: vk::PipelineStageFlags2::COPY,
+        dst_stage_mask: vk::PipelineStageFlags2::HOST,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        buffer,
+        offset: 0,
+        size: vk::WHOLE_SIZE,
+        _marker: PhantomData,
+      };
+      // make sure memory contents are flushed for the next screenshot request
+      let flush_to_next_copy_write = vk::BufferMemoryBarrier2 {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+        src_stage_mask: vk::PipelineStageFlags2::COPY,
+        dst_stage_mask: vk::PipelineStageFlags2::COPY,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        buffer,
+        offset: 0,
+        size: vk::WHOLE_SIZE,
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(
+        cb,
+        &dependency_info(&[], &[flush_to_host, flush_to_next_copy_write], &[]),
+      );
+    }
+
     if just_copying {
       let x_offset = (render_width - swapchain_width).abs() / 2;
       let y_offset = (render_height - swapchain_height).abs() / 2;

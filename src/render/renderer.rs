@@ -9,29 +9,16 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
+  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION, WINDOW_TITLE
 };
 
 use super::{
-  command_pools::GraphicsCommandBufferPool,
-  descriptor_sets::DescriptorPool,
-  device_destroyable::{
+  command_pools::GraphicsCommandBufferPool, descriptor_sets::DescriptorPool, device_destroyable::{
     destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
-  },
-  errors::{InitializationError, OutOfMemoryError, SwapchainRecreationError},
-  format_conversions::{self, KNOWN_FORMATS},
-  gpu_data::GPUData,
-  initialization::{
-    self, device,
-    device::{Device, PhysicalDevice, Queues},
+  }, errors::{InitializationError, OutOfMemoryError, SwapchainRecreationError}, format_conversions::{self, KNOWN_FORMATS}, gpu_data::GPUData, initialization::{
+    self, device::{self, Device, PhysicalDevice, Queues},
     Surface,
-  },
-  pipelines::{self, GraphicsPipeline},
-  render_object::RenderPosition,
-  render_pass::create_render_pass,
-  render_targets::RenderTargets,
-  swapchain::{SwapchainCreationError, Swapchains},
-  RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
+  }, pipelines::{self, GraphicsPipeline}, render_object::RenderPosition, render_pass::create_render_pass, render_targets::RenderTargets, screenshot_buffer::ScreenshotBuffer, swapchain::{SwapchainCreationError, Swapchains}, RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES
 };
 
 const TEXTURE_PATH: &str = "./ferris.png";
@@ -71,6 +58,8 @@ pub struct Renderer {
 
   data: GPUData,
   descriptor_pool: DescriptorPool,
+
+  screenshot_buffer: ScreenshotBuffer,
 }
 
 struct Destructor<const N: usize> {
@@ -121,7 +110,7 @@ impl Renderer {
       // .with_resizable(false)
       .build(target)?;
 
-    let mut destructor: Destructor<14> = Destructor::new();
+    let mut destructor: Destructor<16> = Destructor::new();
 
     #[cfg(feature = "vl")]
     let (entry, instance, debug_utils) = pre_window.deconstruct();
@@ -249,6 +238,9 @@ impl Renderer {
         .wait_and_self_destroy(&device)
         .on_err(|_| destructor.fire(&device))?;
     }
+    let screenshot_buffer = ScreenshotBuffer::new(&device, &physical_device)
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(&screenshot_buffer);
 
     Ok(Self {
       window,
@@ -268,6 +260,7 @@ impl Renderer {
       swapchains,
       descriptor_pool,
       render_targets,
+      screenshot_buffer,
     })
   }
 
@@ -276,6 +269,7 @@ impl Renderer {
     frame_i: usize,
     image_i: usize,
     position: &RenderPosition,
+    save_to_screenshot_buffer: bool,
   ) -> Result<(), OutOfMemoryError> {
     self.command_pools[frame_i].reset(&self.device)?;
     self.command_pools[frame_i].record_main(
@@ -289,6 +283,11 @@ impl Renderer {
       &self.descriptor_pool,
       &self.data,
       position,
+      if save_to_screenshot_buffer {
+        Some(self.screenshot_buffer.buffer)
+      } else {
+        None
+      },
     )?;
     Ok(())
   }
@@ -394,6 +393,30 @@ impl Renderer {
 
     self.swapchains.destroy_old(&self.device);
   }
+
+  // safety: screenshot buffer should not be in use
+  pub fn save_screenshot_buffer_as_rgba8(&self) -> Result<(), OutOfMemoryError> {
+    let data = unsafe {
+      self
+        .screenshot_buffer
+        .invalidate_memory(&self.device, &self.physical_device)?;
+      self.screenshot_buffer.read_memory()
+    };
+
+    println!("starting saving");
+    // todo
+    image::save_buffer(
+      "last_screenshot.png",
+      data,
+      RESOLUTION[0],
+      RESOLUTION[1],
+      image::ColorType::Rgba8,
+    )
+    .unwrap();
+    println!("finished saving");
+
+    Ok(())
+  }
 }
 
 impl Drop for Renderer {
@@ -414,6 +437,8 @@ impl Drop for Renderer {
       {
         log::error!("Failed to save pipeline cache: {:?}", err);
       }
+
+      self.screenshot_buffer.destroy_self(&self.device);
 
       self.command_pools.destroy_self(&self.device);
 
