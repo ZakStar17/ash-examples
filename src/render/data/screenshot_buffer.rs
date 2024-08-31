@@ -30,15 +30,15 @@ impl ScreenshotBuffer {
 
   pub fn new(device: &Device, physical_device: &PhysicalDevice) -> Result<Self, AllocationError> {
     let buffer = create_buffer(
-      &device,
+      device,
       Self::BUFFER_SIZE,
       vk::BufferUsageFlags::TRANSFER_DST,
     )?;
 
     let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
     let alloc = allocate_and_bind_memory(
-      &device,
-      &physical_device,
+      device,
+      physical_device,
       vk::MemoryPropertyFlags::HOST_VISIBLE,
       &[buffer],
       &[memory_requirements],

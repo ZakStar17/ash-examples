@@ -22,7 +22,7 @@ use super::{
   device_destroyable::{
     destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
   },
-  errors::{ImageError, InitializationError, OutOfMemoryError},
+  errors::{error_chain_fmt, AllocationError, ImageError, InitializationError, OutOfMemoryError},
   initialization::{
     self,
     device::{Device, PhysicalDevice, Queues},
@@ -36,19 +36,31 @@ use super::{
   RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
 };
 
-#[derive(Debug, thiserror::Error)]
+#[allow(clippy::enum_variant_names)]
+#[derive(thiserror::Error)]
 pub enum SwapchainRecreationError {
-  #[error("Out of memory")]
-  OutOfMemory(OutOfMemoryError),
+  #[error("Memory error")]
+  MemoryError(#[source] AllocationError),
   #[error("Failed to create a swapchain")]
-  SwapchainError(SwapchainCreationError),
+  SwapchainError(#[source] SwapchainCreationError),
   #[error("Failed to create a pipeline")]
-  PipelineCreationError(PipelineCreationError),
+  PipelineCreationError(#[source] PipelineCreationError),
+}
+impl std::fmt::Debug for SwapchainRecreationError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
 }
 
 impl From<OutOfMemoryError> for SwapchainRecreationError {
   fn from(value: OutOfMemoryError) -> Self {
-    SwapchainRecreationError::OutOfMemory(value)
+    SwapchainRecreationError::MemoryError(AllocationError::NotEnoughMemory(value))
+  }
+}
+
+impl From<AllocationError> for SwapchainRecreationError {
+  fn from(value: AllocationError) -> Self {
+    SwapchainRecreationError::MemoryError(value)
   }
 }
 
@@ -374,8 +386,7 @@ impl Renderer {
         .on_err(|_| {
           new_render_pass.unwrap().destroy_self(&self.device);
           self.swapchains.revert_recreate(&self.device)
-        })
-        .unwrap(), // todo
+        })?,
       );
     } else if !changes.extent {
       log::warn!("Recreating swapchain without any extent or format change");
@@ -441,7 +452,7 @@ impl Renderer {
 
     // copy data to faster memory
     let mut data: Vec<u8> = ref_slice.into();
-    
+
     // todo: make data save in a separate thread to not stall rendering
 
     // transform to rgba8

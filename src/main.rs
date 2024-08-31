@@ -319,6 +319,29 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
                       status.renderer.screenshot();
                     }
                   }
+                  KeyCode::F10 => {
+                    if pressed && !repeating {
+                      // attempt to resize the window to native resolution
+                      let old_size = status.renderer.window().inner_size();
+                      if old_size.width != RESOLUTION[0] && old_size.height != RESOLUTION[1] {
+                        match status.renderer.window().request_inner_size(PhysicalSize {
+                          width: RESOLUTION[0],
+                          height: RESOLUTION[1]
+                        }) {
+                          Some(size) => {
+                            if size == old_size {
+                              println!("Attempted to resize to native resolution, however resizing is currently disallowed by the windowing system.");
+                            } else {
+                              println!("Attempted to resize to native resolution, however such command may have been ignored by the platform.");
+                            }
+                          }
+                          None => {
+                            println!("Successfully resized to native resolution");
+                          }
+                        }
+                      }
+                    }
+                  }
                   _ => {}
                 }
               }
