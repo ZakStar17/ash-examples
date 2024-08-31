@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    data::{ConstantData, INDEX_COUNT},
+    data::{constant::ConstantData, INDEX_COUNT},
     descriptor_sets::DescriptorPool,
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,

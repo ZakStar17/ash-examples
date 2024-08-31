@@ -9,15 +9,15 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION,
-  SCREENSHOT_SAVE_FILE, WINDOW_TITLE,
+  ferris::Ferris, render::data::constant::create_and_populate_constant_data, utility::OnErr,
+  INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION, SCREENSHOT_SAVE_FILE, WINDOW_TITLE,
 };
 
 use super::{
   command_pools::{
     GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
   },
-  data::{create_and_populate_constant_data, ConstantData, ScreenshotBuffer},
+  data::{compute::ComputeData, constant::ConstantData, ScreenshotBuffer},
   descriptor_sets::DescriptorPool,
   device_destroyable::{
     destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
@@ -97,7 +97,8 @@ pub struct Renderer {
   pipeline: GraphicsPipeline,
   pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
 
-  data: ConstantData,
+  constant_data: ConstantData,
+  compute_data: ComputeData,
   descriptor_pool: DescriptorPool,
 
   screenshot_buffer: ScreenshotBuffer,
@@ -221,7 +222,7 @@ impl Renderer {
     }
     destructor.push(&pipeline_cache);
 
-    let data = {
+    let constant_data = {
       let mut temp_transfer_pool =
         TransferCommandBufferPool::create(&device, &physical_device.queue_families)
           .on_err(|_| unsafe { destructor.fire(&device) })?;
@@ -256,7 +257,9 @@ impl Renderer {
       data
     };
 
-    let descriptor_pool = DescriptorPool::new(&device, data.texture_view)
+    let compute_data = ComputeData::new(&device, &physical_device)?;
+
+    let descriptor_pool = DescriptorPool::new(&device, constant_data.texture_view)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&descriptor_pool);
 
@@ -294,7 +297,8 @@ impl Renderer {
       device,
       queues,
       command_pools,
-      data,
+      constant_data,
+      compute_data,
       render_pass,
       pipeline: graphics_pipeline,
       pipeline_cache,
@@ -322,7 +326,7 @@ impl Renderer {
       self.swapchains.get_extent(),
       &self.pipeline,
       &self.descriptor_pool,
-      &self.data,
+      &self.constant_data,
       position,
       if save_to_screenshot_buffer {
         Some(*self.screenshot_buffer.buffer)
@@ -510,7 +514,8 @@ impl Drop for Renderer {
       self.pipeline_cache.destroy_self(&self.device);
       self.descriptor_pool.destroy_self(&self.device);
 
-      self.data.destroy_self(&self.device);
+      self.constant_data.destroy_self(&self.device);
+      self.compute_data.destroy_self(&self.device);
 
       self.render_targets.destroy_self(&self.device);
       self.render_pass.destroy_self(&self.device);

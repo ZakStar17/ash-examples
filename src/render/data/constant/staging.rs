@@ -14,7 +14,7 @@ use crate::{
   utility::OnErr,
 };
 
-use super::{INDEX_SIZE, VERTEX_SIZE};
+use super::super::{INDEX_SIZE, VERTEX_SIZE};
 
 const STAGING_MEMORY_PRIORITY: f32 = 0.3;
 

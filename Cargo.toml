@@ -21,6 +21,7 @@ thiserror = "1"
 # random utilities
 take_mut = "0.2.2"
 itertools = "0.13.0"
+rand = "0.8.5"
 
 
 [features]

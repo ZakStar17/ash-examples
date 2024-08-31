@@ -13,7 +13,7 @@ use crate::{
   utility::OnErr,
 };
 
-use super::{INDEX_SIZE, TEXTURE_FORMAT, TEXTURE_USAGES, VERTEX_SIZE};
+use super::super::{INDEX_SIZE, TEXTURE_FORMAT, TEXTURE_USAGES, VERTEX_SIZE};
 
 const CONSTANT_MEMORY_PRIORITY: f32 = 0.5;
 
