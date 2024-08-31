@@ -274,3 +274,28 @@ impl From<SwapchainRecreationError> for FrameRenderError {
     Self::FailedToRecreateSwapchain(value)
   }
 }
+
+#[derive(thiserror::Error)]
+pub enum ImageError {
+  #[error("Out of memory")]
+  OutOfMemory(#[source] OutOfMemoryError),
+
+  #[error("Image Error")]
+  ImageError(#[source] image::ImageError),
+}
+impl std::fmt::Debug for ImageError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    error_chain_fmt(self, f)
+  }
+}
+
+impl From<image::ImageError> for ImageError {
+  fn from(value: image::ImageError) -> Self {
+    Self::ImageError(value)
+  }
+}
+impl From<OutOfMemoryError> for ImageError {
+  fn from(value: OutOfMemoryError) -> Self {
+    Self::OutOfMemory(value)
+  }
+}
