@@ -8,12 +8,12 @@ use ash::vk;
 use crate::{
   render::{
     allocator,
+    allocator::DeviceMemoryInitializationError,
     create_objs::create_buffer,
     device_destroyable::{destroy, DeviceManuallyDestroyed},
     errors::OutOfMemoryError,
     initialization::device::{Device, PhysicalDevice},
     IMAGE_WITH_RESOLUTION_MINIMAL_SIZE,
-    allocator::DeviceMemoryInitializationError,
   },
   utility::OnErr,
 };
@@ -31,7 +31,10 @@ impl ScreenshotBuffer {
   const BUFFER_SIZE: u64 = IMAGE_WITH_RESOLUTION_MINIMAL_SIZE;
 
   // todo: change error name
-  pub fn new(device: &Device, physical_device: &PhysicalDevice) -> Result<Self, DeviceMemoryInitializationError> {
+  pub fn new(
+    device: &Device,
+    physical_device: &PhysicalDevice,
+  ) -> Result<Self, DeviceMemoryInitializationError> {
     let buffer = create_buffer(
       &device,
       Self::BUFFER_SIZE,
@@ -54,13 +57,15 @@ impl ScreenshotBuffer {
     let offset = alloc.obj_to_memory_assignment[0].1;
 
     let ptr = unsafe {
-      device.map_memory(
-        *mem,
-        0,
-        // if size is not vk::WHOLE_SIZE, mapping should follow alignments
-        vk::WHOLE_SIZE,
-        vk::MemoryMapFlags::empty(),
-      )?.byte_add(offset as usize)
+      device
+        .map_memory(
+          *mem,
+          0,
+          // if size is not vk::WHOLE_SIZE, mapping should follow alignments
+          vk::WHOLE_SIZE,
+          vk::MemoryMapFlags::empty(),
+        )?
+        .byte_add(offset as usize)
     } as *mut u8;
     let ptr = NonNull::new(ptr).unwrap();
 

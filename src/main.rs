@@ -29,7 +29,9 @@ const WINDOW_TITLE: &str = "Bouncy Ferris";
 const INITIAL_WINDOW_WIDTH: u32 = 800;
 const INITIAL_WINDOW_HEIGHT: u32 = 800;
 
-const RESOLUTION: [u32; 2] = [400, 800];
+const RESOLUTION: [u32; 2] = [800, 800];
+
+const SCREENSHOT_SAVE_FILE: &str = "last_screenshot.png";
 
 const BACKGROUND_COLOR: vk::ClearColorValue = vk::ClearColorValue {
   float32: [0.01, 0.01, 0.01, 1.0],
@@ -296,6 +298,7 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
             }
             WindowEvent::KeyboardInput { event, .. } => {
               let pressed = event.state.is_pressed();
+              let repeating = event.repeat;
               // todo: implement step frame by frame functionality
               if let PhysicalKey::Code(code) = event.physical_key {
                 match code {
@@ -312,7 +315,9 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
                     }
                   }
                   KeyCode::F2 | KeyCode::F12 => {
-                    status.renderer.screenshot();
+                    if pressed && !repeating {
+                      status.renderer.screenshot();
+                    }
                   }
                   _ => {}
                 }

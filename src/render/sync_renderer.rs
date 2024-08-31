@@ -3,7 +3,9 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{ferris::Ferris, render::create_objs::create_fence, utility::OnErr};
+use crate::{
+  ferris::Ferris, render::create_objs::create_fence, utility::OnErr, SCREENSHOT_SAVE_FILE,
+};
 
 use super::{
   create_objs::create_semaphore,
@@ -29,7 +31,7 @@ pub struct SyncRenderer {
   recreate_swapchain_next_frame: bool,
 
   save_next_frame: bool,
-  saving_frame: Option<usize>, // Some(frame_i) if frame's screenshot is being saved
+  saving_frame: Option<(usize, vk::Format)>, // Some((frame_i, save_format)) if frame's screenshot is being saved
 }
 
 impl SyncRenderer {
@@ -127,11 +129,21 @@ impl SyncRenderer {
       self.last_frame_recreated_swapchain = true;
     }
 
-    if let Some(frame) = self.saving_frame {
+    if let Some((frame, format)) = self.saving_frame {
       if frame == cur_frame_i {
         self.saving_frame = None;
-        self.renderer.save_screenshot_buffer_as_rgba8()?;
-        println!("Saved frame {}", frame);
+        match self.renderer.save_screenshot_buffer_as_rgba8(format) {
+          Ok(()) => {
+            println!("Screenshot saved to {:?}", SCREENSHOT_SAVE_FILE);
+          }
+          Err(err) => {
+            log::error!(
+              "Failed to save screenshot to {:?}:\n{:?}",
+              SCREENSHOT_SAVE_FILE,
+              err
+            );
+          }
+        }
       }
     }
 
@@ -168,9 +180,8 @@ impl SyncRenderer {
     unsafe {
       let mut record_screenshot = false;
       if self.save_next_frame && self.saving_frame == None {
-        println!("recording");
         self.save_next_frame = false;
-        self.saving_frame = Some(cur_frame_i);
+        self.saving_frame = Some((cur_frame_i, self.renderer.render_format()));
         record_screenshot = true;
       }
       self.renderer.record_graphics(

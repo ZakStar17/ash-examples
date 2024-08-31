@@ -9,16 +9,31 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION, WINDOW_TITLE
+  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION,
+  SCREENSHOT_SAVE_FILE, WINDOW_TITLE,
 };
 
 use super::{
-  command_pools::GraphicsCommandBufferPool, descriptor_sets::DescriptorPool, device_destroyable::{
+  command_pools::GraphicsCommandBufferPool,
+  descriptor_sets::DescriptorPool,
+  device_destroyable::{
     destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
-  }, errors::{InitializationError, OutOfMemoryError, SwapchainRecreationError}, format_conversions::{self, KNOWN_FORMATS}, gpu_data::GPUData, initialization::{
-    self, device::{self, Device, PhysicalDevice, Queues},
+  },
+  errors::{ImageError, InitializationError, OutOfMemoryError, SwapchainRecreationError},
+  format_conversions::{self, KNOWN_FORMATS},
+  gpu_data::GPUData,
+  initialization::{
+    self,
+    device::{self, Device, PhysicalDevice, Queues},
     Surface,
-  }, pipelines::{self, GraphicsPipeline}, render_object::RenderPosition, render_pass::create_render_pass, render_targets::RenderTargets, screenshot_buffer::ScreenshotBuffer, swapchain::{SwapchainCreationError, Swapchains}, RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES
+  },
+  pipelines::{self, GraphicsPipeline},
+  render_object::RenderPosition,
+  render_pass::create_render_pass,
+  render_targets::RenderTargets,
+  screenshot_buffer::ScreenshotBuffer,
+  swapchain::{SwapchainCreationError, Swapchains},
+  RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
 };
 
 const TEXTURE_PATH: &str = "./ferris.png";
@@ -394,26 +409,50 @@ impl Renderer {
     self.swapchains.destroy_old(&self.device);
   }
 
+  pub fn render_format(&self) -> vk::Format {
+    self.swapchains.get_format()
+  }
+
   // safety: screenshot buffer should not be in use
-  pub fn save_screenshot_buffer_as_rgba8(&self) -> Result<(), OutOfMemoryError> {
-    let data = unsafe {
+  pub fn save_screenshot_buffer_as_rgba8(
+    &self,
+    saved_format: vk::Format,
+  ) -> Result<(), ImageError> {
+    let ref_slice = unsafe {
       self
         .screenshot_buffer
         .invalidate_memory(&self.device, &self.physical_device)?;
       self.screenshot_buffer.read_memory()
     };
 
-    println!("starting saving");
-    // todo
+    // copy data to faster memory
+    let mut data: Vec<u8> = ref_slice.into();
+
+    // todo: make data save in a separate thread to not stall rendering
+
+    // transform to rgba8
+    match saved_format {
+      vk::Format::R8G8B8A8_SRGB | vk::Format::R8G8B8A8_UNORM => {}
+      vk::Format::B8G8R8A8_SRGB | vk::Format::B8G8R8A8_UNORM => {
+        for pixel in data.array_chunks_mut::<4>() {
+          pixel.swap(0, 2); // swap B and R
+        }
+      }
+      _ => {
+        log::error!(
+          "Attempting to save screenshot containing an unhandled format: \"{:?}\"",
+          saved_format
+        );
+      }
+    }
+
     image::save_buffer(
-      "last_screenshot.png",
-      data,
+      SCREENSHOT_SAVE_FILE,
+      &data,
       RESOLUTION[0],
       RESOLUTION[1],
       image::ColorType::Rgba8,
-    )
-    .unwrap();
-    println!("finished saving");
+    )?;
 
     Ok(())
   }
