@@ -360,8 +360,7 @@ impl Renderer {
         .on_err(|_| {
           new_render_pass.unwrap().destroy_self(&self.device);
           self.swapchains.revert_recreate(&self.device)
-        })
-        .unwrap(), // todo
+        })?,
       );
     } else if !changes.extent {
       log::warn!("Recreating swapchain without any extent or format change");

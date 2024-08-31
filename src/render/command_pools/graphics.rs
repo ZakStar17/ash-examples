@@ -69,7 +69,9 @@ impl GraphicsCommandBufferPool {
     let swapchain_width = swapchain_extent.width as i32;
     let swapchain_height = swapchain_extent.height as i32;
 
-    let just_copying = render_width == swapchain_width || render_height == swapchain_height;
+    // do a copy operation instead of blit if true
+    let just_copying = (render_width == swapchain_width && swapchain_height >= render_height)
+      || (render_height == swapchain_height && swapchain_width >= render_width);
 
     // in this case the render pass takes care of all internal queue synchronization
     {

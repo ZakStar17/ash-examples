@@ -179,7 +179,7 @@ impl SyncRenderer {
 
     unsafe {
       let mut record_screenshot = false;
-      if self.save_next_frame && self.saving_frame == None {
+      if self.save_next_frame && self.saving_frame.is_none() {
         self.save_next_frame = false;
         self.saving_frame = Some((cur_frame_i, self.renderer.render_format()));
         record_screenshot = true;

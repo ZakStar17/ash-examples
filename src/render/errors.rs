@@ -99,6 +99,8 @@ impl From<QueueSubmitError> for DeviceMemoryInitializationError {
 pub enum SwapchainRecreationError {
   #[error(transparent)]
   OutOfMemory(#[from] OutOfMemoryError),
+  #[error("Allocation error:\n{0}")]
+  AllocationError(#[from] AllocationError),
   #[error("Failed to create a swapchain: {0}")]
   SwapchainError(#[from] SwapchainCreationError),
   #[error("Failed to create a pipeline: {0}")]
