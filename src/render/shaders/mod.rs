@@ -6,9 +6,9 @@ use std::{
 
 use ash::vk;
 
-pub mod shader;
-
-pub use shader::Shader;
+pub mod bullets;
+pub mod compute;
+pub mod player;
 
 use crate::render::errors::OutOfMemoryError;
 
