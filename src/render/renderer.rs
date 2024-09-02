@@ -9,8 +9,8 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris, render::data::constant::create_and_populate_constant_data, utility::OnErr,
-  INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, RESOLUTION, SCREENSHOT_SAVE_FILE, WINDOW_TITLE,
+  render::data::constant::create_and_populate_constant_data, utility::OnErr, INITIAL_WINDOW_HEIGHT,
+  INITIAL_WINDOW_WIDTH, RESOLUTION, SCREENSHOT_SAVE_FILE, WINDOW_TITLE,
 };
 
 use super::{
@@ -29,11 +29,10 @@ use super::{
     Surface,
   },
   pipelines::{self, GraphicsPipelines, PipelineCreationError},
-  render_object::RenderPosition,
   render_pass::create_render_pass,
   render_targets::RenderTargets,
   swapchain::{SwapchainCreationError, Swapchains},
-  RenderInit, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
+  RenderInit, SpritePushConstants, FRAMES_IN_FLIGHT, RENDER_EXTENT, SWAPCHAIN_IMAGE_USAGES,
 };
 
 #[allow(clippy::enum_variant_names)]
@@ -144,10 +143,6 @@ impl Renderer {
       .with_inner_size(PhysicalSize {
         width: INITIAL_WINDOW_WIDTH,
         height: INITIAL_WINDOW_HEIGHT,
-      })
-      .with_min_inner_size(PhysicalSize {
-        width: Ferris::WIDTH,
-        height: Ferris::HEIGHT,
       })
       // .with_resizable(false)
       .build(target)?;
@@ -313,7 +308,7 @@ impl Renderer {
     &mut self,
     frame_i: usize,
     image_i: usize,
-    position: &RenderPosition,
+    player: SpritePushConstants,
     save_to_screenshot_buffer: bool,
   ) -> Result<(), OutOfMemoryError> {
     self.command_pools[frame_i].reset(&self.device)?;
@@ -327,7 +322,7 @@ impl Renderer {
       &self.pipelines,
       &self.descriptor_pool,
       &self.constant_data,
-      position,
+      player,
       if save_to_screenshot_buffer {
         Some(*self.screenshot_buffer.buffer)
       } else {

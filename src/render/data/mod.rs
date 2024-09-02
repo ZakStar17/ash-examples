@@ -8,18 +8,11 @@ use ash::vk;
 
 use crate::utility::const_flag_bitor;
 
-use super::{
-  device_destroyable::DeviceManuallyDestroyed,
-  render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, QUAD_VERTICES_SIZE},
-};
+use super::device_destroyable::DeviceManuallyDestroyed;
 
 pub use screenshot_buffer::ScreenshotBuffer;
 
-pub const VERTEX_SIZE: u64 = QUAD_VERTICES_SIZE as u64;
-pub const INDEX_SIZE: u64 = QUAD_INDICES_SIZE as u64;
-pub const INDEX_COUNT: u32 = QUAD_INDICES.len() as u32;
-
-const TEXTURE_PATH: &str = "./ferris.png";
+const TEXTURE_PATH: &str = "./sprites.png";
 pub const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 pub const TEXTURE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags =>

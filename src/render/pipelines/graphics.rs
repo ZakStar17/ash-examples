@@ -269,7 +269,7 @@ impl GraphicsPipelines {
 
     Ok(GraphicsPipelinesList {
       player: vec[0],
-      bullets: vec[1]
+      bullets: vec[1],
     })
   }
 }

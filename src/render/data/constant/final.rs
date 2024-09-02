@@ -9,11 +9,12 @@ use crate::{
     device_destroyable::{destroy, DeviceManuallyDestroyed},
     errors::AllocationError,
     initialization::device::{Device, PhysicalDevice},
+    sprites::{QUAD_INDICES_SIZE, QUAD_VERTICES_SIZE},
   },
   utility::OnErr,
 };
 
-use super::super::{INDEX_SIZE, TEXTURE_FORMAT, TEXTURE_USAGES, VERTEX_SIZE};
+use super::super::{TEXTURE_FORMAT, TEXTURE_USAGES};
 
 const CONSTANT_MEMORY_PRIORITY: f32 = 0.5;
 
@@ -37,12 +38,12 @@ impl ConstantData {
   ) -> Result<Self, AllocationError> {
     let vertex = create_buffer(
       device,
-      VERTEX_SIZE,
+      QUAD_VERTICES_SIZE,
       vk::BufferUsageFlags::VERTEX_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_DST),
     )?;
     let index = create_buffer(
       device,
-      INDEX_SIZE,
+      QUAD_INDICES_SIZE,
       vk::BufferUsageFlags::INDEX_BUFFER.bitor(vk::BufferUsageFlags::TRANSFER_DST),
     )
     .on_err(|_| unsafe { destroy!(device => &vertex) })?;

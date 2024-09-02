@@ -6,7 +6,7 @@ use crate::{
   render::{
     data::{TEXTURE_FORMAT, TEXTURE_FORMAT_FEATURES},
     initialization::{Surface, SurfaceError},
-    RenderPosition, TARGET_API_VERSION,
+    push_constants, TARGET_API_VERSION,
   },
   utility,
 };
@@ -91,7 +91,9 @@ fn check_physical_device_capabilities(
     return Ok(false);
   }
 
-  if (properties.p10.limits.max_push_constants_size as usize) < size_of::<RenderPosition>() {
+  if (properties.p10.limits.max_push_constants_size as usize)
+    < size_of::<push_constants::SpritePushConstants>()
+  {
     log::warn!("Skipped physical device: Device does not support required push constant size");
     return Ok(false);
   }

@@ -4,7 +4,11 @@ use ash::vk;
 
 use crate::{
   render::{
-    data::{constant::ConstantData, INDEX_COUNT}, descriptor_sets::DescriptorPool, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, initialization::device::QueueFamilies, pipelines::GraphicsPipelines, push_constants::SpritePushConstants, render_targets::RenderTargets, RENDER_EXTENT
+    data::constant::ConstantData, descriptor_sets::DescriptorPool,
+    device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+    initialization::device::QueueFamilies, pipelines::GraphicsPipelines,
+    push_constants::SpritePushConstants, render_targets::RenderTargets, sprites::QUAD_INDEX_COUNT,
+    RENDER_EXTENT,
   },
   utility, BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
 };
@@ -48,7 +52,7 @@ impl GraphicsCommandBufferPool {
     descriptor_pool: &DescriptorPool,
     data: &ConstantData,
 
-    player: &SpritePushConstants,
+    player: SpritePushConstants,
 
     screenshot_buffer: Option<vk::Buffer>,
   ) -> Result<(), OutOfMemoryError> {
@@ -104,10 +108,14 @@ impl GraphicsCommandBufferPool {
         pipelines.layout,
         vk::ShaderStageFlags::VERTEX,
         0,
-        utility::any_as_u8_slice(player),
+        utility::any_as_u8_slice(&player),
       );
-      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.current.player);
-      device.cmd_draw_indexed(cb, INDEX_COUNT, 1, 0, 0, 0);
+      device.cmd_bind_pipeline(
+        cb,
+        vk::PipelineBindPoint::GRAPHICS,
+        pipelines.current.player,
+      );
+      device.cmd_draw_indexed(cb, QUAD_INDEX_COUNT, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);
     }

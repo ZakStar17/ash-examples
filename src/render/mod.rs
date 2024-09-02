@@ -7,26 +7,24 @@ mod device_destroyable;
 mod errors;
 mod initialization;
 mod pipelines;
-mod render_object;
+mod push_constants;
 mod render_pass;
 mod render_targets;
 mod renderer;
 mod shaders;
+mod sprites;
 mod swapchain;
 mod sync_renderer;
 mod vertices;
-mod push_constants;
-mod sprites;
 
 use ash::vk;
 use std::ffi::CStr;
 
 pub use errors::{FrameRenderError, InitializationError};
 pub use initialization::{RenderInit, RenderInitError};
-pub use render_object::RenderPosition;
+pub use push_constants::SpritePushConstants;
 pub use swapchain::AcquireNextImageError;
 pub use sync_renderer::SyncRenderer;
-pub use vertices::Vertex;
 
 use crate::{utility::const_flag_bitor, RESOLUTION};
 

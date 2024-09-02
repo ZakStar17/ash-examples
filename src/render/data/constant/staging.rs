@@ -9,12 +9,10 @@ use crate::{
     device_destroyable::{destroy, DeviceManuallyDestroyed},
     errors::AllocationError,
     initialization::device::{Device, PhysicalDevice},
-    render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, QUAD_VERTICES, QUAD_VERTICES_SIZE},
+    sprites::{PLAYER_VERTICES, QUAD_INDICES, QUAD_INDICES_SIZE, QUAD_VERTICES_SIZE},
   },
   utility::OnErr,
 };
-
-use super::super::{INDEX_SIZE, VERTEX_SIZE};
 
 const STAGING_MEMORY_PRIORITY: f32 = 0.3;
 
@@ -40,9 +38,17 @@ impl StagingData {
     physical_device: &PhysicalDevice,
     image_size: u64,
   ) -> Result<Self, AllocationError> {
-    let vertex = create_buffer(device, VERTEX_SIZE, vk::BufferUsageFlags::TRANSFER_SRC)?;
-    let index = create_buffer(device, INDEX_SIZE, vk::BufferUsageFlags::TRANSFER_SRC)
-      .on_err(|_| unsafe { destroy!(device => &vertex) })?;
+    let vertex = create_buffer(
+      device,
+      QUAD_VERTICES_SIZE,
+      vk::BufferUsageFlags::TRANSFER_SRC,
+    )?;
+    let index = create_buffer(
+      device,
+      QUAD_INDICES_SIZE,
+      vk::BufferUsageFlags::TRANSFER_SRC,
+    )
+    .on_err(|_| unsafe { destroy!(device => &vertex) })?;
 
     let texture = create_buffer(device, image_size, vk::BufferUsageFlags::TRANSFER_SRC)
       .on_err(|_| unsafe { destroy!(device => &vertex, &index) })?;
@@ -70,17 +76,17 @@ impl StagingData {
       vk::MemoryMapFlags::empty(),
     )? as *mut u8;
 
-    let vertices = QUAD_VERTICES;
+    let vertices = PLAYER_VERTICES;
     let indices = QUAD_INDICES;
     copy_nonoverlapping(
       vertices.as_ptr() as *const u8,
       mem_ptr.byte_add(self.alloc.vertex_offset as usize),
-      QUAD_VERTICES_SIZE,
+      size_of_val(&vertices),
     );
     copy_nonoverlapping(
       indices.as_ptr() as *const u8,
       mem_ptr.byte_add(self.alloc.index_offset as usize),
-      QUAD_INDICES_SIZE,
+      size_of_val(&indices),
     );
     copy_nonoverlapping(
       texture_bytes.as_ptr(),

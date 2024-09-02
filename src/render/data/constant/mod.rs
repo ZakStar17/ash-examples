@@ -16,16 +16,14 @@ use crate::{
     data::TEXTURE_PATH,
     device_destroyable::{destroy, DeviceManuallyDestroyed},
     initialization::device::{PhysicalDevice, Queues},
+    sprites::{QUAD_INDICES_SIZE, QUAD_VERTICES_SIZE},
   },
   utility::OnErr,
 };
 
-use super::{
-  super::{
-    command_pools::TemporaryGraphicsCommandPool, create_objs::create_semaphore,
-    errors::InitializationError, initialization::device::Device,
-  },
-  INDEX_SIZE, VERTEX_SIZE,
+use super::super::{
+  command_pools::TemporaryGraphicsCommandPool, create_objs::create_semaphore,
+  errors::InitializationError, initialization::device::Device,
 };
 
 pub use r#final::ConstantData;
@@ -59,8 +57,8 @@ pub fn create_and_populate_constant_data(
   let final_ =
     ConstantData::create_and_allocate(device, physical_device, image_width, image_height)?;
 
-  let vertex_region = vk::BufferCopy2::default().size(VERTEX_SIZE);
-  let index_region = vk::BufferCopy2::default().size(INDEX_SIZE);
+  let vertex_region = vk::BufferCopy2::default().size(QUAD_VERTICES_SIZE);
+  let index_region = vk::BufferCopy2::default().size(QUAD_INDICES_SIZE);
   unsafe {
     transfer_pool.reset(device)?;
     transfer_pool.record_copy_buffers_to_buffers_from_host(

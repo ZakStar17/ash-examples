@@ -1,18 +1,16 @@
 use std::{marker::PhantomData, ptr};
 
 use ash::vk;
-use winit::{dpi::PhysicalSize, window::Window};
+use winit::window::Window;
 
-use crate::{
-  ferris::Ferris, render::create_objs::create_fence, utility::OnErr, SCREENSHOT_SAVE_FILE,
-};
+use crate::{render::create_objs::create_fence, utility::OnErr, SCREENSHOT_SAVE_FILE};
 
 use super::{
   create_objs::create_semaphore,
   device_destroyable::{destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed},
   errors::InitializationError,
   renderer::Renderer,
-  FrameRenderError, FRAMES_IN_FLIGHT, RENDER_EXTENT,
+  FrameRenderError, SpritePushConstants, FRAMES_IN_FLIGHT,
 };
 
 pub struct SyncRenderer {
@@ -79,7 +77,7 @@ impl SyncRenderer {
     &self.renderer.window
   }
 
-  pub fn render_next_frame(&mut self, ferris: &Ferris) -> Result<(), FrameRenderError> {
+  pub fn render_next_frame(&mut self, player: SpritePushConstants) -> Result<(), FrameRenderError> {
     // there are two (corresponding to the number of frames in flight) sets of frames
     // in this example each frame set only owns its own graphics command buffer and nothing else, but
     // as a command buffer can only hold the recording of one specific frame, one current frame
@@ -187,10 +185,7 @@ impl SyncRenderer {
       self.renderer.record_graphics(
         cur_frame_i,
         image_index as usize,
-        &ferris.get_render_position(PhysicalSize {
-          width: RENDER_EXTENT.width,
-          height: RENDER_EXTENT.height,
-        }),
+        player,
         record_screenshot,
       )?;
     }

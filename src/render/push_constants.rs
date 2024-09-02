@@ -2,6 +2,7 @@ use super::sprites::{PLAYER_OFFSET_X, PLAYER_OFFSET_Y, PLAYER_WIDTH};
 
 // represents a position of the object that will be rendered
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct SpritePushConstants {
   pub position: [f32; 2],
   pub texture_offset: [f32; 2],

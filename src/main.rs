@@ -1,12 +1,12 @@
 #![feature(vec_into_raw_parts)]
 #![feature(array_chunks)]
 
-mod ferris;
+mod player;
 mod render;
 mod utility;
 
 use ash::vk;
-use ferris::Ferris;
+use player::Player;
 use render::{
   AcquireNextImageError, FrameRenderError, InitializationError, RenderInit, RenderInitError,
   SyncRenderer,
@@ -65,6 +65,14 @@ struct WindowResizeHandler {
   pub active: bool,
   pub last_activation_instant: Instant,
   pub last_activation_size: PhysicalSize<u32>,
+}
+
+#[derive(Debug, Default)]
+struct PressedKeys {
+  pub left: bool,
+  pub right: bool,
+  pub up: bool,
+  pub down: bool,
 }
 
 // clippy kinda hallucinates here
@@ -164,7 +172,9 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
     },
   };
 
-  let mut ferris = Ferris::new([0.2, 0.0], true, true);
+  let mut player = Player::new([-1.0, -1.0]);
+
+  let mut keys = PressedKeys::default();
 
   let mut last_update = Instant::now();
   let mut time_since_last_fps_print = Duration::ZERO;
@@ -227,16 +237,10 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
             }
 
             if frame_i < usize::MAX {
-              ferris.update(
-                time_passed,
-                PhysicalSize {
-                  width: RESOLUTION[0],
-                  height: RESOLUTION[1],
-                },
-              );
+              player.update(time_passed.as_secs_f32(), &keys);
 
               // println!("\n\nRENDERING FRAME {}\n", frame_i);
-              if let Err(err) = status.renderer.render_next_frame(&ferris) {
+              if let Err(err) = status.renderer.render_next_frame(player.sprite_data(&keys)) {
                 match err {
                   FrameRenderError::FailedToAcquireSwapchainImage(
                     AcquireNextImageError::OutOfDate,
@@ -313,6 +317,18 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
                       }
                       status.set_paused(target, !status.paused);
                     }
+                  }
+                  KeyCode::ArrowUp => {
+                    keys.up = pressed;
+                  }
+                  KeyCode::ArrowDown => {
+                    keys.down = pressed;
+                  }
+                  KeyCode::ArrowLeft => {
+                    keys.left = pressed;
+                  }
+                  KeyCode::ArrowRight => {
+                    keys.right = pressed;
                   }
                   KeyCode::F2 | KeyCode::F12 => {
                     if pressed && !repeating {
