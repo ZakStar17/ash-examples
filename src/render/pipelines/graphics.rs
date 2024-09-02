@@ -1,10 +1,8 @@
 use std::{
-  marker::PhantomData,
-  mem::{self, size_of},
-  ptr::{self, addr_of},
+  marker::PhantomData, mem::{self, size_of}, ops::BitOr, ptr::{self}
 };
 
-use ash::vk;
+use ash::vk::{self, Handle};
 
 use crate::{
   render::{
@@ -187,15 +185,19 @@ impl GraphicsPipeline {
       logic_op_enable: vk::FALSE,
       logic_op: vk::LogicOp::COPY, // disabled
       attachment_count: 1,
-      p_attachments: addr_of!(attachment_state),
+      p_attachments: &attachment_state,
       blend_constants: [0.0, 0.0, 0.0, 0.0],
       _marker: PhantomData,
     };
 
+    let mut flags = vk::PipelineCreateFlags::ALLOW_DERIVATIVES;
+    if !base.is_null() {
+      flags = flags.bitor(vk::PipelineCreateFlags::DERIVATIVE)
+    }
     let create_info = vk::GraphicsPipelineCreateInfo {
       s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
       p_next: ptr::null(),
-      flags: vk::PipelineCreateFlags::empty(),
+      flags,
       stage_count: shader_stages.len() as u32,
       p_stages: shader_stages.as_ptr(),
       p_vertex_input_state: vertex_input_state,
