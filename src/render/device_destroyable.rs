@@ -183,3 +183,9 @@ impl DeviceManuallyDestroyed for vk::Pipeline {
     device.destroy_pipeline(*self, None);
   }
 }
+
+impl DeviceManuallyDestroyed for vk::PipelineLayout {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    device.destroy_pipeline_layout(*self, None);
+  }
+}

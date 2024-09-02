@@ -4,15 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    data::{constant::ConstantData, INDEX_COUNT},
-    descriptor_sets::DescriptorPool,
-    device_destroyable::DeviceManuallyDestroyed,
-    errors::OutOfMemoryError,
-    initialization::device::QueueFamilies,
-    pipelines::GraphicsPipeline,
-    render_object::RenderPosition,
-    render_targets::RenderTargets,
-    RENDER_EXTENT,
+    data::{constant::ConstantData, INDEX_COUNT}, descriptor_sets::DescriptorPool, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, initialization::device::QueueFamilies, pipelines::GraphicsPipelines, push_constants::SpritePushConstants, render_targets::RenderTargets, RENDER_EXTENT
   },
   utility, BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
 };
@@ -51,11 +43,12 @@ impl GraphicsCommandBufferPool {
     swapchain_image: vk::Image,
     swapchain_extent: vk::Extent2D,
 
-    pipeline: &GraphicsPipeline,
+    pipelines: &GraphicsPipelines,
 
     descriptor_pool: &DescriptorPool,
     data: &ConstantData,
-    position: &RenderPosition, // Ferris's position
+
+    player: &SpritePushConstants,
 
     screenshot_buffer: Option<vk::Buffer>,
   ) -> Result<(), OutOfMemoryError> {
@@ -97,21 +90,23 @@ impl GraphicsCommandBufferPool {
       device.cmd_bind_descriptor_sets(
         cb,
         vk::PipelineBindPoint::GRAPHICS,
-        pipeline.layout,
+        pipelines.layout,
         0,
         &[descriptor_pool.texture_set],
         &[],
       );
-      device.cmd_push_constants(
-        cb,
-        pipeline.layout,
-        vk::ShaderStageFlags::VERTEX,
-        0,
-        utility::any_as_u8_slice(position),
-      );
-      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.current);
+      // quad indices and vertices
       device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex], &[0]);
       device.cmd_bind_index_buffer(cb, data.index, 0, vk::IndexType::UINT16);
+
+      device.cmd_push_constants(
+        cb,
+        pipelines.layout,
+        vk::ShaderStageFlags::VERTEX,
+        0,
+        utility::any_as_u8_slice(player),
+      );
+      device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipelines.current.player);
       device.cmd_draw_indexed(cb, INDEX_COUNT, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);

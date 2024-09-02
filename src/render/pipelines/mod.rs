@@ -4,7 +4,7 @@ mod cache;
 mod graphics;
 
 pub use cache::{create_pipeline_cache, save_pipeline_cache, PipelineCacheError};
-pub use graphics::GraphicsPipeline;
+pub use graphics::GraphicsPipelines;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PipelineCreationError {

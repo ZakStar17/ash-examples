@@ -10,6 +10,7 @@ const PATH: &str = "./shaders/compute/shader.spv";
 
 static MAIN_FN_NAME: &CStr = c"main";
 
+#[derive(Debug, Clone, Copy)]
 pub struct Shader {
   pub module: vk::ShaderModule,
 }

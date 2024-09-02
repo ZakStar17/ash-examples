@@ -1,32 +1,40 @@
 use std::{
-  marker::PhantomData, mem::{self, size_of}, ops::BitOr, ptr::{self}
+  marker::PhantomData,
+  mem::{self, size_of},
+  ops::BitOr,
+  ptr::{self},
 };
 
 use ash::vk::{self, Handle};
 
 use crate::{
   render::{
-    descriptor_sets::DescriptorPool,
-    device_destroyable::DeviceManuallyDestroyed,
-    errors::OutOfMemoryError,
-    render_object::RenderPosition,
-    shaders::{self, Shader},
-    vertices::Vertex,
+    data::compute::Bullet, descriptor_sets::DescriptorPool,
+    device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+    push_constants::SpritePushConstants, shaders, vertices::Vertex,
   },
   vertex_input_state_create_info,
 };
 
 use super::PipelineCreationError;
 
-pub struct GraphicsPipeline {
-  pub layout: vk::PipelineLayout,
-  pub current: vk::Pipeline,
-
-  shader: Shader,
-  old: Option<vk::Pipeline>,
+#[derive(Debug, Clone, Copy)]
+pub struct GraphicsPipelinesList {
+  pub player: vk::Pipeline,
+  pub bullets: vk::Pipeline,
 }
 
-impl GraphicsPipeline {
+pub struct GraphicsPipelines {
+  // compatible with both player and bullets
+  pub layout: vk::PipelineLayout,
+  pub current: GraphicsPipelinesList,
+
+  player_shader: shaders::player::Shader,
+  bullets_shader: shaders::bullets::Shader,
+  old: Option<GraphicsPipelinesList>,
+}
+
+impl GraphicsPipelines {
   pub fn new(
     device: &ash::Device,
     cache: vk::PipelineCache,
@@ -35,14 +43,21 @@ impl GraphicsPipeline {
     extent: vk::Extent2D,
   ) -> Result<Self, PipelineCreationError> {
     let layout = Self::create_layout(device, descriptor_pool)?;
-    let shader = shaders::Shader::load(device).map_err(PipelineCreationError::ShaderFailed)?;
+    let player_shader =
+      shaders::player::Shader::load(device).map_err(PipelineCreationError::ShaderFailed)?;
+    let bullets_shader =
+      shaders::bullets::Shader::load(device).map_err(PipelineCreationError::ShaderFailed)?;
 
     let initial = Self::create_with_base(
       device,
       layout,
-      &shader,
       cache,
-      vk::Pipeline::null(),
+      GraphicsPipelinesList {
+        player: vk::Pipeline::null(),
+        bullets: vk::Pipeline::null(),
+      },
+      player_shader,
+      bullets_shader,
       render_pass,
       extent,
     )?;
@@ -50,7 +65,8 @@ impl GraphicsPipeline {
     Ok(Self {
       layout,
       current: initial,
-      shader,
+      player_shader,
+      bullets_shader,
       old: None,
     })
   }
@@ -68,9 +84,10 @@ impl GraphicsPipeline {
     let mut new = Self::create_with_base(
       device,
       self.layout,
-      &self.shader,
       cache,
       self.current,
+      self.player_shader,
+      self.bullets_shader,
       render_pass,
       extent,
     )?;
@@ -96,7 +113,7 @@ impl GraphicsPipeline {
   // destroy old pipeline once it stops being used
   pub unsafe fn destroy_old(&mut self, device: &ash::Device) {
     if let Some(old) = self.old {
-      device.destroy_pipeline(old, None);
+      old.destroy_self(device);
       self.old = None;
     }
   }
@@ -108,7 +125,7 @@ impl GraphicsPipeline {
     let push_constant_range = vk::PushConstantRange {
       stage_flags: vk::ShaderStageFlags::VERTEX,
       offset: 0,
-      size: size_of::<RenderPosition>() as u32,
+      size: size_of::<SpritePushConstants>() as u32,
     };
     let layout_create_info = vk::PipelineLayoutCreateInfo {
       s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
@@ -127,16 +144,21 @@ impl GraphicsPipeline {
   fn create_with_base(
     device: &ash::Device,
     layout: vk::PipelineLayout,
-    shader: &Shader,
     cache: vk::PipelineCache,
-    base: vk::Pipeline,
+    old: GraphicsPipelinesList,
+    player_shader: shaders::player::Shader,
+    bullets_shader: shaders::bullets::Shader,
     render_pass: vk::RenderPass,
     extent: vk::Extent2D,
-  ) -> Result<vk::Pipeline, PipelineCreationError> {
-    let shader_stages = shader.get_pipeline_shader_creation_info();
+  ) -> Result<GraphicsPipelinesList, PipelineCreationError> {
+    let player_shader_stages = player_shader.get_pipeline_shader_creation_info();
+    let bullets_shader_stages = bullets_shader.get_pipeline_shader_creation_info();
 
-    let vertex_input_state = vertex_input_state_create_info!(Vertex);
-    let vertex_input_state = vertex_input_state.get();
+    let player_vertex_input_state = vertex_input_state_create_info!(Vertex);
+    let player_vertex_input_state = player_vertex_input_state.get();
+
+    let bullets_vertex_input_state = vertex_input_state_create_info!(Vertex, Bullet);
+    let bullets_vertex_input_state = bullets_vertex_input_state.get();
 
     let input_assembly_state = triangle_input_assembly_state();
 
@@ -151,10 +173,7 @@ impl GraphicsPipeline {
     }];
     let scissor = [vk::Rect2D {
       offset: vk::Offset2D { x: 0, y: 0 },
-      extent: vk::Extent2D {
-        width: extent.width,
-        height: extent.height,
-      },
+      extent,
     }];
     let viewport_state = vk::PipelineViewportStateCreateInfo::default()
       .scissors(&scissor)
@@ -190,35 +209,54 @@ impl GraphicsPipeline {
       _marker: PhantomData,
     };
 
-    let mut flags = vk::PipelineCreateFlags::ALLOW_DERIVATIVES;
-    if !base.is_null() {
-      flags = flags.bitor(vk::PipelineCreateFlags::DERIVATIVE)
-    }
-    let create_info = vk::GraphicsPipelineCreateInfo {
-      s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
-      p_next: ptr::null(),
-      flags,
-      stage_count: shader_stages.len() as u32,
-      p_stages: shader_stages.as_ptr(),
-      p_vertex_input_state: vertex_input_state,
-      p_input_assembly_state: &input_assembly_state,
-      p_tessellation_state: ptr::null(),
-      p_viewport_state: &viewport_state,
-      p_rasterization_state: &rasterization_state_ci,
-      p_multisample_state: &multisample_state_ci,
-      p_depth_stencil_state: ptr::null(),
-      p_color_blend_state: &color_blend_state,
-      p_dynamic_state: ptr::null(),
-      layout,
-      render_pass,
-      subpass: 0,
-      base_pipeline_handle: base,
-      base_pipeline_index: -1, // -1 for null
-      _marker: PhantomData,
+    let player_create_info = {
+      let mut flags = vk::PipelineCreateFlags::ALLOW_DERIVATIVES;
+      if !old.player.is_null() {
+        flags = flags.bitor(vk::PipelineCreateFlags::DERIVATIVE)
+      }
+      vk::GraphicsPipelineCreateInfo {
+        s_type: vk::StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
+        p_next: ptr::null(),
+        flags,
+        stage_count: player_shader_stages.len() as u32,
+        p_stages: player_shader_stages.as_ptr(),
+        p_vertex_input_state: player_vertex_input_state,
+        p_input_assembly_state: &input_assembly_state,
+        p_tessellation_state: ptr::null(),
+        p_viewport_state: &viewport_state,
+        p_rasterization_state: &rasterization_state_ci,
+        p_multisample_state: &multisample_state_ci,
+        p_depth_stencil_state: ptr::null(),
+        p_color_blend_state: &color_blend_state,
+        p_dynamic_state: ptr::null(),
+        layout,
+        render_pass,
+        subpass: 0,
+        base_pipeline_handle: old.player,
+        base_pipeline_index: -1, // -1 for null
+        _marker: PhantomData,
+      }
     };
-    Ok(unsafe {
+
+    let bullets_create_info = {
+      let mut ci = player_create_info.clone();
+
+      let mut flags = vk::PipelineCreateFlags::ALLOW_DERIVATIVES;
+      if !old.bullets.is_null() {
+        flags = flags.bitor(vk::PipelineCreateFlags::DERIVATIVE)
+      }
+      ci.flags = flags;
+
+      ci.stage_count = bullets_shader_stages.len() as u32;
+      ci.p_stages = bullets_shader_stages.as_ptr();
+      ci.p_vertex_input_state = bullets_vertex_input_state;
+      ci.base_pipeline_handle = old.bullets;
+      ci
+    };
+
+    let vec = unsafe {
       device
-        .create_graphics_pipelines(cache, &[create_info], None)
+        .create_graphics_pipelines(cache, &[player_create_info, bullets_create_info], None)
         .map_err(|incomplete| incomplete.1)
         .map_err(|vkerr| match vkerr {
           vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
@@ -226,7 +264,12 @@ impl GraphicsPipeline {
           }
           vk::Result::ERROR_INVALID_SHADER_NV => PipelineCreationError::CompilationFailed,
           _ => panic!(),
-        })?[0]
+        })?
+    };
+
+    Ok(GraphicsPipelinesList {
+      player: vec[0],
+      bullets: vec[1]
     })
   }
 }
@@ -279,15 +322,23 @@ const fn no_multisample_state<'a>() -> vk::PipelineMultisampleStateCreateInfo<'a
   }
 }
 
-impl DeviceManuallyDestroyed for GraphicsPipeline {
+impl DeviceManuallyDestroyed for GraphicsPipelinesList {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    self.player.destroy_self(device);
+    self.bullets.destroy_self(device);
+  }
+}
+
+impl DeviceManuallyDestroyed for GraphicsPipelines {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     if let Some(old) = self.old {
-      device.destroy_pipeline(old, None);
+      old.destroy_self(device);
     }
-    device.destroy_pipeline(self.current, None);
-    device.destroy_pipeline_layout(self.layout, None);
+    self.current.destroy_self(device);
+    self.layout.destroy_self(device);
 
     // can be unloaded any time
-    self.shader.destroy_self(device);
+    self.player_shader.destroy_self(device);
+    self.bullets_shader.destroy_self(device);
   }
 }

@@ -28,7 +28,7 @@ use super::{
     device::{Device, PhysicalDevice, Queues},
     Surface,
   },
-  pipelines::{self, GraphicsPipeline, PipelineCreationError},
+  pipelines::{self, GraphicsPipelines, PipelineCreationError},
   render_object::RenderPosition,
   render_pass::create_render_pass,
   render_targets::RenderTargets,
@@ -94,7 +94,7 @@ pub struct Renderer {
   render_targets: RenderTargets,
 
   pipeline_cache: vk::PipelineCache,
-  pipeline: GraphicsPipeline,
+  pipelines: GraphicsPipelines,
   pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
 
   constant_data: ConstantData,
@@ -264,7 +264,7 @@ impl Renderer {
     destructor.push(&descriptor_pool);
 
     log::debug!("Creating pipeline");
-    let graphics_pipeline = GraphicsPipeline::new(
+    let graphics_pipelines = GraphicsPipelines::new(
       &device,
       pipeline_cache,
       render_pass,
@@ -272,7 +272,7 @@ impl Renderer {
       RENDER_EXTENT,
     )
     .on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(&graphics_pipeline);
+    destructor.push(&graphics_pipelines);
 
     let command_pools = fill_destroyable_array_with_expression!(
       &device,
@@ -300,7 +300,7 @@ impl Renderer {
       constant_data,
       compute_data,
       render_pass,
-      pipeline: graphics_pipeline,
+      pipelines: graphics_pipelines,
       pipeline_cache,
       swapchains,
       descriptor_pool,
@@ -324,7 +324,7 @@ impl Renderer {
       &self.render_targets,
       self.swapchains.get_images()[image_i],
       self.swapchains.get_extent(),
-      &self.pipeline,
+      &self.pipelines,
       &self.descriptor_pool,
       &self.constant_data,
       position,
@@ -397,7 +397,7 @@ impl Renderer {
     }
 
     if changes.format {
-      match self.pipeline.recreate(
+      match self.pipelines.recreate(
         &self.device,
         self.pipeline_cache,
         self.render_pass,
@@ -433,7 +433,7 @@ impl Renderer {
   // destroy old objects that resulted of a swapchain recreation
   // this should only be called when they stop being in use
   pub unsafe fn destroy_old(&mut self) {
-    self.pipeline.destroy_old(&self.device);
+    self.pipelines.destroy_old(&self.device);
 
     self.swapchains.destroy_old(&self.device);
   }
@@ -510,7 +510,7 @@ impl Drop for Renderer {
 
       self.command_pools.destroy_self(&self.device);
 
-      self.pipeline.destroy_self(&self.device);
+      self.pipelines.destroy_self(&self.device);
       self.pipeline_cache.destroy_self(&self.device);
       self.descriptor_pool.destroy_self(&self.device);
 

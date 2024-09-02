@@ -11,6 +11,7 @@ const FRAG_SHADER_PATH: &str = "./shaders/bullets/frag.spv";
 
 static MAIN_FN_NAME: &CStr = c"main";
 
+#[derive(Debug, Clone, Copy)]
 pub struct Shader {
   pub vert: vk::ShaderModule,
   pub frag: vk::ShaderModule,
