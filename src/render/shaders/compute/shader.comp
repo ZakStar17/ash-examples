@@ -1,7 +1,7 @@
 #version 460
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-const int BULLET_REPLACEMENTS_COUNT = 8;
+const uint MAX_RANDOM_VALUES = 16384;
 
 struct Bullet {
   vec2 pos;
@@ -13,25 +13,28 @@ layout(push_constant) uniform PushConstantData {
   float delta_time;  // time since last shader run in seconds
 
   uint bullet_count;
-
-  // next bullets to be added in order to reach target_count
-  // or replace the ones that are out of bounds
-  Bullet bullet_replacements[BULLET_REPLACEMENTS_COUNT];
 } pc;
 
+layout(set = 0, binding = 0) restrict uniform Random {
+  float values[MAX_RANDOM_VALUES];
+} 
+random;
+
 // data that will be read by the cpu in the next frame after the shader has run
-layout(set = 0, binding = 0) restrict buffer CPUOut {
+layout(set = 0, binding = 1) restrict buffer CPUOut {
   uint colliding;
-  uint pc_bullet_replacements_i;
+
+  // current index of Random
+  uint random_uniform_index;
 }
 cpu_out;
 
-layout(set = 0, binding = 1) restrict readonly buffer DataIn {
+layout(set = 0, binding = 2) restrict readonly buffer DataIn {
   Bullet bullets[];
 }
 data_in;
 
-layout(set = 0, binding = 2) restrict writeonly buffer DataOut {
+layout(set = 0, binding = 3) restrict writeonly buffer DataOut {
   Bullet bullets[];
 }
 data_out;
@@ -40,12 +43,16 @@ bool out_of_bounds(Bullet p) {
   return p.pos[1] > 1.1;
 }
 
-Bullet invalid_bullet() {
-  float positive_inf = uintBitsToFloat(0x7F800000);
+Bullet new_bullet() {
+  uint next_i = atomicAdd(cpu_out.random_uniform_index, 2);
+  float random1 = random.values[next_i-1];
+  float random2 = random.values[next_i-2];
 
-  Bullet p;
-  p.pos = vec2(positive_inf, positive_inf);
-  return p;
+  Bullet b = Bullet(
+    vec2((random1 - 0.5) * 2.2, -1.2),
+    vec2(0.0, 0.1 + (random2 / 2.0))
+  );
+  return b;
 }
 
 void main() {
@@ -61,13 +68,7 @@ void main() {
   p_out.pos = p_in.pos + (p_in.vel * pc.delta_time);
 
   if (out_of_bounds(p_out)) {
-    // Replace bullet with new one (in this case it is more like teleporting it to a new place)
-    uint next_i = atomicAdd(cpu_out.pc_bullet_replacements_i, 1);
-    if (next_i < BULLET_REPLACEMENTS_COUNT) {
-      p_out = pc.bullet_replacements[next_i];
-    } else {
-      p_out = invalid_bullet();
-    }
+    p_out = new_bullet();
   } else {
     // collision test
     if (distance(p_out.pos, pc.player_pos) < 0.05) {

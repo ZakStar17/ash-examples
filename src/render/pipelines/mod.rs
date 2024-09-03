@@ -1,9 +1,11 @@
 use crate::render::{errors::OutOfMemoryError, shaders::ShaderError};
 
 mod cache;
+mod compute;
 mod graphics;
 
 pub use cache::{create_pipeline_cache, save_pipeline_cache, PipelineCacheError};
+pub use compute::ComputePipelines;
 pub use graphics::GraphicsPipelines;
 
 #[derive(Debug, thiserror::Error)]

@@ -28,7 +28,7 @@ use super::{
     device::{Device, PhysicalDevice, Queues},
     Surface,
   },
-  pipelines::{self, GraphicsPipelines, PipelineCreationError},
+  pipelines::{self, ComputePipelines, GraphicsPipelines, PipelineCreationError},
   render_pass::create_render_pass,
   render_targets::RenderTargets,
   swapchain::{SwapchainCreationError, Swapchains},
@@ -93,7 +93,8 @@ pub struct Renderer {
   render_targets: RenderTargets,
 
   pipeline_cache: vk::PipelineCache,
-  pipelines: GraphicsPipelines,
+  graphics_pipelines: GraphicsPipelines,
+  compute_pipelines: ComputePipelines,
   pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
 
   constant_data: ConstantData,
@@ -258,7 +259,7 @@ impl Renderer {
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&descriptor_pool);
 
-    log::debug!("Creating pipeline");
+    log::debug!("Creating pipelines");
     let graphics_pipelines = GraphicsPipelines::new(
       &device,
       pipeline_cache,
@@ -268,6 +269,10 @@ impl Renderer {
     )
     .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&graphics_pipelines);
+
+    let compute_pipelines = ComputePipelines::new(&device, pipeline_cache, &descriptor_pool)
+      .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(&compute_pipelines);
 
     let command_pools = fill_destroyable_array_with_expression!(
       &device,
@@ -295,7 +300,8 @@ impl Renderer {
       constant_data,
       compute_data,
       render_pass,
-      pipelines: graphics_pipelines,
+      graphics_pipelines,
+      compute_pipelines,
       pipeline_cache,
       swapchains,
       descriptor_pool,
@@ -319,7 +325,7 @@ impl Renderer {
       &self.render_targets,
       self.swapchains.get_images()[image_i],
       self.swapchains.get_extent(),
-      &self.pipelines,
+      &self.graphics_pipelines,
       &self.descriptor_pool,
       &self.constant_data,
       player,
@@ -392,7 +398,7 @@ impl Renderer {
     }
 
     if changes.format {
-      match self.pipelines.recreate(
+      match self.graphics_pipelines.recreate(
         &self.device,
         self.pipeline_cache,
         self.render_pass,
@@ -428,7 +434,7 @@ impl Renderer {
   // destroy old objects that resulted of a swapchain recreation
   // this should only be called when they stop being in use
   pub unsafe fn destroy_old(&mut self) {
-    self.pipelines.destroy_old(&self.device);
+    self.graphics_pipelines.destroy_old(&self.device);
 
     self.swapchains.destroy_old(&self.device);
   }
@@ -505,7 +511,8 @@ impl Drop for Renderer {
 
       self.command_pools.destroy_self(&self.device);
 
-      self.pipelines.destroy_self(&self.device);
+      self.graphics_pipelines.destroy_self(&self.device);
+      self.compute_pipelines.destroy_self(&self.device);
       self.pipeline_cache.destroy_self(&self.device);
       self.descriptor_pool.destroy_self(&self.device);
 

@@ -189,3 +189,21 @@ impl DeviceManuallyDestroyed for vk::PipelineLayout {
     device.destroy_pipeline_layout(*self, None);
   }
 }
+
+impl DeviceManuallyDestroyed for vk::DescriptorSetLayout {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    device.destroy_descriptor_set_layout(*self, None);
+  }
+}
+
+impl DeviceManuallyDestroyed for vk::DescriptorPool {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    device.destroy_descriptor_pool(*self, None);
+  }
+}
+
+impl DeviceManuallyDestroyed for vk::Sampler {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    device.destroy_sampler(*self, None);
+  }
+}

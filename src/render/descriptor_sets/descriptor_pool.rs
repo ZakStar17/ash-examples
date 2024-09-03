@@ -2,7 +2,12 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::render::{device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError};
+use crate::{
+  render::{
+    device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, FRAMES_IN_FLIGHT,
+  },
+  utility::concatenate_arrays,
+};
 
 use super::texture_write_descriptor_set;
 
@@ -36,21 +41,46 @@ pub struct DescriptorPool {
   texture_sampler: vk::Sampler,
   pub texture_set: vk::DescriptorSet,
 
+  pub compute_layout: vk::DescriptorSetLayout,
+  pub compute_sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
+
   pool: vk::DescriptorPool,
 }
 
 impl DescriptorPool {
-  // this pool only allocates one set and does not reallocate
-  const SET_COUNT: u32 = Self::SIZES[0].descriptor_count + Self::SIZES[1].descriptor_count;
+  // graphics layout
+  // set count: 1
+  // descriptors per set:
+  //   - 1 COMBINED_IMAGE_SAMPLER:
+  //      - texture
 
-  const SIZES: [vk::DescriptorPoolSize; 2] = [
+  // compute layout
+  // set count: FRAMES_IN_FLIGHT
+  // descriptors per set:
+  //   - 3 STORAGE_BUFFER:
+  //      - output (host visible shader output)
+  //      - instance data src (result from previous frame)
+  //      - instance data dst (shader result)
+  //   - 1 UNIFORM_BUFFER:
+  //      - random values ready only
+
+  // this pool only allocates one set and does not reallocate
+  const SET_COUNT: u32 = Self::SIZES[0].descriptor_count
+    + Self::SIZES[1].descriptor_count
+    + Self::SIZES[2].descriptor_count;
+
+  const SIZES: [vk::DescriptorPoolSize; 3] = [
     vk::DescriptorPoolSize {
       ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
       descriptor_count: 1,
     },
     vk::DescriptorPoolSize {
       ty: vk::DescriptorType::STORAGE_BUFFER,
-      descriptor_count: 2, // todo
+      descriptor_count: (3 * FRAMES_IN_FLIGHT) as u32,
+    },
+    vk::DescriptorPoolSize {
+      ty: vk::DescriptorType::UNIFORM_BUFFER,
+      descriptor_count: (1 * FRAMES_IN_FLIGHT) as u32,
     },
   ];
 
@@ -67,10 +97,46 @@ impl DescriptorPool {
     }]
   }
 
+  const COMPUTE_LAYOUT_BINDINGS: [vk::DescriptorSetLayoutBinding<'_>; 4] = [
+    vk::DescriptorSetLayoutBinding {
+      binding: 0,
+      descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+      _marker: PhantomData,
+    },
+    vk::DescriptorSetLayoutBinding {
+      binding: 1,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+      _marker: PhantomData,
+    },
+    vk::DescriptorSetLayoutBinding {
+      binding: 2,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+      _marker: PhantomData,
+    },
+    vk::DescriptorSetLayoutBinding {
+      binding: 3,
+      descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
+      descriptor_count: 1,
+      stage_flags: vk::ShaderStageFlags::COMPUTE,
+      p_immutable_samplers: ptr::null(),
+      _marker: PhantomData,
+    },
+  ];
+
   pub fn new(device: &ash::Device, texture_view: vk::ImageView) -> Result<Self, OutOfMemoryError> {
     let texture_sampler = create_texture_sampler(device)?;
 
     let texture_layout = Self::create_graphics_layout(device, texture_sampler)?;
+    let compute_layout = create_layout(device, &Self::COMPUTE_LAYOUT_BINDINGS)?;
 
     let pool = {
       let pool_create_info = vk::DescriptorPoolCreateInfo {
@@ -85,18 +151,31 @@ impl DescriptorPool {
       unsafe { device.create_descriptor_pool(&pool_create_info, None) }
     }?;
 
-    let set = allocate_sets(device, pool, &[texture_layout])?[0];
-    let write = texture_write_descriptor_set(set, texture_view, 0); // same binding as in layout
-                                                                    // update texture set
+    let sets = allocate_sets(
+      device,
+      pool,
+      &concatenate_arrays::<3, vk::DescriptorSetLayout>(&[
+        &[texture_layout],
+        &[compute_layout; FRAMES_IN_FLIGHT],
+      ]),
+    )?;
+    let texture_set = sets[0];
+    let compute_sets = [sets[1], sets[1]];
+
+    // update texture set
+    let texture_write = texture_write_descriptor_set(texture_set, texture_view, 0); // same binding as in layout
     unsafe {
-      let contextualized = write.contextualize();
+      let contextualized = texture_write.contextualize();
       device.update_descriptor_sets(&[contextualized], &[]);
     }
+    // todo: update compute sets in the same command as well
 
     Ok(Self {
       texture_sampler,
       texture_layout,
-      texture_set: set,
+      compute_layout,
+      texture_set,
+      compute_sets,
       pool,
     })
   }
@@ -113,10 +192,12 @@ impl DescriptorPool {
 
 impl DeviceManuallyDestroyed for DescriptorPool {
   unsafe fn destroy_self(&self, device: &ash::Device) {
-    device.destroy_descriptor_pool(self.pool, None);
+    self.pool.destroy_self(device);
 
-    device.destroy_descriptor_set_layout(self.texture_layout, None);
-    device.destroy_sampler(self.texture_sampler, None);
+    self.texture_layout.destroy_self(device);
+    self.texture_sampler.destroy_self(device);
+    
+    self.compute_layout.destroy_self(device);
   }
 }
 
