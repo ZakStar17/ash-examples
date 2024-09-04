@@ -2,6 +2,7 @@ use std::{marker::PhantomData, ptr};
 
 use ash::vk;
 
+mod compute;
 mod graphics;
 mod temporary_graphics;
 mod transfer;

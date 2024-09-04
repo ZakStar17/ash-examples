@@ -28,17 +28,19 @@ pub struct ComputeOutput {
   random_values_left: u32,
 }
 
+const STAGING_RANDOM_VALUES_COUNT: usize = 16384;
+
 #[derive(Debug)]
 pub struct HostComputeData {
   pub memory: vk::DeviceMemory,
   // host storage buffer containing <ComputeOutput> data
   pub storage_output: [MappedHostBuffer<ComputeOutput>; FRAMES_IN_FLIGHT],
   // random values before being copied to device memory
-  pub staging_random_values: MappedHostBuffer<f32>,
+  pub staging_random_values:
+    [MappedHostBuffer<[f32; STAGING_RANDOM_VALUES_COUNT]>; FRAMES_IN_FLIGHT],
 }
 
 impl HostComputeData {
-  const STAGING_RANDOM_VALUES_COUNT: u64 = 2u64.pow(16);
   const HOST_MEMORY_PRIORITY: f32 = 0.3;
 }
 
@@ -47,7 +49,7 @@ struct MemoryAllocation {
   pub memory: vk::DeviceMemory,
   pub memory_type: u32,
   pub storage_output_offsets: [u64; FRAMES_IN_FLIGHT],
-  pub staging_random_values_offset: u64,
+  pub staging_random_values_offsets: [u64; FRAMES_IN_FLIGHT],
 }
 
 impl HostComputeData {
@@ -65,10 +67,14 @@ impl HostComputeData {
       FRAMES_IN_FLIGHT
     )?;
 
-    let staging_random_values_buffer = create_buffer(
+    let staging_random_values_buffers = fill_destroyable_array_with_expression!(
       device,
-      size_of::<f32>() as u64 * Self::STAGING_RANDOM_VALUES_COUNT,
-      vk::BufferUsageFlags::TRANSFER_SRC,
+      create_buffer(
+        device,
+        (size_of::<f32>() * STAGING_RANDOM_VALUES_COUNT) as u64,
+        vk::BufferUsageFlags::TRANSFER_SRC,
+      ),
+      FRAMES_IN_FLIGHT
     )
     .on_err(|_| unsafe { storage_output_buffers.destroy_self(device) })?;
 
@@ -76,10 +82,10 @@ impl HostComputeData {
       device,
       physical_device,
       storage_output_buffers,
-      staging_random_values_buffer,
+      staging_random_values_buffers,
     )
     .on_err(|_| unsafe {
-      destroy!(device => storage_output_buffers.as_ref(), &staging_random_values_buffer)
+      destroy!(device => storage_output_buffers.as_ref(), staging_random_values_buffers.as_ref())
     })?;
 
     let mem_ptr = unsafe {
@@ -100,13 +106,19 @@ impl HostComputeData {
         result
       });
 
-    let staging_random_values = MappedHostBuffer {
-      buffer: staging_random_values_buffer,
-      data_ptr: NonNull::new(unsafe {
-        mem_ptr.byte_add(alloc.staging_random_values_offset as usize)
-      } as *mut f32)
-      .unwrap(),
-    };
+    let mut i = 0;
+    let staging_random_values: [MappedHostBuffer<[f32; STAGING_RANDOM_VALUES_COUNT]>;
+      FRAMES_IN_FLIGHT] = staging_random_values_buffers.map(|buffer| {
+      let result = MappedHostBuffer {
+        buffer,
+        data_ptr: NonNull::new(unsafe {
+          mem_ptr.byte_add(alloc.staging_random_values_offsets[i] as usize)
+        } as *mut [f32; STAGING_RANDOM_VALUES_COUNT])
+        .unwrap(),
+      };
+      i += 1;
+      result
+    });
 
     Ok(Self {
       memory: alloc.memory,
@@ -119,13 +131,13 @@ impl HostComputeData {
     device: &Device,
     physical_device: &PhysicalDevice,
     storage_output: [vk::Buffer; FRAMES_IN_FLIGHT],
-    staging_new_random_values: vk::Buffer,
+    staging_new_random_values: [vk::Buffer; FRAMES_IN_FLIGHT],
   ) -> Result<MemoryAllocation, AllocationError> {
-    const TOTAL_BUFFERS: usize = 1 + FRAMES_IN_FLIGHT;
+    const TOTAL_BUFFERS: usize = FRAMES_IN_FLIGHT * 2;
     let storage_output_requirements =
       storage_output.map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
-    let staging_new_random_values_requirements =
-      unsafe { device.get_buffer_memory_requirements(staging_new_random_values) };
+    let staging_new_random_values_requirements = staging_new_random_values
+      .map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
 
     log::debug!("Allocating compute host memory");
     let allocation = allocate_and_bind_memory(
@@ -134,11 +146,11 @@ impl HostComputeData {
       vk::MemoryPropertyFlags::HOST_VISIBLE,
       &utility::concatenate_arrays::<TOTAL_BUFFERS, vk::Buffer>(&[
         &storage_output,
-        &[staging_new_random_values],
+        &staging_new_random_values,
       ]),
       &utility::concatenate_arrays::<TOTAL_BUFFERS, vk::MemoryRequirements>(&[
         &storage_output_requirements,
-        &[staging_new_random_values_requirements],
+        &staging_new_random_values_requirements,
       ]),
       &[],
       &[],
@@ -148,13 +160,14 @@ impl HostComputeData {
     let mut offsets_iter = allocation.offsets.buffer_offsets().iter();
     let storage_output_offsets =
       utility::fill_array_with_expression!(*offsets_iter.next().unwrap(), FRAMES_IN_FLIGHT);
-    let staging_random_values_offset = *offsets_iter.next().unwrap();
+    let staging_random_values_offsets =
+      utility::fill_array_with_expression!(*offsets_iter.next().unwrap(), FRAMES_IN_FLIGHT);
 
     Ok(MemoryAllocation {
       memory: allocation.memory,
       memory_type: allocation.type_index,
       storage_output_offsets,
-      staging_random_values_offset,
+      staging_random_values_offsets,
     })
   }
 }

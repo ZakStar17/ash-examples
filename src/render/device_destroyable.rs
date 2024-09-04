@@ -207,3 +207,9 @@ impl DeviceManuallyDestroyed for vk::Sampler {
     device.destroy_sampler(*self, None);
   }
 }
+
+impl DeviceManuallyDestroyed for vk::CommandPool {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    device.destroy_command_pool(*self, None);
+  }
+}

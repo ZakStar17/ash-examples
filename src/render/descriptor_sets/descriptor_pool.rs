@@ -196,7 +196,7 @@ impl DeviceManuallyDestroyed for DescriptorPool {
 
     self.texture_layout.destroy_self(device);
     self.texture_sampler.destroy_self(device);
-    
+
     self.compute_layout.destroy_self(device);
   }
 }

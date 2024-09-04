@@ -14,6 +14,7 @@ pub struct QueueFamily {
 pub struct QueueFamilies {
   pub graphics: QueueFamily,
   pub presentation: QueueFamily,
+  pub compute: Option<QueueFamily>,
   pub transfer: Option<QueueFamily>,
 }
 
@@ -32,7 +33,7 @@ impl From<SurfaceError> for QueueFamilyError {
 }
 
 impl QueueFamilies {
-  pub const FAMILY_COUNT: usize = 3;
+  pub const FAMILY_COUNT: usize = 4;
 
   pub fn get_from_physical_device(
     instance: &ash::Instance,
@@ -44,7 +45,8 @@ impl QueueFamilies {
 
     let mut presentation = None; // will try to be equal to graphics
     let mut graphics = None;
-    let mut transfer = None; // non graphics
+    let mut compute = None; // non graphics
+    let mut transfer = None; // non graphics or compute
     for (i, props) in properties.into_iter().enumerate() {
       let family = Some(QueueFamily {
         index: i as u32,
@@ -71,6 +73,11 @@ impl QueueFamilies {
             presentation = family;
           }
         }
+      } else if props.queue_flags.contains(vk::QueueFlags::COMPUTE) {
+        #[allow(clippy::collapsible_if)]
+        if compute.is_none() {
+          compute = family;
+        }
       } else if props.queue_flags.contains(vk::QueueFlags::TRANSFER) {
         #[allow(clippy::collapsible_if)]
         if transfer.is_none() {
@@ -87,11 +94,19 @@ impl QueueFamilies {
       graphics: graphics.unwrap(),
       presentation: presentation.unwrap(),
       transfer,
+      compute,
     })
   }
 
   pub fn get_graphics_index(&self) -> u32 {
     self.graphics.index
+  }
+
+  pub fn get_compute_index(&self) -> u32 {
+    match self.compute.as_ref() {
+      Some(family) => family.index,
+      None => self.graphics.index,
+    }
   }
 
   pub fn get_transfer_index(&self) -> u32 {
@@ -126,6 +141,7 @@ fn queue_create_info<'a>(
 pub struct Queues {
   pub graphics: vk::Queue,
   pub presentation: vk::Queue,
+  pub compute: vk::Queue,
   pub transfer: vk::Queue,
 }
 
@@ -135,6 +151,14 @@ impl Queues {
 
   pub fn get_queue_create_infos(queue_families: &QueueFamilies) -> Vec<vk::DeviceQueueCreateInfo> {
     let mut create_infos = Vec::with_capacity(QueueFamilies::FAMILY_COUNT);
+
+    if let Some(family) = queue_families.compute.as_ref() {
+      create_infos.push(queue_create_info(
+        family.index,
+        1,
+        Self::QUEUE_PRIORITIES.as_ptr(),
+      ));
+    }
 
     if let Some(family) = queue_families.transfer.as_ref() {
       create_infos.push(queue_create_info(
@@ -159,6 +183,10 @@ impl Queues {
       min(
         queue_families.graphics.queue_count,
         1 + if queue_families.transfer.is_none() {
+          1
+        } else {
+          0
+        } + if queue_families.compute.is_none() {
           1
         } else {
           0
@@ -187,6 +215,11 @@ impl Queues {
       device.get_device_queue(queue_families.presentation.index, 0)
     };
 
+    let compute = match &queue_families.compute {
+      Some(family) => device.get_device_queue(family.index, 0),
+      None => get_next_graphics_queue(),
+    };
+
     let transfer = match &queue_families.transfer {
       Some(family) => device.get_device_queue(family.index, 0),
       None => get_next_graphics_queue(),
@@ -195,6 +228,7 @@ impl Queues {
     Queues {
       graphics,
       presentation,
+      compute,
       transfer,
     }
   }

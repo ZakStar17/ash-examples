@@ -2,6 +2,7 @@
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
 const uint MAX_RANDOM_VALUES = 16384;
+const uint RANDOM_VALUES_PER_BULLET = 2;
 
 struct Bullet {
   vec2 pos;
@@ -12,7 +13,18 @@ layout(push_constant) uniform PushConstantData {
   vec2 player_pos;
   float delta_time;  // time since last shader run in seconds
 
+  // how many bullets existed before
   uint bullet_count;
+  // how many bullets should exist after the shader
+  // bullet_count <= target_bullet_count <= MAX_RANDOM_VALUES
+  uint target_bullet_count;
+
+  // random[
+  //   random_uniform_reserved_index..
+  //   (random_uniform_reserved_index + ((target_bullet_count - bullet_count) * RANDOM_VALUES_PER_BULLET))
+  // ]
+  // is reserved for new bullets
+  uint random_uniform_reserved_index;
 } pc;
 
 layout(set = 0, binding = 0) restrict uniform Random {
@@ -21,13 +33,14 @@ layout(set = 0, binding = 0) restrict uniform Random {
 random;
 
 // data that will be read by the cpu in the next frame after the shader has run
-layout(set = 0, binding = 1) restrict buffer CPUOut {
+layout(set = 0, binding = 1) restrict buffer CPUIO {
   uint colliding;
 
-  // current index of Random
+  // current index of Random for recreating bullets
+  // random_uniform_index >= random_uniform_reserved_index + ((target_bullet_count - bullet_count) * RANDOM_VALUES_PER_BULLET)
   uint random_uniform_index;
 }
-cpu_out;
+cpu_io;
 
 layout(set = 0, binding = 2) restrict readonly buffer DataIn {
   Bullet bullets[];
@@ -43,38 +56,46 @@ bool out_of_bounds(Bullet p) {
   return p.pos[1] > 1.1;
 }
 
-Bullet new_bullet() {
-  uint next_i = atomicAdd(cpu_out.random_uniform_index, 2);
-  float random1 = random.values[next_i-1];
-  float random2 = random.values[next_i-2];
-
-  Bullet b = Bullet(
-    vec2((random1 - 0.5) * 2.2, -1.2),
-    vec2(0.0, 0.1 + (random2 / 2.0))
+Bullet new_bullet(float rand1, float rand2) {
+  return Bullet(
+    vec2((rand1 - 0.5) * 2.2, -1.2),
+    vec2(0.0, 0.1 + (rand2 / 2.0))
   );
-  return b;
 }
 
 void main() {
   uint i = gl_GlobalInvocationID.x;
-  if (i >= pc.bullet_count) {
+  if (i >= pc.target_bullet_count) {
     return;
   }
 
-  Bullet p_in = data_in.bullets[i];
+  if (i >= pc.bullet_count) {
+    // new bullets are alwas added at the end of the buffer
+    uint j = i - pc.bullet_count; // new bullet index
+    
+    uint rand_i = j * RANDOM_VALUES_PER_BULLET;
+    float rand1 = random.values[rand_i];
+    float rand2 = random.values[rand_i+1];
 
-  Bullet p_out;
-  p_out.vel = p_in.vel + (p_in.vel * 0.1 * pc.delta_time);
-  p_out.pos = p_in.pos + (p_in.vel * pc.delta_time);
+    data_out.bullets[i] = new_bullet(rand1, rand2);
+  }
 
-  if (out_of_bounds(p_out)) {
-    p_out = new_bullet();
+  Bullet b_in = data_in.bullets[i];
+  Bullet b_out;
+  b_out.vel = b_in.vel + (b_in.vel * 0.1 * pc.delta_time);
+  b_out.pos = b_in.pos + (b_in.vel * pc.delta_time);
+
+  if (out_of_bounds(b_out)) {
+    uint next_i = atomicAdd(cpu_io.random_uniform_index, 2);
+    float rand1 = random.values[next_i-1];
+    float rand2 = random.values[next_i-2];
+    b_out = new_bullet(rand1, rand2);
   } else {
     // collision test
-    if (distance(p_out.pos, pc.player_pos) < 0.05) {
-      atomicCompSwap(cpu_out.colliding, 0, 1);
+    if (distance(b_out.pos, pc.player_pos) < 0.05) {
+      atomicCompSwap(cpu_io.colliding, 0, 1);
     }
   }
 
-  data_out.bullets[i] = p_out;
+  data_out.bullets[i] = b_out;
 }

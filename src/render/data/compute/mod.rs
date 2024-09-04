@@ -61,13 +61,16 @@ impl Bullet {
   }
 }
 
+// explanations in src/render/shaders/compute/shader.comp
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct ComputePushConstants {
   pub player_pos: [f32; 2], // size: 2
-  pub delta_time: f32,      // size: 1
+  pub delta_time: f32,      // size: 3
 
   pub bullet_count: u32, // size: 4
+  pub target_bullet_count: u32,
+  pub random_uniform_reserved_index: u32, // size: 6
 }
 
 // host accessible data after shader dispatch
@@ -82,8 +85,11 @@ pub struct ComputeOutput {
 
 #[derive(Debug)]
 pub struct ComputeData {
-  host: HostComputeData,
-  device: DeviceComputeData,
+  pub host: HostComputeData,
+  pub device: DeviceComputeData,
+
+  pub bullet_count: usize,
+  pub target_bullet_count: usize,
 
   rng: ThreadRng,
 }
@@ -95,7 +101,13 @@ impl ComputeData {
 
     let rng = rand::thread_rng();
 
-    Ok(Self { host, device, rng })
+    Ok(Self {
+      host,
+      device,
+      bullet_count: 0,
+      target_bullet_count: 12,
+      rng,
+    })
   }
 }
 
