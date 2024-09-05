@@ -22,29 +22,6 @@ pub struct ComputeCommandPool {
   pub instance: vk::CommandBuffer,
 }
 
-#[derive(Debug)]
-pub struct AddNewBullets {
-  pub buffer: vk::Buffer,
-  pub buffer_size: u64,
-  pub bullet_count: usize,
-}
-
-#[derive(Debug)]
-pub struct ExecuteShader {
-  pub push_data: ComputePushConstants,
-}
-
-#[derive(Debug)]
-pub struct ComputeRecordBufferData {
-  pub output: vk::Buffer,
-  pub instance_read: vk::Buffer,
-  pub instance_write: vk::Buffer,
-  pub instance_graphics: vk::Buffer,
-  pub existing_bullets_count: usize,
-  pub add_bullets: Option<AddNewBullets>,
-  pub execute_shader: Option<ExecuteShader>,
-}
-
 impl ComputeCommandPool {
   pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
@@ -117,7 +94,7 @@ impl ComputeCommandPool {
     // write only storage buffer to update
     let dst = data.device.instance_compute[frame_i];
     // host input/output
-    let host_inp_out = data.host.storage_output[frame_i].buffer;
+    let host_inp_out = data.host.compute_host_io[frame_i].buffer;
     let graphics = data.device.instance_graphics[frame_i];
 
     let affected_instance_size = (data.target_bullet_count * size_of::<Bullet>()) as u64;

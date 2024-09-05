@@ -2,9 +2,12 @@ use std::{ffi::c_void, marker::PhantomData, ptr};
 
 use ash::vk;
 
-use crate::render::{
-  errors::{AllocationError, OutOfMemoryError},
-  initialization::device::{Device, PhysicalDevice},
+use crate::{
+  render::{
+    errors::{AllocationError, OutOfMemoryError},
+    initialization::device::{Device, PhysicalDevice},
+  },
+  utility,
 };
 
 #[allow(dead_code)]
@@ -43,7 +46,7 @@ pub fn allocate_and_bind_memory(
   priority: f32, // only set if VK_EXT_memory_priority is enabled
 ) -> Result<PackedAllocation, AllocationError> {
   let mut mem_types_bitmask = u32::MAX;
-  let mut total_size = 0;
+  let mut total_size: u64 = 0;
   let offsets: Box<[u64]> = buffers_memory_requirements
     .iter()
     .chain(images_memory_requirements.iter())
@@ -53,12 +56,7 @@ pub fn allocate_and_bind_memory(
       debug_assert!(mem_requirements.alignment % 2 == 0);
 
       // align internal offset to follow memory requirements
-      let mut offset = total_size;
-      // strip right-most <alignment> bits from offset (alignment is always a power of 2)
-      let align_error = offset & (mem_requirements.alignment - 1);
-      if align_error > 0 {
-        offset += mem_requirements.alignment - align_error;
-      }
+      let offset = utility::round_up_to_power_of_2_u64(total_size, mem_requirements.alignment);
 
       total_size = offset + mem_requirements.size;
       offset

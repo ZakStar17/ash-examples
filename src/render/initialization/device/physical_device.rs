@@ -17,6 +17,7 @@ pub struct CustomProperties {
 
   // p11
   pub max_memory_allocation_size: u64,
+  pub non_coherent_atom_size: u64,
 }
 
 // Saves physical device additional information in order to not query it multiple times
@@ -64,6 +65,7 @@ impl PhysicalDevice {
             pipeline_cache_uuid: properties.p10.pipeline_cache_uuid,
 
             max_memory_allocation_size: properties.p11.max_memory_allocation_size,
+            non_coherent_atom_size: properties.p10.limits.non_coherent_atom_size,
           },
         }))
       }

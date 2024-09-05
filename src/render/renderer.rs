@@ -15,7 +15,8 @@ use crate::{
 
 use super::{
   command_pools::{
-    GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
+    ComputeCommandPool, GraphicsCommandBufferPool, TemporaryGraphicsCommandPool,
+    TransferCommandBufferPool,
   },
   data::{compute::ComputeData, constant::ConstantData, ScreenshotBuffer},
   descriptor_sets::DescriptorPool,
@@ -95,7 +96,9 @@ pub struct Renderer {
   pipeline_cache: vk::PipelineCache,
   graphics_pipelines: GraphicsPipelines,
   compute_pipelines: ComputePipelines,
-  pub command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
+
+  pub graphics_command_pools: [GraphicsCommandBufferPool; FRAMES_IN_FLIGHT],
+  pub compute_command_pools: [ComputeCommandPool; FRAMES_IN_FLIGHT],
 
   constant_data: ConstantData,
   compute_data: ComputeData,
@@ -255,7 +258,7 @@ impl Renderer {
 
     let compute_data = ComputeData::new(&device, &physical_device)?;
 
-    let descriptor_pool = DescriptorPool::new(&device, constant_data.texture_view)
+    let descriptor_pool = DescriptorPool::new(&device, constant_data.texture_view, &compute_data)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&descriptor_pool);
 
@@ -274,13 +277,21 @@ impl Renderer {
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&compute_pipelines);
 
-    let command_pools = fill_destroyable_array_with_expression!(
+    let graphics_command_pools = fill_destroyable_array_with_expression!(
       &device,
       GraphicsCommandBufferPool::create(&device, &physical_device.queue_families),
       FRAMES_IN_FLIGHT
     )
     .on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(command_pools.as_ptr());
+    destructor.push(graphics_command_pools.as_ptr());
+
+    let compute_command_pools = fill_destroyable_array_with_expression!(
+      &device,
+      ComputeCommandPool::create(&device, &physical_device.queue_families),
+      FRAMES_IN_FLIGHT
+    )
+    .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(compute_command_pools.as_ptr());
 
     let screenshot_buffer = ScreenshotBuffer::new(&device, &physical_device)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
@@ -296,7 +307,8 @@ impl Renderer {
       physical_device,
       device,
       queues,
-      command_pools,
+      graphics_command_pools,
+      compute_command_pools,
       constant_data,
       compute_data,
       render_pass,
@@ -317,8 +329,8 @@ impl Renderer {
     player: SpritePushConstants,
     save_to_screenshot_buffer: bool,
   ) -> Result<(), OutOfMemoryError> {
-    self.command_pools[frame_i].reset(&self.device)?;
-    self.command_pools[frame_i].record_main(
+    self.graphics_command_pools[frame_i].reset(&self.device)?;
+    self.graphics_command_pools[frame_i].record_main(
       frame_i,
       &self.device,
       self.render_pass,
@@ -336,6 +348,20 @@ impl Renderer {
       },
     )?;
     Ok(())
+  }
+
+  pub unsafe fn record_compute(&mut self, frame_i: usize) -> Result<(), OutOfMemoryError> {
+    self.compute_command_pools[frame_i].reset(&self.device);
+    self.compute_command_pools[frame_i].record(
+      frame_i,
+      device,
+      queue_families,
+      pipelines,
+      descriptor_pool,
+      data,
+      push_constants,
+      refresh_random_buffer,
+    )
   }
 
   pub unsafe fn recreate_swapchain(&mut self) -> Result<(), SwapchainRecreationError> {
@@ -509,7 +535,8 @@ impl Drop for Renderer {
 
       self.screenshot_buffer.destroy_self(&self.device);
 
-      self.command_pools.destroy_self(&self.device);
+      self.graphics_command_pools.destroy_self(&self.device);
+      self.compute_command_pools.destroy_self(&self.device);
 
       self.graphics_pipelines.destroy_self(&self.device);
       self.compute_pipelines.destroy_self(&self.device);

@@ -73,15 +73,20 @@ pub struct ComputePushConstants {
   pub random_uniform_reserved_index: u32, // size: 6
 }
 
-// host accessible data after shader dispatch
+// equal to src/render/shaders/compute/shader.comp
+// see shader code for more information about fields
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
-pub struct ComputeOutput {
+pub struct ComputeHostIO {
   // 1 if colliding with bullet, 0 otherwise
-  colliding: u32,
-  // number of random values remaining for use in ComputeData::device_random_values
-  random_values_left: u32,
+  pub colliding: u32,
+  pub random_uniform_index: u32,
 }
+
+// WARNING: should equal to what in the shader
+// basically the total number of new_projectiles divided bt RANDOM_VALUES_PER_BULLET
+// that can be added each frame
+const STAGING_RANDOM_VALUES_COUNT: usize = 16384;
 
 #[derive(Debug)]
 pub struct ComputeData {
@@ -90,8 +95,6 @@ pub struct ComputeData {
 
   pub bullet_count: usize,
   pub target_bullet_count: usize,
-
-  rng: ThreadRng,
 }
 
 impl ComputeData {
@@ -99,14 +102,11 @@ impl ComputeData {
     let host = HostComputeData::create_and_allocate(device, physical_device)?;
     let device = DeviceComputeData::create_and_allocate(device, physical_device)?;
 
-    let rng = rand::thread_rng();
-
     Ok(Self {
       host,
       device,
       bullet_count: 0,
       target_bullet_count: 12,
-      rng,
     })
   }
 }

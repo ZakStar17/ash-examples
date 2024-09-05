@@ -7,6 +7,7 @@ mod graphics;
 mod temporary_graphics;
 mod transfer;
 
+pub use compute::ComputeCommandPool;
 pub use graphics::GraphicsCommandBufferPool;
 pub use temporary_graphics::TemporaryGraphicsCommandPool;
 pub use transfer::TransferCommandBufferPool;

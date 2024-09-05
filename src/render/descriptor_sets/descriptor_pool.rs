@@ -4,12 +4,16 @@ use ash::vk;
 
 use crate::{
   render::{
-    device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, FRAMES_IN_FLIGHT,
+    data::compute::ComputeData, device_destroyable::DeviceManuallyDestroyed,
+    errors::OutOfMemoryError, FRAMES_IN_FLIGHT,
   },
-  utility::concatenate_arrays,
+  utility::{self, concatenate_arrays},
 };
 
-use super::texture_write_descriptor_set;
+use super::{
+  storage_buffer_descriptor_set, texture_write_descriptor_set,
+  writes::uniform_buffer_descriptor_set,
+};
 
 fn create_texture_sampler(device: &ash::Device) -> Result<vk::Sampler, OutOfMemoryError> {
   let sampler_create_info = vk::SamplerCreateInfo {
@@ -132,7 +136,11 @@ impl DescriptorPool {
     },
   ];
 
-  pub fn new(device: &ash::Device, texture_view: vk::ImageView) -> Result<Self, OutOfMemoryError> {
+  pub fn new(
+    device: &ash::Device,
+    texture_view: vk::ImageView,
+    compute_data: &ComputeData,
+  ) -> Result<Self, OutOfMemoryError> {
     let texture_sampler = create_texture_sampler(device)?;
 
     let texture_layout = Self::create_graphics_layout(device, texture_sampler)?;
@@ -163,10 +171,100 @@ impl DescriptorPool {
     let compute_sets = [sets[1], sets[1]];
 
     // update texture set
-    let texture_write = texture_write_descriptor_set(texture_set, texture_view, 0); // same binding as in layout
+    let texture_write = texture_write_descriptor_set(texture_set, texture_view, 0);
+    let compute_writes = [
+      uniform_buffer_descriptor_set(
+        compute_sets[0],
+        0,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.device.device_random_values[0],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      uniform_buffer_descriptor_set(
+        compute_sets[1],
+        0,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.device.device_random_values[1],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      storage_buffer_descriptor_set(
+        compute_sets[0],
+        1,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.host.compute_host_io[0].buffer,
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      storage_buffer_descriptor_set(
+        compute_sets[1],
+        1,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.host.compute_host_io[1].buffer,
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      // src 0
+      storage_buffer_descriptor_set(
+        compute_sets[0],
+        2,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.device.instance_compute[1],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      // dst 0
+      storage_buffer_descriptor_set(
+        compute_sets[0],
+        3,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.device.instance_compute[0],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      // src 1
+      storage_buffer_descriptor_set(
+        compute_sets[1],
+        2,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.device.instance_compute[0],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+      // dst 1
+      storage_buffer_descriptor_set(
+        compute_sets[1],
+        3,
+        vk::DescriptorBufferInfo {
+          buffer: compute_data.device.instance_compute[1],
+          offset: 0,
+          range: vk::WHOLE_SIZE,
+        },
+      ),
+    ];
+
     unsafe {
-      let contextualized = texture_write.contextualize();
-      device.update_descriptor_sets(&[contextualized], &[]);
+      let texture_contextualized = texture_write.contextualize();
+      let mut compute_contextualized = [vk::WriteDescriptorSet::default(); 8];
+      for i in 0..8 {
+        compute_contextualized[i] = compute_writes[i].contextualize();
+      }
+      // adding copies as well would be faster but here it doesn't really matter as it will only happen once
+      device.update_descriptor_sets(
+        &utility::concatenate_arrays::<9, vk::WriteDescriptorSet>(&[
+          &[texture_contextualized],
+          &compute_contextualized,
+        ]),
+        &[],
+      );
     }
     // todo: update compute sets in the same command as well
 

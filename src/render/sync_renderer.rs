@@ -191,7 +191,7 @@ impl SyncRenderer {
     }
 
     let command_buffers = [vk::CommandBufferSubmitInfo::default()
-      .command_buffer(self.renderer.command_pools[cur_frame_i].main)];
+      .command_buffer(self.renderer.graphics_command_pools[cur_frame_i].main)];
 
     let wait_semaphores = [
       // wait for image to become ready for writes

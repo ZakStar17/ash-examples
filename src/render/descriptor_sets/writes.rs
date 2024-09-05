@@ -63,6 +63,14 @@ pub fn storage_buffer_descriptor_set<'a>(
   BufferWriteDescriptorSet::new(set, binding, vk::DescriptorType::STORAGE_BUFFER, info)
 }
 
+pub fn uniform_buffer_descriptor_set<'a>(
+  set: vk::DescriptorSet,
+  binding: u32,
+  info: vk::DescriptorBufferInfo,
+) -> BufferWriteDescriptorSet<'a> {
+  BufferWriteDescriptorSet::new(set, binding, vk::DescriptorType::UNIFORM_BUFFER, info)
+}
+
 #[derive(Debug)]
 pub struct ImageWriteDescriptorSet<'a> {
   inner: vk::WriteDescriptorSet<'a>,

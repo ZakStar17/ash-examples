@@ -11,7 +11,6 @@ struct Bullet {
 
 layout(push_constant) uniform PushConstantData {
   vec2 player_pos;
-  float delta_time;  // time since last shader run in seconds
 
   // how many bullets existed before
   uint bullet_count;
@@ -37,7 +36,8 @@ layout(set = 0, binding = 1) restrict buffer CPUIO {
   uint colliding;
 
   // current index of Random for recreating bullets
-  // random_uniform_index >= random_uniform_reserved_index + ((target_bullet_count - bullet_count) * RANDOM_VALUES_PER_BULLET)
+  // wraps around when bigger than MAX_RANDOM_VALUES
+  // host is responsible for keeping random values "fresh"
   uint random_uniform_index;
 }
 cpu_io;
@@ -73,20 +73,20 @@ void main() {
     // new bullets are alwas added at the end of the buffer
     uint j = i - pc.bullet_count; // new bullet index
     
-    uint rand_i = j * RANDOM_VALUES_PER_BULLET;
+    uint rand_i = (pc.random_uniform_reserved_index + (j * RANDOM_VALUES_PER_BULLET)) % MAX_RANDOM_VALUES;
     float rand1 = random.values[rand_i];
-    float rand2 = random.values[rand_i+1];
+    float rand2 = random.values[(rand_i + 1) % MAX_RANDOM_VALUES];
 
     data_out.bullets[i] = new_bullet(rand1, rand2);
   }
 
   Bullet b_in = data_in.bullets[i];
   Bullet b_out;
-  b_out.vel = b_in.vel + (b_in.vel * 0.1 * pc.delta_time);
-  b_out.pos = b_in.pos + (b_in.vel * pc.delta_time);
+  b_out.vel = b_in.vel + (b_in.vel * 0.00002);
+  b_out.pos = b_in.pos + b_in.vel;
 
   if (out_of_bounds(b_out)) {
-    uint next_i = atomicAdd(cpu_io.random_uniform_index, 2);
+    uint next_i = atomicAdd(cpu_io.random_uniform_index, 2) % MAX_RANDOM_VALUES;
     float rand1 = random.values[next_i-1];
     float rand2 = random.values[next_i-2];
     b_out = new_bullet(rand1, rand2);
