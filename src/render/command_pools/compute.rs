@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    data::compute::{Bullet, ComputeData, ComputePushConstants},
+    data::compute::{Bullet, ComputeData, ComputeDataUpdate, ComputePushConstants},
     descriptor_sets::DescriptorPool,
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,
@@ -46,32 +46,18 @@ impl ComputeCommandPool {
     pipelines: &ComputePipelines,
     descriptor_pool: &DescriptorPool,
 
-    data: ComputeData,
-    push_constants: ComputePushConstants,
-
-    refresh_random_buffer: Option<usize>,
+    data: &ComputeData, // buffers
+    update_data: ComputeDataUpdate,
+    player_pos: [f32; 2],
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.instance;
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
-    if let Some(count) = refresh_random_buffer {
-      let affected_new_random_values_size = (count * size_of::<f32>()) as u64;
-      let region = vk::BufferCopy {
-        src_offset: 0,
-        dst_offset: 0,
-        size: affected_new_random_values_size,
-      };
-      device.cmd_copy_buffer(
-        cb,
-        *data.host.staging_random_values[frame_i],
-        data.device.device_random_values[frame_i],
-        &[region],
-      );
-
-      // flush for compute and next copy writes
-      let flush = vk::BufferMemoryBarrier2 {
+    // before shader for now
+    if let Some((right_region, left_opt)) = update_data.copy_new_random_values {
+      let mut copy_barrier = vk::BufferMemoryBarrier2 {
         s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
         p_next: ptr::null(),
         src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
@@ -81,12 +67,54 @@ impl ComputeCommandPool {
           .bitor(vk::PipelineStageFlags2::COPY),
         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        buffer: data.device.device_random_values[frame_i],
-        offset: 0,
-        size: affected_new_random_values_size,
+        buffer: data.device.random_values[frame_i],
+        offset: 0,            // set later
+        size: vk::WHOLE_SIZE, // set later
         _marker: PhantomData,
       };
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[flush], &[]));
+
+      let right_offset = (right_region.start * size_of::<f32>()) as u64;
+      let right_size = ((right_region.end - right_region.start) * size_of::<f32>()) as u64;
+      let right_copy = vk::BufferCopy {
+        src_offset: right_offset,
+        dst_offset: right_offset, // same sizes
+        size: right_size,
+      };
+
+      if let Some(left_region) = left_opt {
+        // two ranges should occur rarely
+
+        let left_offset = 0; // RandomBufferUsedArea::raw_ranges
+        let left_size = (left_region.end * size_of::<f32>()) as u64;
+        let left_copy = vk::BufferCopy {
+          src_offset: left_offset,
+          dst_offset: left_offset, // same sizes
+          size: left_size,
+        };
+
+        device.cmd_copy_buffer(
+          cb,
+          *data.host.random_values[frame_i],
+          data.device.random_values[frame_i],
+          &[right_copy, left_copy],
+        );
+
+        // affect whole buffer as to not create more than one memory barrier
+        // with the same parameters
+        copy_barrier.offset = 0;
+        copy_barrier.size = vk::WHOLE_SIZE;
+      } else {
+        device.cmd_copy_buffer(
+          cb,
+          *data.host.random_values[frame_i],
+          data.device.random_values[frame_i],
+          &[right_copy],
+        );
+        copy_barrier.offset = right_copy.dst_offset;
+        copy_barrier.size = right_copy.size;
+      }
+
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[copy_barrier], &[]));
     }
 
     // read only storage buffer from previous dispatch (old)
@@ -97,10 +125,18 @@ impl ComputeCommandPool {
     let host_inp_out = data.host.compute_host_io[frame_i].buffer;
     let graphics = data.device.instance_graphics[frame_i];
 
-    let affected_instance_size = (data.target_bullet_count * size_of::<Bullet>()) as u64;
+    let affected_instance_size =
+      (update_data.target_bullet_count as usize * size_of::<Bullet>()) as u64;
 
-    // sync host writes
-    {
+    let push_constants = ComputePushConstants {
+      player_pos,
+      bullet_count: update_data.bullet_count,
+      target_bullet_count: update_data.target_bullet_count,
+      random_uniform_reserved_index: update_data.random_uniform_reserved_index,
+    };
+
+    if update_data.compute_io_updated {
+      // sync host writes
       let host_input = vk::BufferMemoryBarrier2 {
         s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
         p_next: ptr::null(),

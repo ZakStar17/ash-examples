@@ -177,7 +177,7 @@ impl DescriptorPool {
         compute_sets[0],
         0,
         vk::DescriptorBufferInfo {
-          buffer: compute_data.device.device_random_values[0],
+          buffer: compute_data.device.random_values[0],
           offset: 0,
           range: vk::WHOLE_SIZE,
         },
@@ -186,7 +186,7 @@ impl DescriptorPool {
         compute_sets[1],
         0,
         vk::DescriptorBufferInfo {
-          buffer: compute_data.device.device_random_values[1],
+          buffer: compute_data.device.random_values[1],
           offset: 0,
           range: vk::WHOLE_SIZE,
         },

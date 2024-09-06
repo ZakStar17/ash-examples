@@ -18,7 +18,8 @@ use crate::{
 
 use super::Bullet;
 
-const INITIAL_INSTANCE_SIZE: u64 = (super::INITIAL_MAX_BULLET_COUNT * size_of::<Bullet>()) as u64;
+const INITIAL_INSTANCE_CAPACITY: u64 = 10000;
+const INITIAL_INSTANCE_SIZE: u64 = INITIAL_INSTANCE_CAPACITY * size_of::<Bullet>() as u64;
 
 #[derive(Debug)]
 pub struct DeviceComputeData {
@@ -29,7 +30,7 @@ pub struct DeviceComputeData {
   pub instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
   // cpus generate (pseudo)random values more easily than gpus, so these are generated in
   // cpu memory and then copied to the gpu
-  pub device_random_values: [vk::Buffer; FRAMES_IN_FLIGHT],
+  pub random_values: [vk::Buffer; FRAMES_IN_FLIGHT],
 }
 
 impl DeviceComputeData {
@@ -58,7 +59,7 @@ impl DeviceComputeData {
       FRAMES_IN_FLIGHT
     )
     .on_err(|_| unsafe { instance_compute.destroy_self(device) })?;
-    let device_random_values = fill_destroyable_array_with_expression!(
+    let random_values = fill_destroyable_array_with_expression!(
       device,
       create_buffer(
         device,
@@ -76,17 +77,17 @@ impl DeviceComputeData {
       physical_device,
       instance_compute,
       instance_graphics,
-      device_random_values
+      random_values
     )
     .on_err(|_| unsafe {
-      destroy!(device => instance_compute.as_ref(), instance_graphics.as_ref(), device_random_values.as_ref())
+      destroy!(device => instance_compute.as_ref(), instance_graphics.as_ref(), random_values.as_ref())
     })?;
 
     Ok(Self {
       memory,
       instance_compute,
       instance_graphics,
-      device_random_values,
+      random_values,
     })
   }
 
@@ -95,15 +96,15 @@ impl DeviceComputeData {
     physical_device: &PhysicalDevice,
     instance_compute: [vk::Buffer; FRAMES_IN_FLIGHT],
     instance_graphics: [vk::Buffer; FRAMES_IN_FLIGHT],
-    device_random_values: [vk::Buffer; FRAMES_IN_FLIGHT],
+    random_values: [vk::Buffer; FRAMES_IN_FLIGHT],
   ) -> Result<vk::DeviceMemory, AllocationError> {
     const TOTAL_BUFFERS: usize = FRAMES_IN_FLIGHT * 3;
     let instance_compute_requirements =
       instance_compute.map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
     let instance_graphics_requirements =
       instance_graphics.map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
-    let device_random_values_requirements =
-      device_random_values.map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
+    let random_values_requirements =
+      random_values.map(|buffer| unsafe { device.get_buffer_memory_requirements(buffer) });
 
     log::debug!("Allocating compute device memory");
     let allocation = allocate_and_bind_memory(
@@ -113,12 +114,12 @@ impl DeviceComputeData {
       &utility::concatenate_arrays::<TOTAL_BUFFERS, vk::Buffer>(&[
         &instance_compute,
         &instance_graphics,
-        &device_random_values,
+        &random_values,
       ]),
       &utility::concatenate_arrays::<TOTAL_BUFFERS, vk::MemoryRequirements>(&[
         &instance_compute_requirements,
         &instance_graphics_requirements,
-        &device_random_values_requirements,
+        &random_values_requirements,
       ]),
       &[],
       &[],
@@ -133,7 +134,7 @@ impl DeviceManuallyDestroyed for DeviceComputeData {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     self.instance_compute.destroy_self(device);
     self.instance_graphics.destroy_self(device);
-    self.device_random_values.destroy_self(device);
+    self.random_values.destroy_self(device);
 
     self.memory.destroy_self(device);
   }
