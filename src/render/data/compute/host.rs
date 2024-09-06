@@ -60,6 +60,17 @@ struct MemoryAllocation {
   pub random_values_offsets: [u64; FRAMES_IN_FLIGHT],
 }
 
+impl DeviceManuallyDestroyed for MemoryAllocation {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    if self.compute_host_io_memory == self.random_values_memory {
+      self.compute_host_io_memory.destroy_self(device);
+    } else {
+      self.compute_host_io_memory.destroy_self(device);
+      self.random_values_memory.destroy_self(device);
+    }
+  }
+}
+
 impl HostComputeData {
   pub fn create_and_allocate(
     device: &Device,
@@ -108,14 +119,17 @@ impl HostComputeData {
     }
 
     // offsets account for when memories are equal
-    let host_io_mem_ptr = unsafe {
-      device.map_memory(
+    let host_io_mem_ptr =
+      unsafe {
+        device.map_memory(
         *alloc.compute_host_io_memory,
         0,
         vk::WHOLE_SIZE,
         vk::MemoryMapFlags::empty(),
+      ).on_err(|_|
+        destroy!(device => host_io_buffers.as_ref(), random_values_buffers.as_ref(), &alloc)
       )? as *mut u8
-    };
+      };
     let random_values_mem_ptr = if alloc.compute_host_io_memory != alloc.random_values_memory {
       unsafe {
         device.map_memory(
@@ -123,6 +137,8 @@ impl HostComputeData {
           0,
           vk::WHOLE_SIZE,
           vk::MemoryMapFlags::empty(),
+        ).on_err(|_|
+          destroy!(device => host_io_buffers.as_ref(), random_values_buffers.as_ref(), &alloc)
         )? as *mut u8
       }
     } else {
@@ -310,7 +326,8 @@ impl HostComputeData {
           &[],
           &[],
           Self::RANDOM_VALUES_MEMORY_PRIORITY,
-        )?;
+        )
+        .on_err(|_| unsafe { host_io_alloc.memory.destroy_self(device) })?;
 
         let mut host_io_iter = host_io_alloc.offsets.buffer_offsets().iter();
         let mut random_values_iter = random_values_alloc.offsets.buffer_offsets().iter();

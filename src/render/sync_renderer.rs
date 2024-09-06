@@ -18,6 +18,7 @@ pub struct SyncRenderer {
   last_frame_i: usize,
   frame_fences: [vk::Fence; FRAMES_IN_FLIGHT],
 
+  compute_finished: [vk::Semaphore; FRAMES_IN_FLIGHT],
   // swapchain semaphores
   image_available: [vk::Semaphore; FRAMES_IN_FLIGHT],
   presentable: [vk::Semaphore; FRAMES_IN_FLIGHT],
@@ -41,24 +42,33 @@ impl SyncRenderer {
       FRAMES_IN_FLIGHT
     )?;
 
+    let compute_finished = fill_destroyable_array_with_expression!(
+      &renderer.device,
+      create_semaphore(device),
+      FRAMES_IN_FLIGHT
+    )
+    .on_err(|_| unsafe { destroy!(device => frame_fences.as_ref()) })?;
     let image_available = fill_destroyable_array_with_expression!(
       &renderer.device,
       create_semaphore(device),
       FRAMES_IN_FLIGHT
     )
-    .on_err(|_| unsafe { frame_fences.destroy_self(device) })?;
+    .on_err(|_| unsafe { destroy!(device => frame_fences.as_ref(), compute_finished.as_ref()) })?;
     let presentable = fill_destroyable_array_with_expression!(
       &renderer.device,
       create_semaphore(device),
       FRAMES_IN_FLIGHT
     )
-    .on_err(|_| unsafe { destroy!(device => frame_fences.as_ref(), image_available.as_ref()) })?;
+    .on_err(|_| unsafe {
+      destroy!(device => frame_fences.as_ref(), compute_finished.as_ref(), image_available.as_ref())
+    })?;
 
     Ok(Self {
       renderer,
       last_frame_i: 1, // 1 so that the first frame starts at 0
       frame_fences,
 
+      compute_finished,
       image_available,
       presentable,
 
@@ -182,57 +192,102 @@ impl SyncRenderer {
         self.saving_frame = Some((cur_frame_i, self.renderer.render_format()));
         record_screenshot = true;
       }
+
+      let compute_update = self.renderer.update_compute(cur_frame_i)?;
+      let instance_size =
+        self
+          .renderer
+          .record_compute(cur_frame_i, compute_update, player.position)?;
+
       self.renderer.record_graphics(
         cur_frame_i,
         image_index as usize,
         player,
+        instance_size,
         record_screenshot,
       )?;
     }
 
-    let command_buffers = [vk::CommandBufferSubmitInfo::default()
-      .command_buffer(self.renderer.graphics_command_pools[cur_frame_i].main)];
-
-    let wait_semaphores = [
-      // wait for image to become ready for writes
-      // the stage_mask will be synched with any dependencies existing in the command buffer
-      // recording
-      vk::SemaphoreSubmitInfo {
+    {
+      let command_buffers = [vk::CommandBufferSubmitInfo::default()
+        .command_buffer(self.renderer.compute_command_pools[cur_frame_i].instance)];
+      let wait_semaphores = [];
+      let signal_semaphores = [vk::SemaphoreSubmitInfo {
         s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
         p_next: ptr::null(),
-        semaphore: self.image_available[cur_frame_i],
+        semaphore: self.compute_finished[cur_frame_i],
         value: 0, // ignored
-        // stage where the swapchain image stops being used by the presentation operation
-        // see notes in https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-semaphores-waiting
-        stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-        device_index: 0, // ignored
-        _marker: PhantomData,
-      },
-    ];
-
-    let signal_semaphores = [
-      // when can the presentation operation start using the image
-      vk::SemaphoreSubmitInfo {
-        s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
-        p_next: ptr::null(),
-        semaphore: self.presentable[cur_frame_i],
-        value: 0, // ignored
-        // last stages that affect the current swapchain image
         stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
         device_index: 0, // ignored
         _marker: PhantomData,
-      },
-    ];
-    let submit_info = vk::SubmitInfo2::default()
-      .command_buffer_infos(&command_buffers)
-      .wait_semaphore_infos(&wait_semaphores)
-      .signal_semaphore_infos(&signal_semaphores);
-    unsafe {
-      self.renderer.device.queue_submit2(
-        self.renderer.queues.graphics,
-        &[submit_info],
-        self.frame_fences[cur_frame_i],
-      )?;
+      }];
+      let submit_info = vk::SubmitInfo2::default()
+        .command_buffer_infos(&command_buffers)
+        .wait_semaphore_infos(&wait_semaphores)
+        .signal_semaphore_infos(&signal_semaphores);
+      unsafe {
+        self.renderer.device.queue_submit2(
+          self.renderer.queues.compute,
+          &[submit_info],
+          vk::Fence::null(),
+        )?;
+      }
+    }
+
+    {
+      let command_buffers = [vk::CommandBufferSubmitInfo::default()
+        .command_buffer(self.renderer.graphics_command_pools[cur_frame_i].main)];
+
+      let wait_semaphores = [
+        // wait for image to become ready for writes
+        // the stage_mask will be synched with any dependencies existing in the command buffer
+        // recording
+        vk::SemaphoreSubmitInfo {
+          s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+          p_next: ptr::null(),
+          semaphore: self.image_available[cur_frame_i],
+          value: 0, // ignored
+          // stage where the swapchain image stops being used by the presentation operation
+          // see notes in https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-semaphores-waiting
+          stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+          device_index: 0, // ignored
+          _marker: PhantomData,
+        },
+        vk::SemaphoreSubmitInfo {
+          s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+          p_next: ptr::null(),
+          semaphore: self.compute_finished[cur_frame_i],
+          value: 0, // ignored
+          stage_mask: vk::PipelineStageFlags2::TRANSFER,
+          device_index: 0, // ignored
+          _marker: PhantomData,
+        },
+      ];
+
+      let signal_semaphores = [
+        // when can the presentation operation start using the image
+        vk::SemaphoreSubmitInfo {
+          s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+          p_next: ptr::null(),
+          semaphore: self.presentable[cur_frame_i],
+          value: 0, // ignored
+          // last stages that affect the current swapchain image
+          stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
+          device_index: 0, // ignored
+          _marker: PhantomData,
+        },
+      ];
+      let submit_info = vk::SubmitInfo2::default()
+        .command_buffer_infos(&command_buffers)
+        .wait_semaphore_infos(&wait_semaphores)
+        .signal_semaphore_infos(&signal_semaphores);
+      unsafe {
+        self.renderer.device.queue_submit2(
+          self.renderer.queues.graphics,
+          &[submit_info],
+          self.frame_fences[cur_frame_i],
+        )?;
+      }
     }
 
     unsafe {
@@ -267,6 +322,7 @@ impl Drop for SyncRenderer {
         .expect("Failed to wait for device idleness while dropping SyncRenderer");
 
       self.frame_fences.destroy_self(device);
+      self.compute_finished.destroy_self(device);
       self.image_available.destroy_self(device);
       self.presentable.destroy_self(device);
     }

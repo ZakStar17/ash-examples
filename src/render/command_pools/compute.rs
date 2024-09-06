@@ -49,7 +49,8 @@ impl ComputeCommandPool {
     data: &ComputeData, // buffers
     update_data: ComputeDataUpdate,
     player_pos: [f32; 2],
-  ) -> Result<(), OutOfMemoryError> {
+    // returns effective instance size
+  ) -> Result<u64, OutOfMemoryError> {
     let cb = self.instance;
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -265,10 +266,11 @@ impl ComputeCommandPool {
         release_graphics.src_queue_family_index = queue_families.get_compute_index();
         release_graphics.dst_queue_family_index = queue_families.get_graphics_index();
       }
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[release_graphics], &[]));
     }
 
     device.end_command_buffer(cb)?;
-    Ok(())
+    Ok(affected_instance_size)
   }
 }
 

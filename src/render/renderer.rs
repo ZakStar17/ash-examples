@@ -18,7 +18,11 @@ use super::{
     ComputeCommandPool, GraphicsCommandBufferPool, TemporaryGraphicsCommandPool,
     TransferCommandBufferPool,
   },
-  data::{compute::ComputeData, constant::ConstantData, ScreenshotBuffer},
+  data::{
+    compute::{ComputeData, ComputeDataUpdate},
+    constant::ConstantData,
+    ScreenshotBuffer,
+  },
   descriptor_sets::DescriptorPool,
   device_destroyable::{
     destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
@@ -327,12 +331,14 @@ impl Renderer {
     frame_i: usize,
     image_i: usize,
     player: SpritePushConstants,
+    effective_instance_size: u64,
     save_to_screenshot_buffer: bool,
   ) -> Result<(), OutOfMemoryError> {
     self.graphics_command_pools[frame_i].reset(&self.device)?;
     self.graphics_command_pools[frame_i].record_main(
       frame_i,
       &self.device,
+      &self.physical_device.queue_families,
       self.render_pass,
       &self.render_targets,
       self.swapchains.get_images()[image_i],
@@ -340,7 +346,9 @@ impl Renderer {
       &self.graphics_pipelines,
       &self.descriptor_pool,
       &self.constant_data,
+      &self.compute_data,
       player,
+      effective_instance_size,
       if save_to_screenshot_buffer {
         Some(*self.screenshot_buffer.buffer)
       } else {
@@ -350,18 +358,31 @@ impl Renderer {
     Ok(())
   }
 
-  pub unsafe fn record_compute(&mut self, frame_i: usize) -> Result<(), OutOfMemoryError> {
-    self.compute_command_pools[frame_i].reset(&self.device);
-    self.compute_command_pools[frame_i].record(
-      frame_i,
-      device,
-      queue_families,
-      pipelines,
-      descriptor_pool,
-      data,
-      push_constants,
-      refresh_random_buffer,
-    )
+  pub fn update_compute(&mut self, frame_i: usize) -> Result<ComputeDataUpdate, OutOfMemoryError> {
+    self
+      .compute_data
+      .update(frame_i, &self.device, &self.physical_device)
+  }
+
+  pub unsafe fn record_compute(
+    &mut self,
+    frame_i: usize,
+    update_data: ComputeDataUpdate,
+    player_pos: [f32; 2],
+  ) -> Result<u64, OutOfMemoryError> {
+    self.compute_command_pools[frame_i].reset(&self.device)?;
+    self.compute_command_pools[frame_i]
+      .record(
+        frame_i,
+        &self.device,
+        &self.physical_device.queue_families,
+        &self.compute_pipelines,
+        &self.descriptor_pool,
+        &self.compute_data,
+        update_data,
+        player_pos,
+      )
+      .map_err(|err| err.into())
   }
 
   pub unsafe fn recreate_swapchain(&mut self) -> Result<(), SwapchainRecreationError> {

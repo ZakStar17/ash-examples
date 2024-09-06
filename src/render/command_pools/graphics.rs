@@ -4,10 +4,15 @@ use ash::vk;
 
 use crate::{
   render::{
-    data::constant::ConstantData, descriptor_sets::DescriptorPool,
-    device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
-    initialization::device::QueueFamilies, pipelines::GraphicsPipelines,
-    push_constants::SpritePushConstants, render_targets::RenderTargets, sprites::QUAD_INDEX_COUNT,
+    data::{compute::ComputeData, constant::ConstantData},
+    descriptor_sets::DescriptorPool,
+    device_destroyable::DeviceManuallyDestroyed,
+    errors::OutOfMemoryError,
+    initialization::device::QueueFamilies,
+    pipelines::GraphicsPipelines,
+    push_constants::SpritePushConstants,
+    render_targets::RenderTargets,
+    sprites::QUAD_INDEX_COUNT,
     RENDER_EXTENT,
   },
   utility, BACKGROUND_COLOR, OUT_OF_BOUNDS_AREA_COLOR,
@@ -40,6 +45,7 @@ impl GraphicsCommandBufferPool {
     &mut self,
     frame_i: usize,
     device: &ash::Device,
+    queue_families: &QueueFamilies,
 
     render_pass: vk::RenderPass,
     render_targets: &RenderTargets,
@@ -50,9 +56,11 @@ impl GraphicsCommandBufferPool {
     pipelines: &GraphicsPipelines,
 
     descriptor_pool: &DescriptorPool,
-    data: &ConstantData,
+    constant: &ConstantData,
+    compute: &ComputeData,
 
     player: SpritePushConstants,
+    effective_instance_size: u64,
 
     screenshot_buffer: Option<vk::Buffer>,
   ) -> Result<(), OutOfMemoryError> {
@@ -60,6 +68,24 @@ impl GraphicsCommandBufferPool {
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
+
+    if queue_families.get_graphics_index() != queue_families.get_compute_index() {
+      let acquire_instance = vk::BufferMemoryBarrier2 {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::NONE,
+        dst_access_mask: vk::AccessFlags2::UNIFORM_READ,
+        src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // semaphore
+        dst_stage_mask: vk::PipelineStageFlags2::VERTEX_INPUT,
+        src_queue_family_index: queue_families.get_compute_index(),
+        dst_queue_family_index: queue_families.get_graphics_index(),
+        buffer: compute.device.instance_graphics[frame_i],
+        offset: 0,
+        size: effective_instance_size,
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[acquire_instance], &[]));
+    }
 
     let render_width = RENDER_EXTENT.width as i32;
     let render_height = RENDER_EXTENT.height as i32;
@@ -100,8 +126,8 @@ impl GraphicsCommandBufferPool {
         &[],
       );
       // quad indices and vertices
-      device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex], &[0]);
-      device.cmd_bind_index_buffer(cb, data.index, 0, vk::IndexType::UINT16);
+      device.cmd_bind_vertex_buffers(cb, 0, &[constant.vertex], &[0]);
+      device.cmd_bind_index_buffer(cb, constant.index, 0, vk::IndexType::UINT16);
 
       device.cmd_push_constants(
         cb,
