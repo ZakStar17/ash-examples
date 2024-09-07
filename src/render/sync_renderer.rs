@@ -16,9 +16,11 @@ use super::{
 pub struct SyncRenderer {
   pub renderer: Renderer,
   last_frame_i: usize,
-  frame_fences: [vk::Fence; FRAMES_IN_FLIGHT],
 
-  compute_finished: [vk::Semaphore; FRAMES_IN_FLIGHT],
+  compute_fences: [vk::Fence; FRAMES_IN_FLIGHT],
+  graphics_fences: [vk::Fence; FRAMES_IN_FLIGHT],
+
+  all_compute_finished: [vk::Semaphore; FRAMES_IN_FLIGHT],
   // swapchain semaphores
   image_available: [vk::Semaphore; FRAMES_IN_FLIGHT],
   presentable: [vk::Semaphore; FRAMES_IN_FLIGHT],
@@ -36,39 +38,47 @@ pub struct SyncRenderer {
 impl SyncRenderer {
   pub fn new(renderer: Renderer) -> Result<Self, InitializationError> {
     let device = &renderer.device;
-    let frame_fences = fill_destroyable_array_with_expression!(
+    let graphics_fences = fill_destroyable_array_with_expression!(
+      device,
+      create_fence(device, vk::FenceCreateFlags::SIGNALED),
+      FRAMES_IN_FLIGHT
+    )?;
+    let compute_fences = fill_destroyable_array_with_expression!(
       device,
       create_fence(device, vk::FenceCreateFlags::SIGNALED),
       FRAMES_IN_FLIGHT
     )?;
 
-    let compute_finished = fill_destroyable_array_with_expression!(
+    let all_compute_finished = fill_destroyable_array_with_expression!(
       &renderer.device,
       create_semaphore(device),
       FRAMES_IN_FLIGHT
     )
-    .on_err(|_| unsafe { destroy!(device => frame_fences.as_ref()) })?;
+    .on_err(|_| unsafe { destroy!(device => graphics_fences.as_ref()) })?;
     let image_available = fill_destroyable_array_with_expression!(
       &renderer.device,
       create_semaphore(device),
       FRAMES_IN_FLIGHT
     )
-    .on_err(|_| unsafe { destroy!(device => frame_fences.as_ref(), compute_finished.as_ref()) })?;
+    .on_err(|_| unsafe {
+      destroy!(device => graphics_fences.as_ref(), all_compute_finished.as_ref())
+    })?;
     let presentable = fill_destroyable_array_with_expression!(
       &renderer.device,
       create_semaphore(device),
       FRAMES_IN_FLIGHT
     )
     .on_err(|_| unsafe {
-      destroy!(device => frame_fences.as_ref(), compute_finished.as_ref(), image_available.as_ref())
+      destroy!(device => graphics_fences.as_ref(), all_compute_finished.as_ref(), image_available.as_ref())
     })?;
 
     Ok(Self {
       renderer,
       last_frame_i: 1, // 1 so that the first frame starts at 0
-      frame_fences,
+      graphics_fences,
+      compute_fences,
 
-      compute_finished,
+      all_compute_finished,
       image_available,
       presentable,
 
@@ -114,12 +124,16 @@ impl SyncRenderer {
     let cur_frame_i = (self.last_frame_i + 1) % FRAMES_IN_FLIGHT;
     self.last_frame_i = cur_frame_i;
 
-    // wait for frame of the same set (that holds current frame resources) to finish rendering
+    // todo: maybe wait for compute first
     unsafe {
-      self
-        .renderer
-        .device
-        .wait_for_fences(&[self.frame_fences[cur_frame_i]], true, u64::MAX)?;
+      self.renderer.device.wait_for_fences(
+        &[
+          self.graphics_fences[cur_frame_i],
+          self.compute_fences[cur_frame_i],
+        ],
+        true,
+        u64::MAX,
+      )?;
     }
 
     // current frame resources are now safe to use as they are not being used by the GPU
@@ -177,10 +191,10 @@ impl SyncRenderer {
 
     unsafe {
       // only reset after making sure the fence is going to be signalled again
-      self
-        .renderer
-        .device
-        .reset_fences(&[self.frame_fences[cur_frame_i]])?;
+      self.renderer.device.reset_fences(&[
+        self.graphics_fences[cur_frame_i],
+        self.compute_fences[cur_frame_i],
+      ])?;
     }
 
     // actual rendering
@@ -211,25 +225,22 @@ impl SyncRenderer {
     {
       let command_buffers = [vk::CommandBufferSubmitInfo::default()
         .command_buffer(self.renderer.compute_command_pools[cur_frame_i].instance)];
-      let wait_semaphores = [];
       let signal_semaphores = [vk::SemaphoreSubmitInfo {
         s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
         p_next: ptr::null(),
-        semaphore: self.compute_finished[cur_frame_i],
-        value: 0, // ignored
-        stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS,
-        device_index: 0, // ignored
+        semaphore: self.all_compute_finished[cur_frame_i],
+        value: 0,                                          // ignored
+        stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS, // release
+        device_index: 0,                                   // ignored
         _marker: PhantomData,
       }];
-      let submit_info = vk::SubmitInfo2::default()
-        .command_buffer_infos(&command_buffers)
-        .wait_semaphore_infos(&wait_semaphores)
-        .signal_semaphore_infos(&signal_semaphores);
+      let submit_info = vk::SubmitInfo2::default().command_buffer_infos(&command_buffers);
+      //.signal_semaphore_infos(&signal_semaphores);
       unsafe {
         self.renderer.device.queue_submit2(
           self.renderer.queues.compute,
           &[submit_info],
-          vk::Fence::null(),
+          self.compute_fences[cur_frame_i],
         )?;
       }
     }
@@ -253,15 +264,15 @@ impl SyncRenderer {
           device_index: 0, // ignored
           _marker: PhantomData,
         },
-        vk::SemaphoreSubmitInfo {
-          s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
-          p_next: ptr::null(),
-          semaphore: self.compute_finished[cur_frame_i],
-          value: 0, // ignored
-          stage_mask: vk::PipelineStageFlags2::TRANSFER,
-          device_index: 0, // ignored
-          _marker: PhantomData,
-        },
+        // vk::SemaphoreSubmitInfo {
+        //   s_type: vk::StructureType::SEMAPHORE_SUBMIT_INFO,
+        //   p_next: ptr::null(),
+        //   semaphore: self.all_compute_finished[cur_frame_i],
+        //   value: 0, // ignored
+        //   stage_mask: vk::PipelineStageFlags2::ALL_COMMANDS, // acquire
+        //   device_index: 0, // ignored
+        //   _marker: PhantomData,
+        // },
       ];
 
       let signal_semaphores = [
@@ -285,7 +296,7 @@ impl SyncRenderer {
         self.renderer.device.queue_submit2(
           self.renderer.queues.graphics,
           &[submit_info],
-          self.frame_fences[cur_frame_i],
+          self.graphics_fences[cur_frame_i],
         )?;
       }
     }
@@ -321,8 +332,9 @@ impl Drop for SyncRenderer {
         .device_wait_idle()
         .expect("Failed to wait for device idleness while dropping SyncRenderer");
 
-      self.frame_fences.destroy_self(device);
-      self.compute_finished.destroy_self(device);
+      self.graphics_fences.destroy_self(device);
+      self.compute_fences.destroy_self(device);
+      self.all_compute_finished.destroy_self(device);
       self.image_available.destroy_self(device);
       self.presentable.destroy_self(device);
     }

@@ -30,6 +30,7 @@ use crate::render::{
 // the staging buffers could be smaller, but it would require some special handling for when the
 // number of required random values exceeds what the staging buffer could handle
 const MAX_RANDOM_VALUES: usize = 16384;
+const RANDOM_VALUES_BUFFER_SIZE: u64 = (MAX_RANDOM_VALUES * size_of::<f32>()) as u64;
 
 // do a cmd_copy_buffer to device memory when amount of used random values exceeds COPY_RANDOM_THRESHOLD
 const COPY_RANDOM_THRESHOLD: usize = 512;

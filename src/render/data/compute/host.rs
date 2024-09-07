@@ -1,4 +1,5 @@
 use std::{
+  fmt::Debug,
   marker::PhantomData,
   ops::{BitOr, Range},
   ptr::{self, NonNull},
@@ -11,7 +12,7 @@ use crate::{
   render::{
     allocator::allocate_and_bind_memory,
     create_objs::create_buffer,
-    data::MemoryAndType,
+    data::{compute::RANDOM_VALUES_BUFFER_SIZE, MemoryAndType},
     device_destroyable::{
       destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed,
     },
@@ -24,7 +25,6 @@ use crate::{
 
 use super::{super::MappedHostBuffer, ComputeHostIO, MAX_RANDOM_VALUES};
 
-#[derive(Debug)]
 pub struct HostComputeData {
   // compute_host_io_memory and random_values_memory can be the same
 
@@ -44,6 +44,19 @@ pub struct HostComputeData {
   random_values_rng_buffer: Box<[[f32; MAX_RANDOM_VALUES]; FRAMES_IN_FLIGHT]>,
 
   rng: ThreadRng,
+}
+
+impl Debug for HostComputeData {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("HostComputeData")
+      .field("compute_host_io", &self.compute_host_io)
+      .field("compute_host_io_memory", &self.compute_host_io_memory)
+      .field("compute_host_io_offsets", &self.compute_host_io_offsets)
+      .field("random_values", &self.random_values)
+      .field("random_values_memory", &self.random_values_memory)
+      .field("random_values_offsets", &self.random_values_offsets)
+      .finish()
+  }
 }
 
 impl HostComputeData {
@@ -90,7 +103,7 @@ impl HostComputeData {
       device,
       create_buffer(
         device,
-        (size_of::<f32>() * MAX_RANDOM_VALUES) as u64,
+        RANDOM_VALUES_BUFFER_SIZE,
         vk::BufferUsageFlags::TRANSFER_SRC,
       ),
       FRAMES_IN_FLIGHT

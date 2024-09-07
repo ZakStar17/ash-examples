@@ -259,6 +259,8 @@ fn main_loop(event_loop: EventLoop<()>, mut status: RenderStatus) {
                   }
                 }
               }
+            } else {
+              std::process::exit(0);
             }
             frame_i += 1;
           }

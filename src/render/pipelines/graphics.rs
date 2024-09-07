@@ -24,6 +24,7 @@ pub struct GraphicsPipelinesList {
   pub bullets: vk::Pipeline,
 }
 
+#[derive(Debug)]
 pub struct GraphicsPipelines {
   // compatible with both player and bullets
   pub layout: vk::PipelineLayout,

@@ -6,7 +6,7 @@ use crate::{
   render::{
     allocator::allocate_and_bind_memory,
     create_objs::create_buffer,
-    data::compute::MAX_RANDOM_VALUES,
+    data::compute::RANDOM_VALUES_BUFFER_SIZE,
     device_destroyable::{
       destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed,
     },
@@ -55,7 +55,7 @@ impl DeviceComputeData {
       create_buffer(
         device,
         INITIAL_INSTANCE_SIZE,
-        vk::BufferUsageFlags::TRANSFER_SRC.bitor(vk::BufferUsageFlags::STORAGE_BUFFER)
+        vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::STORAGE_BUFFER)
       ),
       FRAMES_IN_FLIGHT
     )
@@ -64,7 +64,7 @@ impl DeviceComputeData {
       device,
       create_buffer(
         device,
-        MAX_RANDOM_VALUES as u64,
+        RANDOM_VALUES_BUFFER_SIZE,
         vk::BufferUsageFlags::TRANSFER_DST.bitor(vk::BufferUsageFlags::UNIFORM_BUFFER)
       ),
       FRAMES_IN_FLIGHT

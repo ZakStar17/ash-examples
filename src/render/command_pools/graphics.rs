@@ -69,23 +69,23 @@ impl GraphicsCommandBufferPool {
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
-    if queue_families.get_graphics_index() != queue_families.get_compute_index() {
-      let acquire_instance = vk::BufferMemoryBarrier2 {
-        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
-        p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags2::NONE,
-        dst_access_mask: vk::AccessFlags2::UNIFORM_READ,
-        src_stage_mask: vk::PipelineStageFlags2::TRANSFER, // semaphore
-        dst_stage_mask: vk::PipelineStageFlags2::VERTEX_INPUT,
-        src_queue_family_index: queue_families.get_compute_index(),
-        dst_queue_family_index: queue_families.get_graphics_index(),
-        buffer: compute.device.instance_graphics[frame_i],
-        offset: 0,
-        size: effective_instance_size,
-        _marker: PhantomData,
-      };
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[acquire_instance], &[]));
-    }
+    // if queue_families.get_graphics_index() != queue_families.get_compute_index() {
+    //   let acquire_instance = vk::BufferMemoryBarrier2 {
+    //     s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+    //     p_next: ptr::null(),
+    //     src_access_mask: vk::AccessFlags2::NONE,
+    //     dst_access_mask: vk::AccessFlags2::UNIFORM_READ,
+    //     src_stage_mask: vk::PipelineStageFlags2::NONE,
+    //     dst_stage_mask: vk::PipelineStageFlags2::VERTEX_SHADER,
+    //     src_queue_family_index: queue_families.get_compute_index(),
+    //     dst_queue_family_index: queue_families.get_graphics_index(),
+    //     buffer: compute.device.instance_graphics[frame_i],
+    //     offset: 0,
+    //     size: effective_instance_size,
+    //     _marker: PhantomData,
+    //   };
+    //   device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[acquire_instance], &[]));
+    // }
 
     let render_width = RENDER_EXTENT.width as i32;
     let render_height = RENDER_EXTENT.height as i32;

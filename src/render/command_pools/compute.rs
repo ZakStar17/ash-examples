@@ -56,16 +56,57 @@ impl ComputeCommandPool {
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cb, &begin_info)?;
 
+    // sync writes from previous shader dispatches
+    let prev_shader_sync = vk::MemoryBarrier2 {
+      s_type: vk::StructureType::MEMORY_BARRIER_2,
+      p_next: ptr::null(),
+      src_access_mask: vk::AccessFlags2::SHADER_WRITE,
+      dst_access_mask: vk::AccessFlags2::SHADER_WRITE.bitor(vk::AccessFlags2::SHADER_READ),
+      src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+      dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+      _marker: PhantomData,
+    };
+    device.cmd_pipeline_barrier2(cb, &dependency_info(&[prev_shader_sync], &[], &[]));
+
     // before shader for now
     if let Some((right_region, left_opt)) = update_data.copy_new_random_values {
+      log::debug!(
+        "Random Values device copy: writing range {:?}{} on frame {}",
+        right_region,
+        if let Some(other) = left_opt.clone() {
+          format!(" and {:?}", other)
+        } else {
+          "".to_string()
+        },
+        frame_i
+      );
+
+      // todo: there is no need to wait for the shader if the currently written data is not
+      // being read by it (which should happen most of the time)
+      // previous copy probably have to be passed to here
+      let write_after_read_exec_dep = vk::BufferMemoryBarrier2 {
+        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+        p_next: ptr::null(),
+        src_access_mask: vk::AccessFlags2::NONE,
+        dst_access_mask: vk::AccessFlags2::NONE,
+        src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
+        dst_stage_mask: vk::PipelineStageFlags2::COPY,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        buffer: data.device.random_values[frame_i],
+        offset: 0,
+        size: vk::WHOLE_SIZE,
+        _marker: PhantomData,
+      };
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[write_after_read_exec_dep], &[]));
+
       let mut copy_barrier = vk::BufferMemoryBarrier2 {
         s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
         p_next: ptr::null(),
         src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
-        dst_access_mask: vk::AccessFlags2::UNIFORM_READ.bitor(vk::AccessFlags2::TRANSFER_WRITE),
+        dst_access_mask: vk::AccessFlags2::UNIFORM_READ,
         src_stage_mask: vk::PipelineStageFlags2::COPY,
-        dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER
-          .bitor(vk::PipelineStageFlags2::COPY),
+        dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         buffer: data.device.random_values[frame_i],
@@ -136,23 +177,17 @@ impl ComputeCommandPool {
       random_uniform_reserved_index: update_data.random_uniform_reserved_index,
     };
 
-    if update_data.compute_io_updated {
-      // sync host writes
-      let host_input = vk::BufferMemoryBarrier2 {
-        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+    {
+      let finish_previous_copy = vk::MemoryBarrier2 {
+        s_type: vk::StructureType::MEMORY_BARRIER_2,
         p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags2::HOST_WRITE,
-        dst_access_mask: vk::AccessFlags2::SHADER_READ.bitor(vk::AccessFlags2::SHADER_WRITE),
-        src_stage_mask: vk::PipelineStageFlags2::HOST,
+        src_access_mask: vk::AccessFlags2::NONE,
+        dst_access_mask: vk::AccessFlags2::NONE,
+        src_stage_mask: vk::PipelineStageFlags2::COPY,
         dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        buffer: host_inp_out,
-        offset: 0,
-        size: vk::WHOLE_SIZE,
         _marker: PhantomData,
       };
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[host_input], &[]));
+      device.cmd_pipeline_barrier2(cb, &dependency_info(&[finish_previous_copy], &[], &[]));
     }
 
     // shader dispatch
@@ -179,35 +214,20 @@ impl ComputeCommandPool {
       device.cmd_dispatch(cb, group_count, 1, 1);
     }
 
-    // make shader results visible to subsequent operations
     {
-      let src_next_write_exec_barrier = vk::BufferMemoryBarrier2 {
-        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
-        p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags2::NONE,
-        dst_access_mask: vk::AccessFlags2::SHADER_WRITE,
-        src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-        dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        buffer: src,
-        offset: 0,
-        size: affected_instance_size,
-        _marker: PhantomData,
-      };
-      let dst_next_copy_and_shader_barriers = vk::BufferMemoryBarrier2 {
+      let transfer_after_shader_write = vk::BufferMemoryBarrier2 {
         s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
         p_next: ptr::null(),
         src_access_mask: vk::AccessFlags2::SHADER_WRITE,
-        dst_access_mask: vk::AccessFlags2::SHADER_READ.bitor(vk::AccessFlags2::TRANSFER_READ),
+        dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
         src_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER,
-        dst_stage_mask: vk::PipelineStageFlags2::COMPUTE_SHADER
-          .bitor(vk::PipelineStageFlags2::COPY),
+        dst_stage_mask: vk::PipelineStageFlags2::COPY,
         src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         buffer: dst,
         offset: 0,
         size: affected_instance_size,
+        // size: vk::WHOLE_SIZE,
         _marker: PhantomData,
       };
       let host_out = vk::BufferMemoryBarrier2 {
@@ -227,15 +247,7 @@ impl ComputeCommandPool {
       };
       device.cmd_pipeline_barrier2(
         cb,
-        &dependency_info(
-          &[],
-          &[
-            src_next_write_exec_barrier,
-            dst_next_copy_and_shader_barriers,
-            host_out,
-          ],
-          &[],
-        ),
+        &dependency_info(&[], &[transfer_after_shader_write, host_out], &[]),
       );
     }
 
@@ -247,26 +259,28 @@ impl ComputeCommandPool {
       };
       device.cmd_copy_buffer(cb, dst, graphics, &[effective_region]);
 
-      let mut release_graphics = vk::BufferMemoryBarrier2 {
-        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
-        p_next: ptr::null(),
-        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
-        dst_access_mask: vk::AccessFlags2::UNIFORM_READ.bitor(vk::AccessFlags2::TRANSFER_WRITE),
-        src_stage_mask: vk::PipelineStageFlags2::COPY,
-        dst_stage_mask: vk::PipelineStageFlags2::VERTEX_INPUT.bitor(vk::PipelineStageFlags2::COPY),
-        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        buffer: graphics,
-        offset: 0,
-        size: affected_instance_size,
-        _marker: PhantomData,
-      };
-      if queue_families.get_graphics_index() != queue_families.get_compute_index() {
-        release_graphics.dst_access_mask = vk::AccessFlags2::NONE;
-        release_graphics.src_queue_family_index = queue_families.get_compute_index();
-        release_graphics.dst_queue_family_index = queue_families.get_graphics_index();
-      }
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[release_graphics], &[]));
+      // todo
+      // let mut release_graphics = vk::BufferMemoryBarrier2 {
+      //   s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
+      //   p_next: ptr::null(),
+      //   src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+      //   dst_access_mask: vk::AccessFlags2::UNIFORM_READ.bitor(vk::AccessFlags2::TRANSFER_WRITE),
+      //   src_stage_mask: vk::PipelineStageFlags2::COPY,
+      //   dst_stage_mask: vk::PipelineStageFlags2::VERTEX_SHADER.bitor(vk::PipelineStageFlags2::COPY),
+      //   src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      //   dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      //   buffer: graphics,
+      //   offset: 0,
+      //   size: affected_instance_size,
+      //   _marker: PhantomData,
+      // };
+      // if queue_families.get_graphics_index() != queue_families.get_compute_index() {
+      //   release_graphics.dst_access_mask = vk::AccessFlags2::NONE;
+      //   release_graphics.dst_stage_mask = vk::PipelineStageFlags2::NONE;
+      //   release_graphics.src_queue_family_index = queue_families.get_compute_index();
+      //   release_graphics.dst_queue_family_index = queue_families.get_graphics_index();
+      // }
+      // device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[release_graphics], &[]));
     }
 
     device.end_command_buffer(cb)?;

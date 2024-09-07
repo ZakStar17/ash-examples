@@ -9,6 +9,7 @@ use crate::render::{
 
 use super::PipelineCreationError;
 
+#[derive(Debug)]
 pub struct ComputePipelines {
   pub layout: vk::PipelineLayout,
   pub instance: vk::Pipeline,

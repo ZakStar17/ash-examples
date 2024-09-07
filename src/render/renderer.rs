@@ -250,7 +250,7 @@ impl Renderer {
         destructor.fire(&device)
       })?;
 
-      log::debug!("GPU data addresses: {:#?}", data);
+      log::debug!("GPU <constant data> addresses: {:#?}", data);
 
       unsafe {
         temp_transfer_pool.destroy_self(&device);
@@ -261,6 +261,8 @@ impl Renderer {
     };
 
     let compute_data = ComputeData::new(&device, &physical_device)?;
+
+    log::debug!("GPU <compute data> addresses: {:#?}", compute_data);
 
     let descriptor_pool = DescriptorPool::new(&device, constant_data.texture_view, &compute_data)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
@@ -280,6 +282,12 @@ impl Renderer {
     let compute_pipelines = ComputePipelines::new(&device, pipeline_cache, &descriptor_pool)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&compute_pipelines);
+
+    log::debug!(
+      "Pipeline addresses:\n{:#?}\n{:#?}",
+      graphics_pipelines,
+      compute_pipelines
+    );
 
     let graphics_command_pools = fill_destroyable_array_with_expression!(
       &device,
