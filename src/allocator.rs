@@ -8,26 +8,40 @@ use crate::{
   utility,
 };
 
-#[allow(dead_code)]
-pub struct PackedAllocation {
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MemoryWithType {
   pub memory: vk::DeviceMemory,
-  pub size: u64,
-  pub type_index: u32,
-  pub offsets: AllocationOffsets,
+  pub type_index: usize,
+}
+pub struct AllocationSuccessResult<const S: usize> {
+  memories: [MemoryWithType; vk::MAX_MEMORY_TYPES],
+  memory_count: usize,
+  // memory index, offset
+  obj_to_memory_assignment: [(usize, u64); S],
 }
 
-pub struct AllocationOffsets {
-  buffers_len: usize,
-  offsets: Box<[u64]>,
+pub trait MemoryBound {
+  unsafe fn bind(&self, device: &ash::Device, memory: vk::DeviceMemory, offset: u64) -> Result<(), OutOfMemoryError>;
+  unsafe fn get_memory_requirements(&self, device: &ash::Device) -> vk::MemoryRequirements;
 }
 
-impl AllocationOffsets {
-  pub fn buffer_offsets(&self) -> &[u64] {
-    &self.offsets[0..self.buffers_len]
+impl MemoryBound for vk::Buffer {
+  unsafe fn bind(&self, device: &ash::Device, memory: vk::DeviceMemory, offset: u64) -> Result<(), OutOfMemoryError> {
+    device.bind_buffer_memory(*self, memory, offset).map_err(|err| err.into())
   }
 
-  pub fn image_offsets(&self) -> &[u64] {
-    &self.offsets[self.buffers_len..]
+  unsafe fn get_memory_requirements(&self, device: &ash::Device) -> vk::MemoryRequirements {
+    device.get_buffer_memory_requirements(*self)
+  }
+}
+
+impl MemoryBound for vk::Image {
+  unsafe fn bind(&self, device: &ash::Device, memory: vk::DeviceMemory, offset: u64) -> Result<(), OutOfMemoryError> {
+    device.bind_image_memory(*self, memory, offset).map_err(|err| err.into())
+  }
+
+  unsafe fn get_memory_requirements(&self, device: &ash::Device) -> vk::MemoryRequirements {
+    device.get_image_memory_requirements(*self)
   }
 }
 
@@ -47,7 +61,7 @@ fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, const S:
   // if that memory is not supported by the system or not supported by the object requirements
   // the function returns an error if none of the properties can be supported for some object
   desired_properties: [vk::MemoryPropertyFlags; P],
-) -> Result<[usize; S], ()> {
+) -> Result<([usize; S], usize), ()> {
   // todo: write proper errors
 
   // bitmask of memory types that are supported by the given desired properties
@@ -79,6 +93,7 @@ fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, const S:
 
   let mut assigned = [usize::MAX; S];
   let mut remaining = S;
+  let mut unique_type_count = 0;
 
   let mut working_obj_ixs_and_masks = [(0usize, 0u32); S];
   for (_prop_i, supported_type_ixs) in supported_properties.into_iter().enumerate() {
@@ -116,9 +131,11 @@ fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, const S:
         debug_assert!(mask & (1 << type_i) > 0);
         assigned[i] = type_i;
       }
+
+      unique_type_count += 1;
     } else {
       let mut type_i_counter = [0usize; 32];
-      for &(i, mask) in cur_working_objs_ixs_and_masks {
+      for &(_, mask) in cur_working_objs_ixs_and_masks {
         let mut bit_i = 1;
         for i in 0..32 {
           if mask & bit_i > 0 {
@@ -141,6 +158,7 @@ fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, const S:
           .max_by(|x, y| x.1.cmp(y.1))
           .unwrap()
           .0;
+        debug_assert!(type_i_counter[cur_max_i] > 0);
         for &(obj_i, mask) in cur_working_objs_ixs_and_masks {
           if mask & (1 << cur_max_i) > 0 && assigned[obj_i] == usize::MAX {
             assigned[obj_i] = cur_max_i;
@@ -156,15 +174,17 @@ fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, const S:
             }
           }
         }
+
+        unique_type_count += 1;
       }
     }
   }
 
   if remaining > 0 {
-    return Err(());
+    panic!();
   }
 
-  Ok(assigned)
+  Ok((assigned, unique_type_count))
 }
 
 pub fn allocate_memory_by_requirements<const P: usize, const S: usize>(
@@ -173,148 +193,101 @@ pub fn allocate_memory_by_requirements<const P: usize, const S: usize>(
   obj_memory_requirements: [vk::MemoryRequirements; S],
   desired_memory_properties: [vk::MemoryPropertyFlags; P],
   priority: f32, // only set if VK_EXT_memory_priority is enabled
-) {
+) -> Result<AllocationSuccessResult<S>, AllocationError> {
   let memory_types = physical_device.mem_properties.memory_types;
 
-  let assigned_memory_types = assign_memory_type_indexes_to_objects_for_allocation(
-    &memory_types,
-    obj_memory_requirements,
-    desired_memory_properties,
-  )
-  .unwrap();
-}
+  let (assigned_memory_types, unique_type_ixs_count) =
+    assign_memory_type_indexes_to_objects_for_allocation(
+      &memory_types,
+      obj_memory_requirements,
+      desired_memory_properties,
+    )
+    .unwrap();
 
-// allocates vk::DeviceMemory and binds buffers and images to it with correct alignments
-// memory frequently written by the GPU should require higher priority
-pub fn allocate_and_bind_memory(
-  device: &Device,
-  physical_device: &PhysicalDevice,
-  memory_properties: vk::MemoryPropertyFlags,
-  buffers: &[vk::Buffer],
-  buffers_memory_requirements: &[vk::MemoryRequirements],
-  images: &[vk::Image],
-  images_memory_requirements: &[vk::MemoryRequirements],
-  priority: f32, // only set if VK_EXT_memory_priority is enabled
-) -> Result<PackedAllocation, AllocationError> {
-  let mut mem_types_bitmask = u32::MAX;
-  let mut total_size = 0;
-  let offsets: Box<[u64]> = buffers_memory_requirements
-    .iter()
-    .chain(images_memory_requirements.iter())
-    .map(|mem_requirements| {
-      mem_types_bitmask &= mem_requirements.memory_type_bits;
-
-      debug_assert!(mem_requirements.alignment % 2 == 0);
-
-      // align internal offset to follow memory requirements
-      let mut offset = total_size;
-      // strip right-most <alignment> bits from offset (alignment is always a power of 2)
-      let align_error = offset & (mem_requirements.alignment - 1);
-      if align_error > 0 {
-        offset += mem_requirements.alignment - align_error;
-      }
-
-      total_size = offset + mem_requirements.size;
-      offset
-    })
-    .collect();
-
-  let offsets = AllocationOffsets {
-    offsets,
-    buffers_len: buffers.len(),
-  };
-
-  if total_size >= physical_device.max_memory_allocation_size {
-    return Err(AllocationError::TotalSizeExceedsAllowed(total_size));
+  let mut working_memory_types = [usize::MAX; vk::MAX_MEMORY_TYPES];
+  let mut working_memory_types_size = 0;
+  for type_i in assigned_memory_types {
+    if !working_memory_types[0..working_memory_types_size].contains(&type_i) {
+      working_memory_types[working_memory_types_size] = type_i;
+      working_memory_types_size += 1;
+    }
   }
+  debug_assert_eq!(working_memory_types_size, unique_type_ixs_count);
 
-  let mut heap_capacity_exceeded = false;
-  let mut out_of_host_memory = false;
-  let mut out_of_device_memory = false;
-  for (mem_type_i, _mem_type) in
-    physical_device.iterate_memory_types_with_unique_heaps(mem_types_bitmask, memory_properties)
+  let mut allocation_result = [(usize::MAX, u64::MAX); S];
+  let mut memories = [MemoryWithType {
+    memory: vk::DeviceMemory::null(),
+    type_index: usize::MAX,
+  }; vk::MAX_MEMORY_TYPES];
+  for (mem_i, &type_i) in working_memory_types[0..working_memory_types_size]
+    .iter()
+    .enumerate()
   {
-    let heap_size = physical_device.memory_type_heap(mem_type_i).size;
-    if total_size >= heap_size {
-      heap_capacity_exceeded = true;
-      continue;
+    let mut total_size = 0;
+    for i in 0..S {
+      if assigned_memory_types[i] == type_i {
+        let offset =
+          utility::round_up_to_power_of_2_u64(total_size, obj_memory_requirements[i].alignment);
+        total_size = offset + obj_memory_requirements[i].size;
+        allocation_result[i].1 = offset;
+      }
     }
 
     let mut allocate_info = vk::MemoryAllocateInfo {
       s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
       p_next: ptr::null(),
       allocation_size: total_size,
-      memory_type_index: mem_type_i as u32,
+      memory_type_index: type_i as u32,
       _marker: PhantomData,
     };
-
     if device.enabled_extensions.memory_priority {
       let priority_info = vk::MemoryPriorityAllocateInfoEXT::default().priority(priority);
       allocate_info.p_next =
         &priority_info as *const vk::MemoryPriorityAllocateInfoEXT as *const c_void;
     }
-    match unsafe { device.allocate_memory(&allocate_info, None) } {
-      Ok(memory) => {
-        if let Some(loader) = device.pageable_device_local_memory_loader.as_ref() {
-          unsafe {
-            // set manually priority as well for the  pageable_device_local_memory extension
-            // only raw function pointers for now
-            (loader.fp().set_device_memory_priority_ext)(device.handle(), memory, priority);
-          }
-        }
-
-        for (&buffer, &offset) in buffers.iter().zip(offsets.buffer_offsets().iter()) {
-          if let Err(vk_err) = unsafe { device.bind_buffer_memory(buffer, memory, offset) } {
-            unsafe {
-              device.free_memory(memory, None);
-            }
-            return Err(vk_err.into());
-          }
-        }
-        for (&image, &offset) in images.iter().zip(offsets.image_offsets().iter()) {
-          if let Err(vk_err) = unsafe { device.bind_image_memory(image, memory, offset) } {
-            unsafe {
-              device.free_memory(memory, None);
-            }
-            return Err(vk_err.into());
-          }
-        }
-
-        return Ok(PackedAllocation {
-          memory,
-          size: total_size,
-          type_index: mem_type_i as u32,
-          offsets,
-        });
+    let memory = unsafe { device.allocate_memory(&allocate_info, None) }.unwrap();
+    if let Some(loader) = device.pageable_device_local_memory_loader.as_ref() {
+      unsafe {
+        // set manually priority as well for the pageable_device_local_memory extension
+        // only raw function pointers for now
+        (loader.fp().set_device_memory_priority_ext)(device.handle(), memory, priority);
       }
-      Err(err) => {
-        if err == vk::Result::ERROR_OUT_OF_HOST_MEMORY {
-          out_of_host_memory = true;
-          continue;
-        }
-        if err == vk::Result::ERROR_OUT_OF_DEVICE_MEMORY {
-          out_of_device_memory = true;
-          continue;
-        }
-        panic!();
+    }
+    memories[mem_i] = MemoryWithType {
+      memory,
+      type_index: type_i,
+    };
+
+    for i in 0..S {
+      if assigned_memory_types[i] == type_i {
+        allocation_result[i].0 = mem_i;
       }
     }
   }
 
-  if out_of_host_memory {
-    return Err(AllocationError::NotEnoughMemory(
-      OutOfMemoryError::OutOfHostMemory,
-    ));
-  }
-  if out_of_device_memory {
-    return Err(AllocationError::NotEnoughMemory(
-      OutOfMemoryError::OutOfDeviceMemory,
-    ));
-  }
-  if heap_capacity_exceeded {
-    return Err(AllocationError::TooBigForAllSupportedHeaps(total_size));
-  }
+  Ok(AllocationSuccessResult {
+    memories,
+    memory_count: working_memory_types_size,
+    obj_to_memory_assignment: allocation_result,
+  })
+}
 
-  // allocation for loop never ran
-  Err(AllocationError::NoMemoryTypeSupportsAll)
+
+unsafe fn allocate_and_bind_memory<const P: usize, const S: usize>(
+  device: &Device,
+  physical_device: &PhysicalDevice,
+  objs: [&dyn MemoryBound; S],
+  desired_memory_properties: [vk::MemoryPropertyFlags; P],
+  priority: f32, // only set if VK_EXT_memory_priority is enabled
+) -> Result<AllocationSuccessResult<S>, AllocationError> {
+  let mem_requirements = objs.map(|obj| obj.get_memory_requirements(device));
+
+
+  let alloc = allocate_memory_by_requirements(device, physical_device, mem_requirements, desired_memory_properties, priority)?;
+  
+  for (obj, (mem_i, offset)) in objs.into_iter().zip(alloc.obj_to_memory_assignment.into_iter()) {
+    // todo: free memory on error
+    obj.bind(device, alloc.memories[mem_i].memory, offset)?;
+  }
+  Ok(alloc)
 }
