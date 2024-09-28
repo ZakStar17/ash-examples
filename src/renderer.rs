@@ -267,19 +267,18 @@ impl GPUData {
     };
     log::debug!("Allocating memory for the final buffer");
 
-    allocator2::debug_print_obj_memory_requirements(
+    allocator2::debug_print_possible_memory_type_assignment(
       device,
       physical_device,
       [
         vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
         vk::MemoryPropertyFlags::HOST_VISIBLE,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        vk::MemoryPropertyFlags::empty()
+        // vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        // vk::MemoryPropertyFlags::empty(),
       ],
       [&final_buffer, &clear_image],
       Some(["Final buffer", "Clear image"]),
-    )
-    .unwrap();
+    );
 
     let final_buffer_memory_alloc_result = allocate_and_bind_memory(
       device,
