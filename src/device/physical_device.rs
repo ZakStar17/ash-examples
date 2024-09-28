@@ -2,6 +2,8 @@ use std::{ffi::CStr, ops::Deref};
 
 use ash::vk;
 
+use crate::allocator2;
+
 use super::select_physical_device;
 
 use super::QueueFamilies;
@@ -35,7 +37,7 @@ impl PhysicalDevice {
           unsafe { CStr::from_ptr(properties.p10.device_name.as_ptr()) }, // expected to be a valid cstr
         );
         print_queue_families_debug_info(&queue_family_properties);
-        print_device_memory_debug_info(&mem_properties);
+        allocator2::debug_print_device_memory_info(&mem_properties).unwrap();
 
         Ok(Some(PhysicalDevice {
           inner: physical_device,
@@ -50,6 +52,10 @@ impl PhysicalDevice {
 
   pub fn memory_type_heap(&self, type_i: usize) -> vk::MemoryHeap {
     self.mem_properties.memory_heaps[self.mem_properties.memory_types[type_i].heap_index as usize]
+  }
+
+  pub fn memory_types(&self) -> &[vk::MemoryType] {
+    &self.mem_properties.memory_types[0..(self.mem_properties.memory_type_count as usize)]
   }
 }
 
@@ -145,40 +151,4 @@ impl PhysicalDevice {
 
 fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
   log::debug!("Queue family properties: {:#?}", properties);
-}
-
-fn print_device_memory_debug_info(mem_properties: &vk::PhysicalDeviceMemoryProperties) {
-  log::debug!("Available memory heaps:");
-  for heap_i in 0..mem_properties.memory_heap_count {
-    let heap = mem_properties.memory_heaps[heap_i as usize];
-    let heap_flags = if heap.flags.is_empty() {
-      String::from("no heap flags")
-    } else {
-      format!("heap flags [{:?}]", heap.flags)
-    };
-
-    log::debug!(
-      "    {} -> {}mb with {} and attributed memory types:",
-      heap_i,
-      heap.size / 1000000,
-      heap_flags
-    );
-    for type_i in 0..mem_properties.memory_type_count {
-      let mem_type = mem_properties.memory_types[type_i as usize];
-      if mem_type.heap_index != heap_i {
-        continue;
-      }
-
-      let flags = mem_type.property_flags;
-      log::debug!(
-        "        {} -> {}",
-        type_i,
-        if flags.is_empty() {
-          "<no flags>".to_owned()
-        } else {
-          format!("[{:?}]", flags)
-        }
-      );
-    }
-  }
 }

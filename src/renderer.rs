@@ -3,6 +3,7 @@ use std::{marker::PhantomData, ops::BitOr, ptr};
 
 use crate::{
   allocator::allocate_and_bind_memory,
+  allocator2,
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
   device::{Device, PhysicalDevice, Queues},
@@ -265,6 +266,21 @@ impl GPUData {
       }
     };
     log::debug!("Allocating memory for the final buffer");
+
+    allocator2::debug_print_obj_memory_requirements(
+      device,
+      physical_device,
+      [
+        vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
+        vk::MemoryPropertyFlags::HOST_VISIBLE,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        vk::MemoryPropertyFlags::empty()
+      ],
+      [&final_buffer, &clear_image],
+      Some(["Final buffer", "Clear image"]),
+    )
+    .unwrap();
+
     let final_buffer_memory_alloc_result = allocate_and_bind_memory(
       device,
       physical_device,
