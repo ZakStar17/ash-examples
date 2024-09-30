@@ -2,7 +2,7 @@ use std::{ffi::CStr, ops::Deref};
 
 use ash::vk;
 
-use crate::allocator2;
+use crate::allocator;
 
 use super::select_physical_device;
 
@@ -37,7 +37,7 @@ impl PhysicalDevice {
           unsafe { CStr::from_ptr(properties.p10.device_name.as_ptr()) }, // expected to be a valid cstr
         );
         print_queue_families_debug_info(&queue_family_properties);
-        allocator2::debug_print_device_memory_info(&mem_properties).unwrap();
+        allocator::debug_print_device_memory_info(&mem_properties).unwrap();
 
         Ok(Some(PhysicalDevice {
           inner: physical_device,

@@ -3,7 +3,7 @@ use std::fmt::{self, Write};
 use ash::vk;
 
 use crate::{
-  allocator2::mem_type_assignment::{
+  allocator::mem_type_assignment::{
     assign_memory_type_indexes_to_objects_for_allocation, UnassignedToMemoryObjectsData,
   },
   device::{Device, PhysicalDevice},

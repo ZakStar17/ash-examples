@@ -2,7 +2,7 @@ use ash::vk;
 use std::{marker::PhantomData, ops::BitOr, ptr};
 
 use crate::{
-  allocator2::{self, MemoryWithType},
+  allocator::{self, MemoryWithType},
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
   device::{Device, PhysicalDevice, Queues},
@@ -211,7 +211,7 @@ impl GPUData {
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
-  ) -> Result<Self, allocator2::AllocationError> {
+  ) -> Result<Self, allocator::AllocationError> {
     // GPU image with DEVICE_LOCAL flags
     let clear_image = create_image(
       device,
@@ -221,7 +221,7 @@ impl GPUData {
     )?;
     log::debug!("Allocating memory for the image that will be cleared");
 
-    let clear_image_alloc = allocator2::allocate_and_bind_memory(
+    let clear_image_alloc = allocator::allocate_and_bind_memory(
       device,
       physical_device,
       [
@@ -242,7 +242,7 @@ impl GPUData {
         destroy!(device => &clear_image_memory, &clear_image);
       })?;
     log::debug!("Allocating memory for the final buffer");
-    let final_buffer_alloc = allocator2::allocate_and_bind_memory(
+    let final_buffer_alloc = allocator::allocate_and_bind_memory(
       device,
       physical_device,
       [

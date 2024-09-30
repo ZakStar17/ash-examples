@@ -1,6 +1,6 @@
 #[allow(clippy::too_many_arguments)]
 // mod allocator;
-mod allocator2;
+mod allocator;
 mod command_pools;
 mod create_objs;
 mod device;

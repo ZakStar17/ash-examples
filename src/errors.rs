@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::{allocator2::AllocationError, instance::InstanceCreationError};
+use crate::{allocator::AllocationError, instance::InstanceCreationError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
