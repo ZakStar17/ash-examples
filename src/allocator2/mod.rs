@@ -1,17 +1,24 @@
-use core::fmt;
-use std::fmt::Write;
+use std::{ffi::c_void, marker::PhantomData, ptr};
 
 use ash::vk;
-use mem_type_assignment::{assign_memory_type_indexes_to_objects_for_allocation, UnassignedToMemoryObjectsData};
+use mem_type_assignment::{
+  assign_memory_type_indexes_to_objects_for_allocation, UnassignedToMemoryObjectsData,
+};
 
-use crate::device::{Device, PhysicalDevice};
+use crate::{
+  device::{Device, PhysicalDevice},
+  errors::OutOfMemoryError,
+  utility,
+};
 
 mod debug_logging;
 mod mem_type_assignment;
 mod memory_bound;
 
+pub use debug_logging::{
+  debug_print_device_memory_info, debug_print_possible_memory_type_assignment,
+};
 pub use memory_bound::MemoryBound;
-pub use debug_logging::{debug_print_device_memory_info, debug_print_possible_memory_type_assignment};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MemoryWithType {
@@ -19,15 +26,29 @@ pub struct MemoryWithType {
   pub type_index: usize,
 }
 pub struct AllocationSuccess<const S: usize> {
-  memories: [MemoryWithType; vk::MAX_MEMORY_TYPES],
-  memory_count: usize,
+  pub memories: [MemoryWithType; vk::MAX_MEMORY_TYPES],
+  pub memory_count: usize,
   // memory index, offset
-  obj_to_memory_assignment: [(usize, u64); S],
+  pub obj_to_memory_assignment: [(usize, u64); S],
 }
 
-pub enum AllocationError {}
+impl<const S: usize> AllocationSuccess<S> {
+  pub fn get_memories(&self) -> &[MemoryWithType] {
+    &self.memories[0..self.memory_count]
+  }
+}
 
-pub fn allocate_memory_by_requirements<const P: usize, const S: usize>(
+#[derive(Debug, thiserror::Error)]
+pub enum AllocationError {
+  #[error("Object to memory type assignment did not succeed:\n{0}")]
+  AssignmentError(String),
+  #[error(transparent)]
+  OutOfMemoryError(#[from] OutOfMemoryError),
+}
+
+// todo: not checking heap capacity, maxMemoryAllocationSize
+// (https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_AMD_memory_overallocation_behavior.html)
+pub fn allocate_and_bind_memory<const P: usize, const S: usize>(
   device: &Device,
   physical_device: &PhysicalDevice,
   mem_props: [vk::MemoryPropertyFlags; P],
@@ -35,6 +56,7 @@ pub fn allocate_memory_by_requirements<const P: usize, const S: usize>(
   obj_labels: Option<[&'static str; S]>,
   priority: f32, // only set if VK_EXT_memory_priority is enabled
 ) -> Result<AllocationSuccess<S>, AllocationError> {
+  // todo: more debug info
   let mem_types = physical_device.memory_types();
   let obj_reqs = unsafe { objs.map(|obj| obj.get_memory_requirements(device)) };
 
@@ -46,95 +68,99 @@ pub fn allocate_memory_by_requirements<const P: usize, const S: usize>(
       obj_labels,
     });
 
-  match &result {
-    Ok((a, b)) => {
-      let labels = match &obj_labels {
-        Some(labels_arr) => Some(labels_arr.as_slice()),
-        None => None,
-      };
+  // todo
+  if result.is_ok() {
+    let labels: Option<&[&str]> = match &obj_labels {
+      Some(labels_arr) => Some(labels_arr.as_slice()),
+      None => None,
+    };
+    let mut output = String::new();
+    debug_logging::display_mem_assignment_result(
+      &mut output,
+      result,
+      mem_types,
+      &mem_props,
+      &obj_reqs,
+      labels,
+    )
+    .unwrap();
+    log::debug!("{}", output);
+  }
 
-      let mut table = String::new();
-      debug_logging::write_properties_table(
-        &mut table,
-        mem_types,
-        &mem_props,
-        &obj_reqs,
-        Some(a.as_slice()),
-        labels,
-      )
-      .unwrap();
-      log::debug!("{}", table);
+  let (assigned, unique_type_ixs_count) =
+    assign_memory_type_indexes_to_objects_for_allocation(UnassignedToMemoryObjectsData {
+      mem_types,
+      mem_props,
+      obj_reqs,
+      obj_labels,
+    })
+    .map_err(|err| AllocationError::AssignmentError(format!("{}", err)))?;
+
+  let mut working_memory_types = [usize::MAX; vk::MAX_MEMORY_TYPES];
+  let mut working_memory_types_size = 0;
+  for type_i in assigned {
+    if !working_memory_types[0..working_memory_types_size].contains(&type_i) {
+      working_memory_types[working_memory_types_size] = type_i;
+      working_memory_types_size += 1;
     }
-    Err(err) => {
-      log::debug!("{}", err);
+  }
+  debug_assert_eq!(working_memory_types_size, unique_type_ixs_count);
+
+  // mem index, offset
+  let mut allocation_result = [(usize::MAX, u64::MAX); S];
+  let mut memories = [MemoryWithType {
+    memory: vk::DeviceMemory::null(),
+    type_index: usize::MAX,
+  }; vk::MAX_MEMORY_TYPES];
+  for (mem_i, &type_i) in working_memory_types[0..working_memory_types_size]
+    .iter()
+    .enumerate()
+  {
+    let mut total_size = 0;
+    for i in 0..S {
+      if assigned[i] == type_i {
+        let offset: u64 = utility::round_up_to_power_of_2_u64(total_size, obj_reqs[i].alignment);
+        total_size = offset + obj_reqs[i].size;
+        allocation_result[i].1 = offset;
+      }
+    }
+
+    let mut allocate_info = vk::MemoryAllocateInfo {
+      s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+      p_next: ptr::null(),
+      allocation_size: total_size,
+      memory_type_index: type_i as u32,
+      _marker: PhantomData,
+    };
+    if device.enabled_extensions.memory_priority {
+      let priority_info = vk::MemoryPriorityAllocateInfoEXT::default().priority(priority);
+      allocate_info.p_next =
+        &priority_info as *const vk::MemoryPriorityAllocateInfoEXT as *const c_void;
+    }
+    let memory = unsafe { device.allocate_memory(&allocate_info, None) }
+      .map_err(|vkerr| AllocationError::OutOfMemoryError(OutOfMemoryError::from(vkerr)))?;
+    if let Some(loader) = device.pageable_device_local_memory_loader.as_ref() {
+      unsafe {
+        // set manually priority as well for the pageable_device_local_memory extension
+        // only raw function pointers for now
+        (loader.fp().set_device_memory_priority_ext)(device.handle(), memory, priority);
+      }
+    }
+    memories[mem_i] = MemoryWithType {
+      memory,
+      type_index: type_i,
+    };
+
+    for i in 0..S {
+      if assigned[i] == type_i {
+        allocation_result[i].0 = mem_i;
+      }
     }
   }
 
-  // let mut working_memory_types = [usize::MAX; vk::MAX_MEMORY_TYPES];
-  // let mut working_memory_types_size = 0;
-  // for type_i in assigned_memory_types {
-  //   if !working_memory_types[0..working_memory_types_size].contains(&type_i) {
-  //     working_memory_types[working_memory_types_size] = type_i;
-  //     working_memory_types_size += 1;
-  //   }
-  // }
-  // debug_assert_eq!(working_memory_types_size, unique_type_ixs_count);
-
-  todo!()
-  // let mut allocation_result = [(usize::MAX, u64::MAX); S];
-  // let mut memories = [MemoryWithType {
-  //   memory: vk::DeviceMemory::null(),
-  //   type_index: usize::MAX,
-  // }; vk::MAX_MEMORY_TYPES];
-  // for (mem_i, &type_i) in working_memory_types[0..working_memory_types_size]
-  //   .iter()
-  //   .enumerate()
-  // {
-  //   let mut total_size = 0;
-  //   for i in 0..S {
-  //     if assigned_memory_types[i] == type_i {
-  //       let offset =
-  //         utility::round_up_to_power_of_2_u64(total_size, obj_memory_requirements[i].alignment);
-  //       total_size = offset + obj_memory_requirements[i].size;
-  //       allocation_result[i].1 = offset;
-  //     }
-  //   }
-
-  //   let mut allocate_info = vk::MemoryAllocateInfo {
-  //     s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
-  //     p_next: ptr::null(),
-  //     allocation_size: total_size,
-  //     memory_type_index: type_i as u32,
-  //     _marker: PhantomData,
-  //   };
-  //   if device.enabled_extensions.memory_priority {
-  //     let priority_info = vk::MemoryPriorityAllocateInfoEXT::default().priority(priority);
-  //     allocate_info.p_next =
-  //       &priority_info as *const vk::MemoryPriorityAllocateInfoEXT as *const c_void;
-  //   }
-  //   let memory = unsafe { device.allocate_memory(&allocate_info, None) }.unwrap();
-  //   if let Some(loader) = device.pageable_device_local_memory_loader.as_ref() {
-  //     unsafe {
-  //       // set manually priority as well for the pageable_device_local_memory extension
-  //       // only raw function pointers for now
-  //       (loader.fp().set_device_memory_priority_ext)(device.handle(), memory, priority);
-  //     }
-  //   }
-  //   memories[mem_i] = MemoryWithType {
-  //     memory,
-  //     type_index: type_i,
-  //   };
-
-  //   for i in 0..S {
-  //     if assigned_memory_types[i] == type_i {
-  //       allocation_result[i].0 = mem_i;
-  //     }
-  //   }
-  // }
-
-  // Ok(AllocationSuccessResult {
-  //   memories,
-  //   memory_count: working_memory_types_size,
-  //   obj_to_memory_assignment: allocation_result,
-  // })
+  Ok(AllocationSuccess {
+    memories,
+    memory_count: working_memory_types_size,
+    obj_to_memory_assignment: allocation_result,
+  })
 }

@@ -2,9 +2,14 @@ use std::fmt::{self, Write};
 
 use ash::vk;
 
-use crate::{allocator2::mem_type_assignment::{assign_memory_type_indexes_to_objects_for_allocation, UnassignedToMemoryObjectsData}, device::{Device, PhysicalDevice}};
+use crate::{
+  allocator2::mem_type_assignment::{
+    assign_memory_type_indexes_to_objects_for_allocation, UnassignedToMemoryObjectsData,
+  },
+  device::{Device, PhysicalDevice},
+};
 
-use super::MemoryBound;
+use super::{mem_type_assignment::MemoryAssignmentError, MemoryBound};
 
 fn digit_count(mut n: usize) -> usize {
   if n == 0 {
@@ -44,12 +49,10 @@ pub fn write_properties_table(
   let obj_reqs_col_width = digit_count(obj_reqs.len());
 
   f.write_fmt(format_args!(
-    "Device memory contains {} distinct memory types.
-  Label:
-      <mi>: memory type <i>{}{}{}
-      \"#\": supported
-      \".\": not supported\n",
-    mem_types.len(),
+    "Label:
+    <mi>: memory type <i>{}{}{}
+    \"#\": supported
+    \".\": not supported\n",
     if mem_props.len() > 0 {
       "\n    <px>: property <i>"
     } else {
@@ -195,6 +198,37 @@ pub fn debug_print_device_memory_info(
   Ok(())
 }
 
+pub fn display_mem_assignment_result<const P: usize, const S: usize>(
+  f: &mut dyn fmt::Write,
+  result: Result<([usize; S], usize), MemoryAssignmentError<P, S>>,
+  mem_types: &[vk::MemoryType],
+  mem_props: &[vk::MemoryPropertyFlags],
+  obj_reqs: &[vk::MemoryRequirements],
+  obj_labels: Option<&[&'static str]>,
+) -> fmt::Result {
+  match result {
+    Ok((assigned, unique_type_count)) => {
+      f.write_fmt(format_args!(
+        "Result: success. Objects got assigned to {} unique memory type{}.\n",
+        unique_type_count,
+        if unique_type_count == 1 { "" } else { "s" }
+      ))?;
+      write_properties_table(
+        f,
+        mem_types,
+        &mem_props,
+        &obj_reqs,
+        Some(&assigned),
+        obj_labels,
+      )?;
+    }
+    Err(err) => {
+      f.write_fmt(format_args!("Result: failure\n{}", err))?;
+    }
+  }
+  Ok(())
+}
+
 // don't allocate memory, just print possible mem assignments
 pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usize>(
   device: &Device,
@@ -207,7 +241,10 @@ pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usiz
   let mem_types = physical_device.memory_types();
   let obj_reqs = unsafe { objs.map(|obj| obj.get_memory_requirements(device)) };
 
-  output.write_fmt(format_args!("Finding possible allocation configuration for {} objects\n", objs.len()))?;
+  output.write_fmt(format_args!(
+    "\nFinding possible allocation configuration for {} objects:\n",
+    objs.len()
+  ))?;
 
   let result =
     assign_memory_type_indexes_to_objects_for_allocation(UnassignedToMemoryObjectsData {
@@ -216,28 +253,19 @@ pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usiz
       obj_reqs,
       obj_labels,
     });
-
-  match result {
-    Ok((assigned, unique_type_count)) => {
-      output.write_fmt(format_args!("Result: success. Objects got assigned to {} unique memory types.\n", unique_type_count))?;
-
-      let labels = match &obj_labels {
-        Some(labels_arr) => Some(labels_arr.as_slice()),
-        None => None,
-      };
-      write_properties_table(
-        &mut output,
-        mem_types,
-        &mem_props,
-        &obj_reqs,
-        Some(&assigned),
-        labels,
-      )?;
-    }
-    Err(err) => {
-      output.write_fmt(format_args!("Result: failure\n{}", err))?;
-    }
-  }
+  let labels = match &obj_labels {
+    Some(labels_arr) => Some(labels_arr.as_slice()),
+    None => None,
+  };
+  display_mem_assignment_result(
+    &mut output,
+    result,
+    mem_types,
+    &mem_props,
+    &obj_reqs,
+    labels,
+  )
+  .unwrap();
 
   log::debug!("{}", output);
   Ok(())

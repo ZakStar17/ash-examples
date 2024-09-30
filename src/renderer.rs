@@ -2,7 +2,6 @@ use ash::vk;
 use std::{marker::PhantomData, ops::BitOr, ptr};
 
 use crate::{
-  allocator::allocate_and_bind_memory,
   allocator2,
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
@@ -82,7 +81,8 @@ impl Renderer {
     .on_err(|_| unsafe {
       destroy!(&device => &command_pools, &device);
       destroy_instance();
-    })?;
+    })
+    .unwrap();
 
     Ok(Self {
       _entry: entry,
@@ -212,7 +212,7 @@ impl GPUData {
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
-  ) -> Result<Self, AllocationError> {
+  ) -> Result<Self, allocator2::AllocationError> {
     // GPU image with DEVICE_LOCAL flags
     let clear_image = create_image(
       device,
@@ -222,108 +222,50 @@ impl GPUData {
     )?;
     log::debug!("Allocating memory for the image that will be cleared");
 
-    let clear_image_memory_alloc_result = allocate_and_bind_memory(
-      device,
-      physical_device,
-      vk::MemoryPropertyFlags::DEVICE_LOCAL,
-      &[],
-      &[],
-      &[clear_image],
-      &[unsafe { device.get_image_memory_requirements(clear_image) }],
-      0.3,
-    )
-    .or_else(|err| {
-      log::warn!("Failed to allocate optimal memory for image:\n{:?}", err);
-      allocate_and_bind_memory(
-        device,
-        physical_device,
-        vk::MemoryPropertyFlags::empty(),
-        &[],
-        &[],
-        &[clear_image],
-        &[unsafe { device.get_image_memory_requirements(clear_image) }],
-        0.3,
-      )
-    });
-    let clear_image_memory = match clear_image_memory_alloc_result {
-      Ok(alloc) => alloc.memory,
-      Err(err) => {
-        unsafe {
-          clear_image.destroy_self(device);
-        }
-        return Err(err);
-      }
-    };
-
-    let final_buffer = match create_buffer(device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
-    {
-      Ok(buffer) => buffer,
-      Err(err) => {
-        unsafe {
-          destroy!(device => &clear_image_memory, &clear_image);
-        }
-        return Err(err.into());
-      }
-    };
-    log::debug!("Allocating memory for the final buffer");
-
-    allocator2::debug_print_possible_memory_type_assignment(
+    let clear_image_alloc = allocator2::allocate_and_bind_memory(
       device,
       physical_device,
       [
-        // vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
-        // vk::MemoryPropertyFlags::HOST_VISIBLE,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
         vk::MemoryPropertyFlags::empty(),
       ],
-      [&final_buffer, &clear_image],
-      Some(["Final buffer", "Clear image"]),
-    );
+      [&clear_image],
+      Some(["Clear Image"]),
+      0.5,
+    )
+    .on_err(|_| unsafe {
+      clear_image.destroy_self(device);
+    })?;
+    let clear_image_memory = clear_image_alloc.get_memories()[0].memory;
 
-    let final_buffer_memory_alloc_result = allocate_and_bind_memory(
+    let final_buffer = create_buffer(device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
+      .on_err(|_| unsafe {
+        destroy!(device => &clear_image_memory, &clear_image);
+      })?;
+    log::debug!("Allocating memory for the final buffer");
+    let final_buffer_alloc = allocator2::allocate_and_bind_memory(
       device,
       physical_device,
-      vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
-      &[final_buffer],
-      &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
-      &[],
-      &[],
-      0.3,
-    )
-    .or_else(|err| {
-      log::warn!(
-        "Failed to allocate optimal memory for the final buffer:\n{:?}",
-        err
-      );
-      allocate_and_bind_memory(
-        device,
-        physical_device,
+      [
+        vk::MemoryPropertyFlags::HOST_VISIBLE.bitor(vk::MemoryPropertyFlags::HOST_CACHED),
         vk::MemoryPropertyFlags::HOST_VISIBLE,
-        &[final_buffer],
-        &[unsafe { device.get_buffer_memory_requirements(final_buffer) }],
-        &[],
-        &[],
-        0.3,
-      )
-    });
-    let (final_buffer_memory, final_buffer_memory_type_index) =
-      match final_buffer_memory_alloc_result {
-        Ok(alloc) => (alloc.memory, alloc.type_index),
-        Err(err) => {
-          unsafe {
-            destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
-          }
-          return Err(err);
-        }
-      };
+      ],
+      [&final_buffer],
+      Some(["Final buffer"]),
+      0.5,
+    )
+    .on_err(|_| unsafe {
+      clear_image.destroy_self(device);
+    })?;
+    let final_buffer_memory = final_buffer_alloc.get_memories()[0];
 
     Ok(Self {
       clear_image,
       clear_image_memory,
       final_buffer,
       final_buffer_size: buffer_size,
-      final_buffer_memory,
-      final_buffer_memory_type_index,
+      final_buffer_memory: final_buffer_memory.memory,
+      final_buffer_memory_type_index: final_buffer_memory.type_index as u32,
     })
   }
 
