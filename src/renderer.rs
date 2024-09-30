@@ -2,13 +2,13 @@ use ash::vk;
 use std::{marker::PhantomData, ops::BitOr, ptr};
 
 use crate::{
-  allocator2,
+  allocator2::{self, MemoryWithType},
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
   device::{Device, PhysicalDevice, Queues},
   device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
   entry,
-  errors::{AllocationError, InitializationError, OutOfMemoryError},
+  errors::{InitializationError, OutOfMemoryError},
   instance::create_instance,
   utility::OnErr,
 };
@@ -31,8 +31,7 @@ struct GPUData {
 
   final_buffer: vk::Buffer,
   final_buffer_size: u64,
-  final_buffer_memory: vk::DeviceMemory,
-  final_buffer_memory_type_index: u32,
+  final_buffer_memory: MemoryWithType,
 }
 
 impl Renderer {
@@ -264,8 +263,7 @@ impl GPUData {
       clear_image_memory,
       final_buffer,
       final_buffer_size: buffer_size,
-      final_buffer_memory: final_buffer_memory.memory,
-      final_buffer_memory_type_index: final_buffer_memory.type_index as u32,
+      final_buffer_memory: final_buffer_memory,
     })
   }
 
@@ -277,14 +275,14 @@ impl GPUData {
     device: &ash::Device,
     physical_device: &PhysicalDevice,
   ) -> Result<&[u8], vk::Result> {
-    if !physical_device.mem_properties.memory_types[self.final_buffer_memory_type_index as usize]
+    if !physical_device.mem_properties.memory_types[self.final_buffer_memory.type_index]
       .property_flags
       .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
     {
       let range = vk::MappedMemoryRange {
         s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
         p_next: ptr::null(),
-        memory: self.final_buffer_memory,
+        memory: *self.final_buffer_memory,
         offset: 0,
         size: vk::WHOLE_SIZE,
         _marker: PhantomData,
@@ -293,7 +291,7 @@ impl GPUData {
     }
 
     let ptr = device.map_memory(
-      self.final_buffer_memory,
+      *self.final_buffer_memory,
       0,
       // if size is not vk::WHOLE_SIZE, mapping should follow alignments
       vk::WHOLE_SIZE,

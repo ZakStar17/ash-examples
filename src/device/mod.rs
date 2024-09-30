@@ -47,7 +47,7 @@ impl EnabledDeviceExtensions {
     let mut supported = Self::default();
 
     // a bit inefficient as it retests for valid cstrings but at least doesn't do any allocations
-    let is_supported = |ext| {
+    let is_supported = |ext| { 
       properties
         .iter()
         .any(|props| unsafe { utility::i8_array_as_cstr(&props.extension_name) }.unwrap() == ext)

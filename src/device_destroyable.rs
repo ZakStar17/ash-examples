@@ -30,6 +30,14 @@ macro_rules! destroy {
 }
 pub(crate) use destroy;
 
+impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for [T] {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    for value in self.iter() {
+      value.destroy_self(device);
+    }
+  }
+}
+
 impl ManuallyDestroyed for ash::Instance {
   unsafe fn destroy_self(&self) {
     self.destroy_instance(None);

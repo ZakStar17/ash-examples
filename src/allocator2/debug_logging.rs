@@ -209,7 +209,7 @@ pub fn display_mem_assignment_result<const P: usize, const S: usize>(
   match result {
     Ok((assigned, unique_type_count)) => {
       f.write_fmt(format_args!(
-        "Result: success. Objects got assigned to {} unique memory type{}.\n",
+        "Allocation result: success. Objects got assigned to {} unique memory type{}.\n",
         unique_type_count,
         if unique_type_count == 1 { "" } else { "s" }
       ))?;
@@ -230,6 +230,7 @@ pub fn display_mem_assignment_result<const P: usize, const S: usize>(
 }
 
 // don't allocate memory, just print possible mem assignments
+#[allow(dead_code)]
 pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usize>(
   device: &Device,
   physical_device: &PhysicalDevice,

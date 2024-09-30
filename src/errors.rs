@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::instance::InstanceCreationError;
+use crate::{allocator2::AllocationError, instance::InstanceCreationError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
@@ -70,45 +70,5 @@ impl From<vk::Result> for InitializationError {
         InitializationError::Unknown
       }
     }
-  }
-}
-
-impl From<AllocationError> for InitializationError {
-  fn from(value: AllocationError) -> Self {
-    match value {
-      AllocationError::NotEnoughMemory(_) => {}
-      _ => {
-        log::error!(
-          "Allocation error failed because of an unhandled case: {:?}",
-          value
-        );
-      }
-    }
-    InitializationError::NotEnoughMemory(Some(value))
-  }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum AllocationError {
-  #[error("No memory type supports all buffers and images")]
-  NoMemoryTypeSupportsAll,
-  #[error("Allocation size ({0}) exceeds value allowed by the device")]
-  TotalSizeExceedsAllowed(u64),
-  // allocation size is bigger than each supported heap size
-  #[error("Allocation size ({0}) is bigger than the capacity of each supported heap")]
-  TooBigForAllSupportedHeaps(u64),
-  #[error("Not enough memory")]
-  NotEnoughMemory(#[source] OutOfMemoryError),
-}
-
-impl From<vk::Result> for AllocationError {
-  fn from(value: vk::Result) -> Self {
-    AllocationError::NotEnoughMemory(OutOfMemoryError::from(value))
-  }
-}
-
-impl From<OutOfMemoryError> for AllocationError {
-  fn from(value: OutOfMemoryError) -> Self {
-    AllocationError::NotEnoughMemory(value)
   }
 }

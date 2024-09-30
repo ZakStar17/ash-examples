@@ -50,10 +50,6 @@ impl PhysicalDevice {
     }
   }
 
-  pub fn memory_type_heap(&self, type_i: usize) -> vk::MemoryHeap {
-    self.mem_properties.memory_heaps[self.mem_properties.memory_types[type_i].heap_index as usize]
-  }
-
   pub fn memory_types(&self) -> &[vk::MemoryType] {
     &self.mem_properties.memory_types[0..(self.mem_properties.memory_type_count as usize)]
   }
@@ -87,65 +83,6 @@ impl<'a> Iterator for MemoryTypesIterator<'a> {
       }
       self.i += 1;
     }
-  }
-}
-
-impl<'a> MemoryTypesIterator<'a> {
-  pub fn new(
-    physical_device: &'a PhysicalDevice,
-    valid_types_bitmask: u32,
-    memory_properties: vk::MemoryPropertyFlags,
-  ) -> Self {
-    Self {
-      valid_types_bitmask,
-      i: 0,
-      required_properties: memory_properties,
-      types: &physical_device.mem_properties.memory_types,
-      types_count: physical_device.mem_properties.memory_type_count as usize,
-    }
-  }
-}
-
-// filters memory types by unique heaps
-pub struct UniqueHeapMemoryTypesIterator<'a> {
-  iter: MemoryTypesIterator<'a>,
-  iterated_heaps: [bool; vk::MAX_MEMORY_HEAPS],
-}
-
-impl<'a> Iterator for UniqueHeapMemoryTypesIterator<'a> {
-  type Item = <MemoryTypesIterator<'a> as Iterator>::Item;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    for next in self.iter.by_ref() {
-      if !self.iterated_heaps[next.1.heap_index as usize] {
-        self.iterated_heaps[next.1.heap_index as usize] = true;
-        return Some(next);
-      }
-    }
-    None
-  }
-}
-
-impl<'a> UniqueHeapMemoryTypesIterator<'a> {
-  pub fn new(
-    physical_device: &'a PhysicalDevice,
-    valid_types_bitmask: u32,
-    memory_properties: vk::MemoryPropertyFlags,
-  ) -> Self {
-    Self {
-      iter: MemoryTypesIterator::new(physical_device, valid_types_bitmask, memory_properties),
-      iterated_heaps: [false; vk::MAX_MEMORY_HEAPS],
-    }
-  }
-}
-
-impl PhysicalDevice {
-  pub fn iterate_memory_types_with_unique_heaps(
-    &self,
-    valid_types_bitmask: u32,
-    memory_properties: vk::MemoryPropertyFlags,
-  ) -> UniqueHeapMemoryTypesIterator {
-    UniqueHeapMemoryTypesIterator::new(self, valid_types_bitmask, memory_properties)
   }
 }
 
