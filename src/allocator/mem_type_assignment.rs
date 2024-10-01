@@ -15,13 +15,13 @@ pub struct UnassignedToMemoryObjectsData<'a, const P: usize, const S: usize> {
 
 impl<'a, const P: usize, const S: usize> fmt::Display for UnassignedToMemoryObjectsData<'a, P, S> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let labels = match &self.obj_labels {
-      Some(labels_arr) => Some(labels_arr.as_slice()),
-      None => None,
-    };
-    super::debug_logging::write_properties_table(
+    let labels = self
+      .obj_labels
+      .as_ref()
+      .map(|labels_arr| labels_arr.as_slice());
+    super::logging::write_properties_table(
       f,
-      &self.mem_types,
+      self.mem_types,
       &self.mem_props,
       &self.obj_reqs,
       None,
@@ -30,36 +30,12 @@ impl<'a, const P: usize, const S: usize> fmt::Display for UnassignedToMemoryObje
   }
 }
 
-#[derive(Debug)]
-pub enum MemoryAssignmentError<'a, const P: usize, const S: usize> {
+#[derive(Debug, thiserror::Error, Clone, Copy)]
+pub enum MemoryAssignmentError {
+  #[error("All given memory property sets are unsupported")]
   AllPropertiesUnsupported,
-  ObjectIncompatibleWithAllProperties(UnassignedToMemoryObjectsData<'a, P, S>, usize),
-}
-
-impl<'a, const P: usize, const S: usize> fmt::Display for MemoryAssignmentError<'a, P, S> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::AllPropertiesUnsupported => {
-        f.write_str("No given memory property set is supported by the system")?;
-      }
-      Self::ObjectIncompatibleWithAllProperties(data, i) => {
-        f.write_str(
-          "One or more objects are not compatible with any given sets of memory properties.\n",
-        )?;
-        f.write_fmt(format_args!("{}", data))?;
-        f.write_fmt(format_args!(
-          " - o{} {}is incompatible with all given property sets",
-          i,
-          if let Some(labels) = data.obj_labels {
-            format!("\"{}\" ", labels[*i])
-          } else {
-            "".to_owned()
-          }
-        ))?;
-      }
-    }
-    Ok(())
-  }
+  #[error("One of the given objects (o{0}) memory requirements is incompatible with all memory property sets")]
+  ObjectIncompatibleWithAllProperties(usize),
 }
 
 // assigns an memory type index to each object specified in <requirements> based on supported
@@ -72,7 +48,7 @@ impl<'a, const P: usize, const S: usize> fmt::Display for MemoryAssignmentError<
 // todo: doesn't test if requirements exceed memory heap capacity
 pub fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, const S: usize>(
   data: UnassignedToMemoryObjectsData<P, S>,
-) -> Result<([usize; S], usize), MemoryAssignmentError<P, S>> {
+) -> Result<([usize; S], usize), MemoryAssignmentError> {
   // bitmask of memory types that are supported by the given desired properties
   let bit_switch = 1 << (data.mem_types.len() - 1);
   let supported_properties = data.mem_props.map(|p: vk::MemoryPropertyFlags| {
@@ -98,7 +74,7 @@ pub fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, cons
     {
       // some object is unsupported by all given memory properties
       return Err(MemoryAssignmentError::ObjectIncompatibleWithAllProperties(
-        data, i,
+        i,
       ));
     }
   }
@@ -108,7 +84,7 @@ pub fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, cons
   let mut unique_type_count = 0;
 
   let mut working_obj_ixs_and_masks = [(0usize, 0u32); S];
-  for (_prop_i, supported_type_ixs) in supported_properties.into_iter().enumerate() {
+  for supported_type_ixs in supported_properties {
     if remaining == 0 {
       break;
     }
@@ -153,10 +129,10 @@ pub fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, cons
       let mut type_i_counter = [0usize; 32];
       for &(_, mask) in cur_working_objs_ixs_and_masks {
         let mut bit_i = 1;
-        for i in 0..32 {
+        for counter in &mut type_i_counter[0..data.mem_types.len()] {
           if mask & bit_i > 0 {
             // bit_ith bit is 1
-            type_i_counter[i] += 1;
+            *counter += 1;
           }
           bit_i <<= 1;
         }
@@ -181,10 +157,10 @@ pub fn assign_memory_type_indexes_to_objects_for_allocation<const P: usize, cons
             cur_remaining -= 1;
 
             let mut bit_i = 1;
-            for i in 0..32 {
+            for counter in &mut type_i_counter[0..data.mem_types.len()] {
               if mask & bit_i > 0 {
                 // bit_ith bit is 1
-                type_i_counter[i] -= 1;
+                *counter -= 1;
               }
               bit_i <<= 1;
             }

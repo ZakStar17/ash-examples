@@ -20,7 +20,7 @@ fn digit_count(mut n: usize) -> usize {
     n /= 10;
     count += 1;
   }
-  return count;
+  count
 }
 
 pub fn write_properties_table(
@@ -38,9 +38,9 @@ pub fn write_properties_table(
   if let Some(obj_labels) = obj_labels {
     debug_assert_eq!(obj_reqs.len(), obj_labels.len());
   }
-  debug_assert!(mem_types.len() > 0);
+  debug_assert!(!mem_types.is_empty());
 
-  if mem_props.len() == 0 && obj_reqs.len() == 0 {
+  if mem_props.is_empty() && obj_reqs.is_empty() {
     return Ok(());
   }
 
@@ -51,14 +51,13 @@ pub fn write_properties_table(
   f.write_fmt(format_args!(
     "Label:
     <mi>: memory type <i>{}{}{}
-    \"#\": supported
-    \".\": not supported\n",
-    if mem_props.len() > 0 {
+    \"#\": supported\n",
+    if !mem_props.is_empty() {
       "\n    <px>: property <i>"
     } else {
       ""
     },
-    if obj_reqs.len() > 0 {
+    if !obj_reqs.is_empty() {
       "\n    <oi>: object <i>"
     } else {
       ""
@@ -77,8 +76,8 @@ pub fn write_properties_table(
   }
   for _ in 0..(2
     + mem_types_col_width
-    + if mem_props.len() > 0 { 2 } else { 0 }
-    + if obj_reqs.len() > 0 { 2 } else { 0 })
+    + if !mem_props.is_empty() { 2 } else { 0 }
+    + if !obj_reqs.is_empty() { 2 } else { 0 })
   {
     line.write_char(' ')?;
   }
@@ -90,11 +89,11 @@ pub fn write_properties_table(
   f.write_str(&line)?;
   line.clear();
 
-  for mem_type_i in 0..mem_types.len() {
+  for (mem_type_i, mem_type) in mem_types.iter().enumerate() {
     for &prop in mem_props {
       line.write_fmt(format_args!(
         "{:<1$} ",
-        if mem_types[mem_type_i].property_flags.contains(prop) {
+        if mem_type.property_flags.contains(prop) {
           '#'
         } else {
           '.'
@@ -102,11 +101,11 @@ pub fn write_properties_table(
         mem_props_col_width + 1
       ))?;
     }
-    if mem_props.len() > 0 {
+    if !mem_props.is_empty() {
       line.write_str("| ")?;
     }
     line.write_fmt(format_args!("m{:<1$} ", mem_type_i, mem_types_col_width))?;
-    if obj_reqs.len() > 0 {
+    if !obj_reqs.is_empty() {
       line.write_str("| ")?;
     }
     if let Some(assigned) = obj_assigned {
@@ -143,9 +142,30 @@ pub fn write_properties_table(
     line.clear();
   }
 
+  f.write_str("Memory properties (ordered by given increased preference):\n")?;
+  for (i, prop) in mem_props.iter().enumerate() {
+    f.write_fmt(format_args!(
+      "    p{}: {}\n",
+      i,
+      if prop.is_empty() {
+        "<Empty>".to_owned()
+      } else {
+        format!("{:?}", prop)
+      }
+    ))?;
+  }
+
+  f.write_str("Object labels:\n")?;
   if let Some(obj_labels) = obj_labels {
     for (i, label) in obj_labels.iter().enumerate() {
-      f.write_fmt(format_args!("o{}: {:?}\n", i, label))?;
+      if let Some(assigned) = obj_assigned {
+        f.write_fmt(format_args!(
+          "    o{}: {:?} -> m{}\n",
+          i, label, assigned[i]
+        ))?;
+      } else {
+        f.write_fmt(format_args!("    o{}: {:?}\n", i, label))?;
+      }
     }
   }
 
@@ -200,7 +220,8 @@ pub fn debug_print_device_memory_info(
 
 pub fn display_mem_assignment_result<const P: usize, const S: usize>(
   f: &mut dyn fmt::Write,
-  result: Result<([usize; S], usize), MemoryAssignmentError<P, S>>,
+  result: Result<([usize; S], usize), MemoryAssignmentError>,
+  alloc_name: &str,
   mem_types: &[vk::MemoryType],
   mem_props: &[vk::MemoryPropertyFlags],
   obj_reqs: &[vk::MemoryRequirements],
@@ -209,21 +230,53 @@ pub fn display_mem_assignment_result<const P: usize, const S: usize>(
   match result {
     Ok((assigned, unique_type_count)) => {
       f.write_fmt(format_args!(
-        "Allocation result: success. Objects got assigned to {} unique memory type{}.\n",
+        "\n\"{}\" ALLOCATION RESULT: SUCCESS\n{} object{} got assigned to {} unique memory type{}.\n",
+        alloc_name,
+        obj_reqs.len(),
+        if obj_reqs.len() == 1 { "" } else { "s" },
         unique_type_count,
         if unique_type_count == 1 { "" } else { "s" }
       ))?;
       write_properties_table(
         f,
         mem_types,
-        &mem_props,
-        &obj_reqs,
+        mem_props,
+        obj_reqs,
         Some(&assigned),
         obj_labels,
       )?;
     }
     Err(err) => {
-      f.write_fmt(format_args!("Result: failure\n{}", err))?;
+      f.write_fmt(format_args!(
+        "\n\"{}\" ALLOCATION RESULT: FAILURE\n",
+        alloc_name,
+      ))?;
+
+      match err {
+        MemoryAssignmentError::AllPropertiesUnsupported => {
+          if mem_props.len() == 1 {
+            // doesn't make sense for set to be empty
+            f.write_fmt(format_args!("The given memory properties set \"{:?}\" is incompatible with all memory types supported by the system.", 
+            mem_props[0]
+          ))?;
+          } else {
+            f.write_str("All given memory property sets:\n")?;
+            for (i, prop) in mem_props.iter().enumerate() {
+              f.write_fmt(format_args!("    p{}: {:?}\n", i, prop))?;
+            }
+            f.write_str("Are incompatible with all memory types supported by the system.\n")?;
+          }
+        }
+        MemoryAssignmentError::ObjectIncompatibleWithAllProperties(i) => {
+          f.write_fmt(format_args!(
+            "The set of memory types required by o{}'s has no intersection with the set of memory types restricted by the given memory properties.\n", i
+          ))?;
+          write_properties_table(f, mem_types, mem_props, obj_reqs, None, obj_labels)?;
+          // todo: write
+          // <set of memory types required by object> vs
+          // <set of memory types restricted by memory properties>
+        }
+      }
     }
   }
   Ok(())
@@ -237,6 +290,7 @@ pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usiz
   mem_props: [vk::MemoryPropertyFlags; P],
   objs: [&dyn MemoryBound; S],
   obj_labels: Option<[&'static str; S]>,
+  allocation_name: Option<&str>,
 ) -> fmt::Result {
   let mut output = String::new();
   let mem_types = physical_device.memory_types();
@@ -254,13 +308,11 @@ pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usiz
       obj_reqs,
       obj_labels,
     });
-  let labels = match &obj_labels {
-    Some(labels_arr) => Some(labels_arr.as_slice()),
-    None => None,
-  };
-  display_mem_assignment_result(
+  let labels = obj_labels.as_ref().map(|labels_arr| labels_arr.as_slice());
+  display_mem_assignment_result::<P, S>(
     &mut output,
     result,
+    allocation_name.unwrap_or("DUMMY MEMORY ASSIGNMENT"),
     mem_types,
     &mem_props,
     &obj_reqs,
@@ -268,6 +320,7 @@ pub fn debug_print_possible_memory_type_assignment<const P: usize, const S: usiz
   )
   .unwrap();
 
+  let _ = output.pop(); // remove last \n
   log::debug!("{}", output);
   Ok(())
 }

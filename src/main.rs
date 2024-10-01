@@ -82,7 +82,10 @@ fn main() {
   env_logger::init();
 
   if let Err(s) = initialize_and_run() {
-    log::error!("{}", s);
+    eprintln!(
+      "{}\nRun with RUST_LOG=error or RUST_LOG=warn to see possible causes.",
+      s
+    );
     std::process::exit(1);
   }
 

@@ -2,7 +2,7 @@ use ash::vk;
 
 use crate::{allocator::AllocationError, instance::InstanceCreationError};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone, Copy)]
 pub enum OutOfMemoryError {
   #[error("Out of Device Memory")]
   OutOfDeviceMemory,
@@ -34,12 +34,12 @@ impl From<OutOfMemoryError> for vk::Result {
 #[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
   #[error("Instance creation failed")]
-  InstanceCreationFailed(#[source] InstanceCreationError),
+  InstanceCreationFailed(#[from] InstanceCreationError),
 
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
 
-  #[error("Not enough memory")]
+  #[error("Not enough memory / memory allocation failed")]
   NotEnoughMemory(#[source] Option<AllocationError>),
 
   // undefined behavior / driver or application bug (see vl)
@@ -49,9 +49,9 @@ pub enum InitializationError {
   Unknown,
 }
 
-impl From<InstanceCreationError> for InitializationError {
-  fn from(value: InstanceCreationError) -> Self {
-    InitializationError::InstanceCreationFailed(value)
+impl From<AllocationError> for InitializationError {
+  fn from(value: AllocationError) -> Self {
+    Self::NotEnoughMemory(Some(value))
   }
 }
 

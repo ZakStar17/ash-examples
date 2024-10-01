@@ -80,8 +80,7 @@ impl Renderer {
     .on_err(|_| unsafe {
       destroy!(&device => &command_pools, &device);
       destroy_instance();
-    })
-    .unwrap();
+    })?;
 
     Ok(Self {
       _entry: entry,
@@ -219,8 +218,6 @@ impl GPUData {
       image_height,
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
     )?;
-    log::debug!("Allocating memory for the image that will be cleared");
-
     let clear_image_alloc = allocator::allocate_and_bind_memory(
       device,
       physical_device,
@@ -229,19 +226,20 @@ impl GPUData {
         vk::MemoryPropertyFlags::empty(),
       ],
       [&clear_image],
-      Some(["Clear Image"]),
+      Some(["Image that is cleared on the compute queue"]),
       0.5,
+      "PROGRAM'S CLEAR IMAGE",
     )
     .on_err(|_| unsafe {
       clear_image.destroy_self(device);
-    })?;
+    })
+    .on_err(|_| unsafe { clear_image.destroy_self(device) })?;
     let clear_image_memory = clear_image_alloc.get_memories()[0].memory;
 
     let final_buffer = create_buffer(device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
       .on_err(|_| unsafe {
         destroy!(device => &clear_image_memory, &clear_image);
       })?;
-    log::debug!("Allocating memory for the final buffer");
     let final_buffer_alloc = allocator::allocate_and_bind_memory(
       device,
       physical_device,
@@ -250,11 +248,12 @@ impl GPUData {
         vk::MemoryPropertyFlags::HOST_VISIBLE,
       ],
       [&final_buffer],
-      Some(["Final buffer"]),
+      Some(["Buffer where the final data is read from"]),
       0.5,
+      "OUTPUT BUFFER",
     )
     .on_err(|_| unsafe {
-      clear_image.destroy_self(device);
+      destroy!(device => &clear_image_memory, &clear_image, &final_buffer);
     })?;
     let final_buffer_memory = final_buffer_alloc.get_memories()[0];
 

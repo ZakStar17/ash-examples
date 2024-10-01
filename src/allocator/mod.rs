@@ -2,7 +2,8 @@ use std::{ffi::c_void, marker::PhantomData, ops::Deref, ptr};
 
 use ash::vk;
 use mem_type_assignment::{
-  assign_memory_type_indexes_to_objects_for_allocation, UnassignedToMemoryObjectsData,
+  assign_memory_type_indexes_to_objects_for_allocation, MemoryAssignmentError,
+  UnassignedToMemoryObjectsData,
 };
 
 use crate::{
@@ -12,14 +13,12 @@ use crate::{
   utility::{self, OnErr},
 };
 
-mod debug_logging;
+mod logging;
 mod mem_type_assignment;
 mod memory_bound;
 
 #[allow(unused_imports)]
-pub use debug_logging::{
-  debug_print_device_memory_info, debug_print_possible_memory_type_assignment,
-};
+pub use logging::{debug_print_device_memory_info, debug_print_possible_memory_type_assignment};
 pub use memory_bound::MemoryBound;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -41,6 +40,8 @@ impl DeviceManuallyDestroyed for MemoryWithType {
     self.memory.destroy_self(device);
   }
 }
+
+#[derive(Debug, Clone, Copy)]
 pub struct AllocationSuccess<const S: usize> {
   pub memories: [MemoryWithType; vk::MAX_MEMORY_TYPES],
   pub memory_count: usize,
@@ -60,10 +61,10 @@ impl<const S: usize> DeviceManuallyDestroyed for AllocationSuccess<S> {
   }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy)]
 pub enum AllocationError {
-  #[error("Object to memory type assignment did not succeed:\n{0}")]
-  AssignmentError(String),
+  #[error("Object to memory type assignment did not succeed")]
+  AssignmentError(#[from] MemoryAssignmentError),
   #[error(transparent)]
   OutOfMemoryError(#[from] OutOfMemoryError),
 }
@@ -77,18 +78,43 @@ pub fn allocate_memory<const P: usize, const S: usize>(
   objs: [&dyn MemoryBound; S],
   obj_labels: Option<[&'static str; S]>,
   priority: f32, // only set if VK_EXT_memory_priority is enabled
+  allocation_name: &str,
 ) -> Result<AllocationSuccess<S>, AllocationError> {
   let mem_types = physical_device.memory_types();
   let obj_reqs = unsafe { objs.map(|obj| obj.get_memory_requirements(device)) };
 
-  let (assigned, unique_type_ixs_count) =
+  let assign_result =
     assign_memory_type_indexes_to_objects_for_allocation(UnassignedToMemoryObjectsData {
       mem_types,
       mem_props,
       obj_reqs,
       obj_labels,
-    })
-    .map_err(|err| AllocationError::AssignmentError(format!("{}", err)))?;
+    });
+  {
+    let labels: Option<&[&str]> = match &obj_labels {
+      Some(labels_arr) => Some(labels_arr.as_slice()),
+      None => None,
+    };
+    let mut output = String::new();
+    logging::display_mem_assignment_result::<P, S>(
+      &mut output,
+      assign_result,
+      allocation_name,
+      mem_types,
+      &mem_props,
+      &obj_reqs,
+      labels,
+    )
+    .unwrap();
+    let _ = output.pop(); // remove last \n
+    if assign_result.is_ok() {
+      log::debug!("{}", output);
+    } else {
+      log::error!("{}", output);
+    }
+  }
+
+  let (assigned, unique_type_ixs_count) = assign_result?;
 
   let mut working_memory_types = [usize::MAX; vk::MAX_MEMORY_TYPES];
   let mut working_memory_types_size = 0;
@@ -160,24 +186,6 @@ pub fn allocate_memory<const P: usize, const S: usize>(
     }
   }
 
-  {
-    let labels: Option<&[&str]> = match &obj_labels {
-      Some(labels_arr) => Some(labels_arr.as_slice()),
-      None => None,
-    };
-    let mut output = String::new();
-    debug_logging::display_mem_assignment_result::<P, S>(
-      &mut output,
-      Ok((assigned, unique_type_ixs_count)),
-      mem_types,
-      &mem_props,
-      &obj_reqs,
-      labels,
-    )
-    .unwrap();
-    log::debug!("{}", output);
-  }
-
   Ok(AllocationSuccess {
     memories,
     memory_count: working_memory_types_size,
@@ -192,13 +200,24 @@ pub fn allocate_and_bind_memory<const P: usize, const S: usize>(
   objs: [&dyn MemoryBound; S],
   obj_labels: Option<[&'static str; S]>,
   priority: f32, // only set if VK_EXT_memory_priority is enabled
+  allocation_name: &str,
 ) -> Result<AllocationSuccess<S>, AllocationError> {
-  let alloc = allocate_memory(device, physical_device, mem_props, objs, obj_labels, priority)?;
+  let alloc = allocate_memory(
+    device,
+    physical_device,
+    mem_props,
+    objs,
+    obj_labels,
+    priority,
+    allocation_name,
+  )?;
   let memories = alloc.get_memories();
 
   for (i, &(mem_index, offset)) in alloc.obj_to_memory_assignment.iter().enumerate() {
     unsafe {
-      objs[i].bind(device, *memories[mem_index], offset).on_err(|_| alloc.destroy_self(device))?;
+      objs[i]
+        .bind(device, *memories[mem_index], offset)
+        .on_err(|_| alloc.destroy_self(device))?;
     }
   }
 
