@@ -13,13 +13,16 @@ use crate::{
   utility::{self, OnErr},
 };
 
+#[cfg(feature = "log_alloc")]
 mod logging;
 mod mem_type_assignment;
 mod memory_bound;
 
-#[allow(unused_imports)]
-pub use logging::{debug_print_device_memory_info, debug_print_possible_memory_type_assignment};
 pub use memory_bound::MemoryBound;
+
+#[allow(unused_imports)]
+#[cfg(feature = "log_alloc")]
+pub use logging::{debug_print_device_memory_info, debug_print_possible_memory_type_assignment};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MemoryWithType {
@@ -76,9 +79,9 @@ pub fn allocate_memory<const P: usize, const S: usize>(
   physical_device: &PhysicalDevice,
   mem_props: [vk::MemoryPropertyFlags; P],
   objs: [&dyn MemoryBound; S],
-  obj_labels: Option<[&'static str; S]>,
   priority: f32, // only set if VK_EXT_memory_priority is enabled
-  allocation_name: &str,
+  #[cfg(feature = "log_alloc")] obj_labels: Option<[&'static str; S]>,
+  #[cfg(feature = "log_alloc")] allocation_name: &str,
 ) -> Result<AllocationSuccess<S>, AllocationError> {
   let mem_types = physical_device.memory_types();
   let obj_reqs = unsafe { objs.map(|obj| obj.get_memory_requirements(device)) };
@@ -88,8 +91,11 @@ pub fn allocate_memory<const P: usize, const S: usize>(
       mem_types,
       mem_props,
       obj_reqs,
+      #[cfg(feature = "log_alloc")]
       obj_labels,
     });
+
+  #[cfg(feature = "log_alloc")]
   {
     let labels: Option<&[&str]> = match &obj_labels {
       Some(labels_arr) => Some(labels_arr.as_slice()),
@@ -198,17 +204,19 @@ pub fn allocate_and_bind_memory<const P: usize, const S: usize>(
   physical_device: &PhysicalDevice,
   mem_props: [vk::MemoryPropertyFlags; P],
   objs: [&dyn MemoryBound; S],
-  obj_labels: Option<[&'static str; S]>,
   priority: f32, // only set if VK_EXT_memory_priority is enabled
-  allocation_name: &str,
+  #[cfg(feature = "log_alloc")] obj_labels: Option<[&'static str; S]>,
+  #[cfg(feature = "log_alloc")] allocation_name: &str,
 ) -> Result<AllocationSuccess<S>, AllocationError> {
   let alloc = allocate_memory(
     device,
     physical_device,
     mem_props,
     objs,
-    obj_labels,
     priority,
+    #[cfg(feature = "log_alloc")]
+    obj_labels,
+    #[cfg(feature = "log_alloc")]
     allocation_name,
   )?;
   let memories = alloc.get_memories();

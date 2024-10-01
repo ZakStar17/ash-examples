@@ -226,8 +226,10 @@ impl GPUData {
         vk::MemoryPropertyFlags::empty(),
       ],
       [&clear_image],
-      Some(["Image that is cleared on the compute queue"]),
       0.5,
+      #[cfg(feature = "log_alloc")]
+      Some(["Image that is cleared on the compute queue"]),
+      #[cfg(feature = "log_alloc")]
       "PROGRAM'S CLEAR IMAGE",
     )
     .on_err(|_| unsafe {
@@ -248,8 +250,10 @@ impl GPUData {
         vk::MemoryPropertyFlags::HOST_VISIBLE,
       ],
       [&final_buffer],
-      Some(["Buffer where the final data is read from"]),
       0.5,
+      #[cfg(feature = "log_alloc")]
+      Some(["Buffer where the final data is read from"]),
+      #[cfg(feature = "log_alloc")]
       "OUTPUT BUFFER",
     )
     .on_err(|_| unsafe {

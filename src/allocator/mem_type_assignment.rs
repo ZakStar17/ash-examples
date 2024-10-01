@@ -1,5 +1,3 @@
-use std::fmt;
-
 use ash::vk;
 
 #[derive(Debug)]
@@ -10,10 +8,14 @@ pub struct UnassignedToMemoryObjectsData<'a, const P: usize, const S: usize> {
   pub mem_props: [vk::MemoryPropertyFlags; P],
   // MemoryBound::get_memory_requirements
   pub obj_reqs: [vk::MemoryRequirements; S],
+  #[cfg(feature = "log_alloc")]
   pub obj_labels: Option<[&'static str; S]>,
 }
 
-impl<'a, const P: usize, const S: usize> fmt::Display for UnassignedToMemoryObjectsData<'a, P, S> {
+#[cfg(feature = "log_alloc")]
+impl<'a, const P: usize, const S: usize> std::fmt::Display
+  for UnassignedToMemoryObjectsData<'a, P, S>
+{
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let labels = self
       .obj_labels

@@ -37,6 +37,7 @@ impl PhysicalDevice {
           unsafe { CStr::from_ptr(properties.p10.device_name.as_ptr()) }, // expected to be a valid cstr
         );
         print_queue_families_debug_info(&queue_family_properties);
+        #[cfg(feature = "log_alloc")]
         allocator::debug_print_device_memory_info(&mem_properties).unwrap();
 
         Ok(Some(PhysicalDevice {
