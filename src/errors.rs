@@ -4,7 +4,7 @@ use crate::{allocator::AllocationError, instance::InstanceCreationError};
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
 pub enum OutOfMemoryError {
-  #[error("Out of Device Memory")]
+  #[error("Out of device memory")]
   OutOfDeviceMemory,
   #[error("Out of host memory")]
   OutOfHostMemory,
