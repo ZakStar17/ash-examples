@@ -35,7 +35,7 @@ fn main() {
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
   let on_instance_fail = |err| {
-    log::error!("Failed to create an instance: {}", err);
+    eprintln!("Failed to create an instance: {}", err);
     std::process::exit(1);
   };
 
