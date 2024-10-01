@@ -2,7 +2,7 @@ use ash::vk;
 
 #[derive(thiserror::Error, Debug)]
 pub enum OutOfMemoryError {
-  #[error("Out of Device Memory")]
+  #[error("Out of device memory")]
   OutOfDeviceMemory,
   #[error("Out of host memory")]
   OutOfHostMemory,
