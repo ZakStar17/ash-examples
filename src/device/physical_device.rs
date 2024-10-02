@@ -56,37 +56,6 @@ impl PhysicalDevice {
   }
 }
 
-pub struct MemoryTypesIterator<'a> {
-  valid_types_bitmask: u32,
-  i: usize,
-  required_properties: vk::MemoryPropertyFlags,
-  types: &'a [vk::MemoryType; vk::MAX_MEMORY_TYPES],
-  types_count: usize,
-}
-
-impl<'a> Iterator for MemoryTypesIterator<'a> {
-  type Item = (usize, vk::MemoryType);
-
-  fn next(&mut self) -> Option<Self::Item> {
-    loop {
-      if self.i >= self.types_count {
-        return None;
-      }
-      let valid_bit = self.valid_types_bitmask & (1 << self.i) > 0;
-      if valid_bit
-        && self.types[self.i]
-          .property_flags
-          .contains(self.required_properties)
-      {
-        let item = Some((self.i, self.types[self.i]));
-        self.i += 1;
-        return item;
-      }
-      self.i += 1;
-    }
-  }
-}
-
 fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
   log::debug!("Queue family properties: {:#?}", properties);
 }
