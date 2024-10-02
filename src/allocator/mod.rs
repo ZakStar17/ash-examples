@@ -161,8 +161,8 @@ pub fn allocate_memory<const P: usize, const S: usize>(
       memory_type_index: type_i as u32,
       _marker: PhantomData,
     };
+    let priority_info = vk::MemoryPriorityAllocateInfoEXT::default().priority(priority);
     if device.enabled_extensions.memory_priority {
-      let priority_info = vk::MemoryPriorityAllocateInfoEXT::default().priority(priority);
       allocate_info.p_next =
         &priority_info as *const vk::MemoryPriorityAllocateInfoEXT as *const c_void;
     }
