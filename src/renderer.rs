@@ -100,7 +100,7 @@ impl Renderer {
       destroy_instance();
     })?;
 
-    let mut gpu_data = GPUData::new(
+    let gpu_data = GPUData::new(
       &device,
       &physical_device,
       render_pass,
@@ -109,18 +109,13 @@ impl Renderer {
         height: image_height,
       },
       buffer_size,
+      &queues,
+      &mut command_pools.transfer_pool,
     )
     .on_err(|_| unsafe {
       destroy!(&device => &command_pools, &pipeline, &render_pass, &device);
       destroy_instance();
     })?;
-
-    gpu_data.initialize_memory(
-      &device,
-      &physical_device,
-      &queues,
-      &mut command_pools.transfer_pool,
-    )?;
 
     Ok(Self {
       _entry: entry,
@@ -144,16 +139,15 @@ impl Renderer {
       &self.physical_device.queue_families,
       self.render_pass,
       &self.pipeline,
-      &self.gpu_data.triangle_image,
-      &self.gpu_data.triangle_model,
+      &self.gpu_data,
     )?;
 
     self.command_pools.transfer_pool.reset(&self.device)?;
     self.command_pools.transfer_pool.record_copy_img_to_buffer(
       &self.device,
       &self.physical_device.queue_families,
-      self.gpu_data.triangle_image.image,
-      self.gpu_data.final_buffer.buffer,
+      self.gpu_data.render_target,
+      self.gpu_data.host_output_buffer,
     )?;
 
     Ok(())
@@ -218,10 +212,10 @@ impl Renderer {
     Ok(())
   }
 
-  pub unsafe fn get_resulting_data(&self) -> Result<&[u8], vk::Result> {
+  pub unsafe fn get_resulting_data(&self, buffer_size: u64) -> Result<&[u8], vk::Result> {
     self
       .gpu_data
-      .map_buffer_after_completion(&self.device, &self.physical_device)
+      .map_buffer_after_completion(&self.device, &self.physical_device, buffer_size)
   }
 }
 

@@ -3,12 +3,9 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 use crate::{
-  device_destroyable::DeviceManuallyDestroyed,
-  errors::OutOfMemoryError,
-  gpu_data::{TriangleImage, TriangleModelData},
-  initialization::device::QueueFamilies,
-  pipelines::GraphicsPipeline,
-  BACKGROUND_COLOR, IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
+  device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError, gpu_data::GPUData,
+  initialization::device::QueueFamilies, pipelines::GraphicsPipeline, BACKGROUND_COLOR,
+  IMAGE_HEIGHT, IMAGE_WIDTH, INDICES,
 };
 
 use super::dependency_info;
@@ -38,10 +35,7 @@ impl GraphicsCommandBufferPool {
     queue_families: &QueueFamilies,
     render_pass: vk::RenderPass,
     pipeline: &GraphicsPipeline,
-    // contains image, image_view and framebuffer
-    triangle_image: &TriangleImage,
-    // contains index and vertex buffer
-    triangle_model: &TriangleModelData,
+    data: &GPUData,
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.triangle;
     let begin_info =
@@ -56,7 +50,7 @@ impl GraphicsCommandBufferPool {
         s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
         p_next: ptr::null(),
         render_pass,
-        framebuffer: triangle_image.framebuffer,
+        framebuffer: data.r_target_framebuffer,
         // whole image
         render_area: vk::Rect2D {
           offset: vk::Offset2D { x: 0, y: 0 },
@@ -72,8 +66,8 @@ impl GraphicsCommandBufferPool {
       device.cmd_begin_render_pass(cb, &render_pass_begin_info, vk::SubpassContents::INLINE);
 
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
-      device.cmd_bind_vertex_buffers(cb, 0, &[triangle_model.vertex], &[0]);
-      device.cmd_bind_index_buffer(cb, triangle_model.index, 0, vk::IndexType::UINT16);
+      device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+      device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT16);
       device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);
@@ -102,7 +96,7 @@ impl GraphicsCommandBufferPool {
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         src_queue_family_index: queue_families.get_graphics_index(),
         dst_queue_family_index: queue_families.get_transfer_index(),
-        image: triangle_image.image,
+        image: data.render_target,
         subresource_range,
         _marker: PhantomData,
       };

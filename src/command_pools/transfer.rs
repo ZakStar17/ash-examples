@@ -11,9 +11,8 @@ use super::dependency_info;
 
 pub struct TransferCommandBufferPool {
   pool: vk::CommandPool,
-  // separated for simplicity
   pub copy_image_to_buffer: vk::CommandBuffer,
-  pub copy_buffers_to_buffers: vk::CommandBuffer,
+  pub temp_buffer_initialization: vk::CommandBuffer,
 }
 
 impl TransferCommandBufferPool {
@@ -23,12 +22,12 @@ impl TransferCommandBufferPool {
 
     let command_buffers = super::allocate_primary_command_buffers(device, pool, 2)?;
     let copy_image_to_buffer = command_buffers[0];
-    let copy_buffers_to_buffers = command_buffers[1];
+    let temp_buffer_initialization = command_buffers[1];
 
     Ok(Self {
       pool,
       copy_image_to_buffer,
-      copy_buffers_to_buffers,
+      temp_buffer_initialization,
     })
   }
 
@@ -127,21 +126,31 @@ impl TransferCommandBufferPool {
     Ok(())
   }
 
-  pub unsafe fn record_copy_buffers_to_buffers(
-    &mut self,
+  pub unsafe fn start_temp_buffer_initialization_recording(
+    &self,
     device: &ash::Device,
-    copy_infos: &[vk::CopyBufferInfo2],
   ) -> Result<(), OutOfMemoryError> {
-    let cb = self.copy_buffers_to_buffers;
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-    device.begin_command_buffer(cb, &begin_info)?;
+    device.begin_command_buffer(self.temp_buffer_initialization, &begin_info)?;
+    Ok(())
+  }
 
-    for copy_info in copy_infos {
-      device.cmd_copy_buffer2(cb, copy_info);
-    }
+  pub unsafe fn record_copy_buffers_temp_buffer_initialization(
+    &self,
+    device: &ash::Device,
+    info: &vk::CopyBufferInfo2,
+  ) {
+    device.cmd_copy_buffer2(self.temp_buffer_initialization, info);
+  }
 
-    device.end_command_buffer(cb).map_err(|err| err.into())
+  pub unsafe fn finish_temp_buffer_initialization_recording(
+    &self,
+    device: &ash::Device,
+  ) -> Result<(), OutOfMemoryError> {
+    device
+      .end_command_buffer(self.temp_buffer_initialization)
+      .map_err(|err| err.into())
   }
 }
 

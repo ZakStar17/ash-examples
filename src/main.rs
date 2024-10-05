@@ -78,7 +78,7 @@ fn initialize_and_run() -> Result<(), String> {
   println!("Saving file...");
   let data = unsafe {
     renderer
-      .get_resulting_data()
+      .get_resulting_data(IMAGE_MINIMAL_SIZE)
       .map_err(|err| format!("Failed to get resulting data: {}", err))?
   };
   image::save_buffer(

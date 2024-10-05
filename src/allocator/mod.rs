@@ -13,11 +13,13 @@ use crate::{
   utility::{self, OnErr},
 };
 
+mod device_buffer_init;
 #[cfg(feature = "log_alloc")]
 mod logging;
 mod mem_type_assignment;
 mod memory_bound;
 
+pub use device_buffer_init::{initialize_device_buffers, MemoryInitializationError};
 pub use memory_bound::MemoryBound;
 
 #[allow(unused_imports)]

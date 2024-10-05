@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::{
-  allocator::AllocationError,
+  allocator::MemoryInitializationError,
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
@@ -50,45 +50,33 @@ impl From<OutOfMemoryError> for vk::Result {
 
 #[derive(thiserror::Error)]
 pub enum InitializationError {
-  #[error("Instance creation failed")]
+  #[error("Instance creation failed: {0}")]
   InstanceCreationFailed(#[from] InstanceCreationError),
 
-  #[error("No physical device supports the application")]
+  #[error("No physical device is compatible with the application requirements")]
   NoCompatibleDevices,
 
-  #[error("Not enough memory / memory allocation failed")]
-  NotEnoughMemory(#[source] Option<AllocationError>),
+  #[error("Failed to allocate memory for some buffer or image\n{0}")]
+  AllocationFailed(#[from] MemoryInitializationError),
 
-  #[error("Failed to create pipelines")]
-  PipelineCreationFailed(#[source] PipelineCreationError),
+  #[error("Ran out of memory while issuing some command or creating memory: {0}")]
+  GenericOutOfMemoryError(#[from] OutOfMemoryError),
 
-  #[error("Memory map failed: The application was unable to map the require memory")]
-  MemoryMapFailed,
+  #[error("Failed to create pipelines:\n{0}")]
+  PipelineCreationFailed(#[from] PipelineCreationError),
 
-  #[error("IO error")]
-  IOError(#[source] std::io::Error),
+  #[error(transparent)]
+  IOError(#[from] std::io::Error),
 
   // undefined behavior / driver or application bug (see vl)
-  #[error("Device is lost")]
+  #[error("Vulkan returned ERROR_DEVICE_LOST")]
   DeviceLost,
-  #[error("Unknown")]
+  #[error("Vulkan returned ERROR_UNKNOWN")]
   Unknown,
 }
 impl std::fmt::Debug for InitializationError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     error_chain_fmt(self, f)
-  }
-}
-
-impl From<AllocationError> for InitializationError {
-  fn from(value: AllocationError) -> Self {
-    Self::NotEnoughMemory(Some(value))
-  }
-}
-
-impl From<PipelineCreationError> for InitializationError {
-  fn from(value: PipelineCreationError) -> Self {
-    InitializationError::PipelineCreationFailed(value)
   }
 }
 
@@ -101,25 +89,21 @@ impl From<PipelineCacheError> for InitializationError {
   }
 }
 
-impl From<OutOfMemoryError> for InitializationError {
-  fn from(_value: OutOfMemoryError) -> Self {
-    InitializationError::NotEnoughMemory(None)
-  }
-}
-
 impl From<vk::Result> for InitializationError {
   fn from(value: vk::Result) -> Self {
     match value {
       vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
-        InitializationError::NotEnoughMemory(None)
+        OutOfMemoryError::from(value).into()
       }
       vk::Result::ERROR_DEVICE_LOST => InitializationError::DeviceLost,
       vk::Result::ERROR_UNKNOWN => InitializationError::Unknown,
       // validation layers may say more on this
       vk::Result::ERROR_INITIALIZATION_FAILED => InitializationError::Unknown,
-      vk::Result::ERROR_MEMORY_MAP_FAILED => InitializationError::MemoryMapFailed,
       _ => {
-        log::error!("Invalid vk::Result: {:?}", value);
+        log::error!(
+          "Unhandled vk::Result {} during general initialization",
+          value
+        );
         InitializationError::Unknown
       }
     }

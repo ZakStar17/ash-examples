@@ -155,8 +155,8 @@ pub fn write_properties_table(
     ))?;
   }
 
-  f.write_str("Object labels:\n")?;
   if let Some(obj_labels) = obj_labels {
+    f.write_str("Object labels:\n")?;
     for (i, label) in obj_labels.iter().enumerate() {
       if let Some(assigned) = obj_assigned {
         f.write_fmt(format_args!(
