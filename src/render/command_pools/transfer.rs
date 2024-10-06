@@ -13,7 +13,7 @@ pub struct TransferCommandBufferPool {
   pool: vk::CommandPool,
   // separated for simplicity
   pub load_texture: vk::CommandBuffer,
-  pub copy_buffers_to_buffers: vk::CommandBuffer,
+  pub temp_buffer_initialization: vk::CommandBuffer,
 }
 
 impl TransferCommandBufferPool {
@@ -23,12 +23,12 @@ impl TransferCommandBufferPool {
 
     let command_buffers = super::allocate_primary_command_buffers(device, pool, 2)?;
     let load_texture = command_buffers[0];
-    let copy_buffers_to_buffers = command_buffers[1];
+    let temp_buffer_initialization = command_buffers[1];
 
     Ok(Self {
       pool,
       load_texture,
-      copy_buffers_to_buffers,
+      temp_buffer_initialization,
     })
   }
 
@@ -150,36 +150,31 @@ impl TransferCommandBufferPool {
     Ok(())
   }
 
-  pub unsafe fn record_copy_buffers_to_buffers_from_host(
-    &mut self,
+  pub unsafe fn start_temp_buffer_initialization_recording(
+    &self,
     device: &ash::Device,
-    copy_infos: &[vk::CopyBufferInfo2],
   ) -> Result<(), OutOfMemoryError> {
-    let cb = self.copy_buffers_to_buffers;
     let begin_info =
       vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-    device.begin_command_buffer(cb, &begin_info)?;
+    device.begin_command_buffer(self.temp_buffer_initialization, &begin_info)?;
+    Ok(())
+  }
 
-    for copy_info in copy_infos {
-      let buffer_cpu_barrier = vk::BufferMemoryBarrier2 {
-        s_type: vk::StructureType::BUFFER_MEMORY_BARRIER_2,
-        p_next: ptr::null(),
-        src_stage_mask: vk::PipelineStageFlags2::HOST,
-        dst_stage_mask: vk::PipelineStageFlags2::COPY,
-        src_access_mask: vk::AccessFlags2::HOST_WRITE,
-        dst_access_mask: vk::AccessFlags2::TRANSFER_READ,
-        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        buffer: copy_info.src_buffer,
-        offset: 0,
-        size: vk::WHOLE_SIZE,
-        _marker: PhantomData,
-      };
-      device.cmd_pipeline_barrier2(cb, &dependency_info(&[], &[buffer_cpu_barrier], &[]));
-      device.cmd_copy_buffer2(cb, copy_info);
-    }
+  pub unsafe fn record_copy_buffers_temp_buffer_initialization(
+    &self,
+    device: &ash::Device,
+    info: &vk::CopyBufferInfo2,
+  ) {
+    device.cmd_copy_buffer2(self.temp_buffer_initialization, info);
+  }
 
-    device.end_command_buffer(cb).map_err(|err| err.into())
+  pub unsafe fn finish_temp_buffer_initialization_recording(
+    &self,
+    device: &ash::Device,
+  ) -> Result<(), OutOfMemoryError> {
+    device
+      .end_command_buffer(self.temp_buffer_initialization)
+      .map_err(|err| err.into())
   }
 }
 

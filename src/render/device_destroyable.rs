@@ -83,6 +83,46 @@ macro_rules! fill_destroyable_array_with_expression {
 }
 pub(crate) use fill_destroyable_array_with_expression;
 
+// special case for buffers or other objects that implement Default
+// mem::transmute doesn't work for generic const arrays (see https://github.com/rust-lang/rust/issues/61956)
+macro_rules! fill_destroyable_array_with_expression_using_default {
+  ($device:expr, $ex:expr, $arr_size:tt) => {{
+    use crate::render::device_destroyable::DeviceManuallyDestroyed;
+
+    let mut tmp: [_; $arr_size] = [Default::default(); $arr_size];
+    let mut i = 0;
+    let mut last_error = Ok(());
+    while i < $arr_size {
+      let exp_result: Result<_, _> = $ex;
+      match exp_result {
+        Ok(v) => {
+          tmp[i] = v;
+        }
+        Err(err) => {
+          last_error = Err(err);
+          break;
+        }
+      };
+      i += 1;
+    }
+
+    if let Err(err) = last_error {
+      for (j, item) in tmp.into_iter().enumerate() {
+        if j >= i {
+          break;
+        }
+        unsafe {
+          DeviceManuallyDestroyed::destroy_self(&item, $device);
+        }
+      }
+      Err(err)
+    } else {
+      Ok(tmp)
+    }
+  }};
+}
+pub(crate) use fill_destroyable_array_with_expression_using_default;
+
 // same as fill_destroyable_array_with_expression but with an iterator instead of a
 // general expression
 // each item in the iterator should return an Result where the value implements
@@ -91,12 +131,28 @@ pub(crate) use fill_destroyable_array_with_expression;
 macro_rules! fill_destroyable_array_from_iter {
   ($device:tt, $iter:expr, $arr_size:tt) => {{
     let mut iter = $iter; // make sure $iter isn't creating new iterators every time
-    fill_destroyable_array_with_expression!($device, iter.next().unwrap(), $arr_size)
+    crate::device_destroyable::fill_destroyable_array_with_expression!(
+      $device,
+      iter.next().unwrap(),
+      $arr_size
+    )
   }};
 }
 pub(crate) use fill_destroyable_array_from_iter;
 
-impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
+macro_rules! fill_destroyable_array_from_iter_using_default {
+  ($device:tt, $iter:expr, $arr_size:tt) => {{
+    let mut iter = $iter; // make sure $iter isn't creating new iterators every time
+    crate::render::device_destroyable::fill_destroyable_array_with_expression_using_default!(
+      $device,
+      iter.next().unwrap(),
+      $arr_size
+    )
+  }};
+}
+pub(crate) use fill_destroyable_array_from_iter_using_default;
+
+impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for [T] {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     for value in self.iter() {
       value.destroy_self(device);
@@ -104,7 +160,7 @@ impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
   }
 }
 
-impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for [T] {
+impl<T: DeviceManuallyDestroyed> DeviceManuallyDestroyed for Box<[T]> {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     for value in self.iter() {
       value.destroy_self(device);
