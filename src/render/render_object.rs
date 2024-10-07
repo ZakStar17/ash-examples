@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use super::vertices::Vertex;
 
-pub const QUAD_VERTICES: [Vertex; 4] = [
+pub static VERTICES: [Vertex; 4] = [
   // top left
   Vertex {
     pos: [0.0, 0.0],
@@ -24,10 +24,10 @@ pub const QUAD_VERTICES: [Vertex; 4] = [
     tex_coords: [1.0, 1.0],
   },
 ];
-pub const QUAD_VERTICES_SIZE: usize = size_of::<Vertex>() * 4;
+pub static VERTICES_SIZE: u64 = (size_of::<Vertex>() * VERTICES.len()) as u64;
 
-pub const QUAD_INDICES: [u16; 6] = [0, 1, 2, 3, 2, 1];
-pub const QUAD_INDICES_SIZE: usize = size_of::<u16>() * 6;
+pub static QUAD_INDICES: [u16; 6] = [0, 1, 2, 3, 2, 1];
+pub static QUAD_INDICES_SIZE: u64 = (size_of::<u16>() * QUAD_INDICES.len()) as u64;
 
 // represents a position of the object that will be rendered
 #[repr(C)]

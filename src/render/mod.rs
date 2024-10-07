@@ -5,6 +5,7 @@ mod data;
 mod descriptor_sets;
 mod device_destroyable;
 mod errors;
+mod gpu_data;
 mod initialization;
 mod pipelines;
 mod render_object;
