@@ -4,11 +4,11 @@ use ash::vk;
 
 use crate::{
   render::{
-    allocator::allocate_and_bind_memory,
+    allocator::{allocate_and_bind_memory, AllocationError, MemoryWithType},
+    command_pools::TransferCommandBufferPool,
     create_objs::{create_buffer, create_image, create_image_view},
     device_destroyable::{destroy, DeviceManuallyDestroyed},
-    errors::AllocationError,
-    initialization::device::{Device, PhysicalDevice},
+    initialization::device::{Device, PhysicalDevice, Queues},
   },
   utility::OnErr,
 };
@@ -21,19 +21,22 @@ const CONSTANT_MEMORY_PRIORITY: f32 = 0.5;
 pub struct ConstantData {
   pub vertex: vk::Buffer,
   pub index: vk::Buffer,
-  pub buffer_memory: vk::DeviceMemory,
 
   pub texture: vk::Image,
-  pub texture_memory: vk::DeviceMemory, // probably equal to buffer_memory
   pub texture_view: vk::ImageView,
+
+  memories: Box<[MemoryWithType]>,
 }
 
 impl ConstantData {
-  pub fn create_and_allocate(
+  pub fn new(
     device: &Device,
     physical_device: &PhysicalDevice,
-    image_width: u32,
-    image_height: u32,
+    texture_width: u32,
+    texture_height: u32,
+    output_size: u64,
+    queues: &Queues,
+    command_pool: &mut TransferCommandBufferPool,
   ) -> Result<Self, AllocationError> {
     let vertex = create_buffer(
       device,
@@ -50,131 +53,39 @@ impl ConstantData {
     let texture = create_image(
       device,
       TEXTURE_FORMAT,
-      image_width,
-      image_height,
+      texture_width,
+      texture_height,
       TEXTURE_USAGES,
     )
     .on_err(|_| unsafe { destroy!(device => &vertex, &index) })?;
 
-    let (buffer_memory, texture_memory) =
-      Self::allocate_memory(device, physical_device, vertex, index, texture)
-        .on_err(|_| unsafe { destroy!(device => &vertex, &index, &texture) })?;
-    let free_device_memory = || unsafe {
-      if buffer_memory != texture_memory {
-        texture_memory.destroy_self(device);
-      }
-      buffer_memory.destroy_self(device);
-    };
+    let alloc = allocate_and_bind_memory(
+      device,
+      physical_device,
+      [
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        vk::MemoryPropertyFlags::empty(),
+      ],
+      [&vertex, &index, &texture],
+      CONSTANT_MEMORY_PRIORITY,
+      #[cfg(feature = "log_alloc")]
+      Some(["Vertex buffer", "Index buffer", "Ferris' texture"]),
+      #[cfg(feature = "log_alloc")]
+      "CONSTANT DATA",
+    )
+    .on_err(|_| unsafe { destroy!(device => &vertex, &index, &texture) })?;
 
-    let texture_view = create_image_view(device, texture, TEXTURE_FORMAT).on_err(|_| unsafe {
-      destroy!(device => &vertex, &index, &texture);
-      free_device_memory();
-    })?;
+    let texture_view = create_image_view(device, texture, TEXTURE_FORMAT)
+      .on_err(|_| unsafe { destroy!(device => &vertex, &index, &texture, &alloc) })?;
 
+    let memories = Box::from(alloc.get_memories());
     Ok(Self {
       vertex,
       index,
-      buffer_memory,
-
       texture,
-      texture_memory,
       texture_view,
+      memories,
     })
-  }
-
-  fn allocate_memory(
-    device: &Device,
-    physical_device: &PhysicalDevice,
-    vertex: vk::Buffer,
-    index: vk::Buffer,
-    texture: vk::Image,
-  ) -> Result<(vk::DeviceMemory, vk::DeviceMemory), AllocationError> {
-    let vertex_memory_requirements = unsafe { device.get_buffer_memory_requirements(vertex) };
-    let index_memory_requirements = unsafe { device.get_buffer_memory_requirements(index) };
-    let texture_memory_requirements = unsafe { device.get_image_memory_requirements(texture) };
-
-    log::debug!("Allocating device memory for all objects");
-    match allocate_and_bind_memory(
-      device,
-      physical_device,
-      vk::MemoryPropertyFlags::DEVICE_LOCAL,
-      &[vertex, index],
-      &[vertex_memory_requirements, index_memory_requirements],
-      &[texture],
-      &[texture_memory_requirements],
-      CONSTANT_MEMORY_PRIORITY,
-    ) {
-      Ok(alloc) => {
-        log::debug!("Allocated full memory block");
-        return Ok((alloc.memory, alloc.memory));
-      }
-      Err(err) => log::warn!(
-        "Failed to allocate full memory block, suballocating: {:?}",
-        err
-      ),
-    }
-
-    let buffers_memory = match allocate_and_bind_memory(
-      device,
-      physical_device,
-      vk::MemoryPropertyFlags::DEVICE_LOCAL,
-      &[vertex, index],
-      &[vertex_memory_requirements, index_memory_requirements],
-      &[],
-      &[],
-      CONSTANT_MEMORY_PRIORITY,
-    ) {
-      Ok(alloc) => {
-        log::debug!("Texture buffers memory allocated successfully");
-        alloc.memory
-      }
-      Err(_) => {
-        let alloc = allocate_and_bind_memory(
-          device,
-          physical_device,
-          vk::MemoryPropertyFlags::empty(),
-          &[vertex, index],
-          &[vertex_memory_requirements, index_memory_requirements],
-          &[],
-          &[],
-          CONSTANT_MEMORY_PRIORITY,
-        )?;
-        log::debug!("Texture buffers memory allocated suboptimally");
-        alloc.memory
-      }
-    };
-
-    let texture_memory = match allocate_and_bind_memory(
-      device,
-      physical_device,
-      vk::MemoryPropertyFlags::DEVICE_LOCAL,
-      &[],
-      &[],
-      &[texture],
-      &[texture_memory_requirements],
-      CONSTANT_MEMORY_PRIORITY,
-    ) {
-      Ok(alloc) => {
-        log::debug!("Texture image memory allocated successfully");
-        alloc.memory
-      }
-      Err(_) => {
-        let alloc = allocate_and_bind_memory(
-          device,
-          physical_device,
-          vk::MemoryPropertyFlags::empty(),
-          &[],
-          &[],
-          &[texture],
-          &[texture_memory_requirements],
-          CONSTANT_MEMORY_PRIORITY,
-        )?;
-        log::debug!("Texture image memory allocated suboptimally");
-        alloc.memory
-      }
-    };
-
-    Ok((buffers_memory, texture_memory))
   }
 }
 
@@ -186,9 +97,6 @@ impl DeviceManuallyDestroyed for ConstantData {
     self.texture_view.destroy_self(device);
     self.texture.destroy_self(device);
 
-    if self.buffer_memory != self.texture_memory {
-      self.texture_memory.destroy_self(device);
-    }
-    self.buffer_memory.destroy_self(device);
+    self.memories.destroy_self(device);
   }
 }

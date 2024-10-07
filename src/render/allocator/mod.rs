@@ -6,12 +6,14 @@ use mem_type_assignment::{
   UnassignedToMemoryObjectsData,
 };
 
-use crate::render::{
-  device_destroyable::DeviceManuallyDestroyed,
-  errors::OutOfMemoryError,
-  initialization::device::{Device, PhysicalDevice},
+use crate::{
+  render::{
+    device_destroyable::DeviceManuallyDestroyed,
+    errors::OutOfMemoryError,
+    initialization::device::{Device, PhysicalDevice},
+  },
+  utility::{self, OnErr},
 };
-use crate:: utility::{self, OnErr};
 
 mod device_buffer_init;
 #[cfg(feature = "log_alloc")]

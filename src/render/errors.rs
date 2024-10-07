@@ -7,7 +7,9 @@ use crate::render::{
 };
 
 use super::{
-  allocator::MemoryInitializationError, renderer::SwapchainRecreationError, swapchain::{AcquireNextImageError, SwapchainCreationError}
+  allocator::MemoryInitializationError,
+  renderer::SwapchainRecreationError,
+  swapchain::{AcquireNextImageError, SwapchainCreationError},
 };
 
 pub fn error_chain_fmt(

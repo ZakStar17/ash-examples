@@ -1,5 +1,8 @@
 use std::{
-  marker::PhantomData, mem::{self, size_of}, ops::BitOr, ptr::{self}
+  marker::PhantomData,
+  mem::{self, size_of},
+  ops::BitOr,
+  ptr::{self},
 };
 
 use ash::vk::{self, Handle};

@@ -2,8 +2,7 @@ use std::{ffi::CStr, ops::Deref};
 
 use ash::vk;
 
-use crate::render::allocator;
-use crate::render::initialization::Surface;
+use crate::render::{allocator, initialization::Surface};
 
 use super::select_physical_device;
 

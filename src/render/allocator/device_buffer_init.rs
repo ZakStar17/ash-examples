@@ -6,14 +6,16 @@ use std::{
 
 use ash::vk;
 
-use crate::render::{
-  command_pools::TransferCommandBufferPool,
-  create_objs::{create_buffer, create_fence},
-  device_destroyable::{fill_destroyable_array_from_iter_using_default, DeviceManuallyDestroyed},
-  errors::OutOfMemoryError,
-  initialization::device::{Device, PhysicalDevice, Queues},
+use crate::{
+  render::{
+    command_pools::TransferCommandBufferPool,
+    create_objs::{create_buffer, create_fence},
+    device_destroyable::{fill_destroyable_array_from_iter_using_default, DeviceManuallyDestroyed},
+    errors::OutOfMemoryError,
+    initialization::device::{Device, PhysicalDevice, Queues},
+  },
+  utility::OnErr,
 };
-use crate::utility::OnErr;
 
 use super::{AllocationError, MemoryBound, MemoryWithType};
 
@@ -141,7 +143,8 @@ pub unsafe fn initialize_device_buffers<const S: usize>(
     .finish_temp_buffer_initialization_recording(device)
     .on_err(|_| destroy_created_objs())?;
 
-  let fence = create_fence(device, vk::FenceCreateFlags::empty()).on_err(|_| destroy_created_objs())?;
+  let fence =
+    create_fence(device, vk::FenceCreateFlags::empty()).on_err(|_| destroy_created_objs())?;
   let destroy_created_objs2 = || unsafe {
     destroy_created_objs();
     fence.destroy_self(device);
