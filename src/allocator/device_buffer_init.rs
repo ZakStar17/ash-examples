@@ -37,7 +37,7 @@ impl From<vk::Result> for RecordMemoryInitializationFailedError {
       }
       vk::Result::ERROR_MEMORY_MAP_FAILED => Self::MemoryMapFailed,
       vk::Result::ERROR_DEVICE_LOST => Self::DeviceIsLost(DeviceIsLost {}),
-      _ => panic!("Unhandled vk::Result when converting to MemoryInitializationError"),
+      _ => panic!("Unhandled vk::Result when converting to RecordMemoryInitializationFailedError"),
     }
   }
 }
@@ -69,7 +69,7 @@ pub unsafe fn record_device_buffer_initialization<const S: usize>(
   record_pool: &InitTransferCommandBufferPool,
   #[cfg(feature = "log_alloc")] allocation_name: &str,
 ) -> Result<InitializationStagingBuffers<S>, RecordMemoryInitializationFailedError> {
-  assert!(buffers.len() > 0);
+  assert!(!buffers.is_empty());
   let staging_buffers: [vk::Buffer; S] = fill_destroyable_array_from_iter_using_default!(
     device,
     data
@@ -156,7 +156,7 @@ pub unsafe fn record_device_buffer_initialization<const S: usize>(
 
   let memories = staging_alloc.memories.map(|m| m.memory);
   Ok(InitializationStagingBuffers {
-    buffers,
+    buffers: staging_buffers,
     memories,
     memory_count: staging_alloc.memory_count,
   })

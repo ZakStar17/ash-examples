@@ -15,6 +15,8 @@ pub struct InitTransferCommandBufferPool {
   cb: vk::CommandBuffer,
 }
 
+#[must_use]
+#[derive(Debug)]
 pub struct PendingInitialization {
   pool: vk::CommandPool,
   fence: vk::Fence,
@@ -23,8 +25,7 @@ pub struct PendingInitialization {
 impl PendingInitialization {
   pub unsafe fn wait_and_self_destroy(&self, device: &ash::Device) -> Result<(), QueueSubmitError> {
     device
-      .wait_for_fences(&[self.fence], true, u64::MAX)
-      .map_err(|err| QueueSubmitError::from(err))?;
+      .wait_for_fences(&[self.fence], true, u64::MAX)?;
 
     self.fence.destroy_self(device);
     self.pool.destroy_self(device);
@@ -80,7 +81,7 @@ impl InitTransferCommandBufferPool {
     }
     Ok(PendingInitialization {
       pool: self.pool,
-      fence: fence,
+      fence,
     })
   }
 }

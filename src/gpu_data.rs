@@ -36,6 +36,8 @@ pub struct GPUData {
   memories: Vec<MemoryWithType>,
 }
 
+#[must_use]
+#[derive(Debug)]
 pub struct PendingDataInitialization {
   command_buffer_submit: PendingInitialization,
   staging_buffers: InitializationStagingBuffers<2>,
@@ -72,7 +74,7 @@ impl GPUData {
       device,
       render_extent.width,
       render_extent.height,
-      vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::COLOR_ATTACHMENT),
+      vk::ImageUsageFlags::COLOR_ATTACHMENT.bitor(vk::ImageUsageFlags::TRANSFER_SRC),
     )?;
     let vertex_buffer = create_buffer(
       device,
