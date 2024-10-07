@@ -3,10 +3,13 @@ use std::{marker::PhantomData, mem::size_of, ops::BitOr, ptr};
 use ash::vk;
 
 use crate::{
-  allocator::{self, initialize_device_buffers, MemoryInitializationError, MemoryWithType},
-  command_pools::TransferCommandBufferPool,
+  allocator::{
+    self, InitializationStagingBuffers, MemoryWithType, RecordMemoryInitializationFailedError,
+  },
+  command_pools::{self, initialization::PendingInitialization},
   create_objs::{create_buffer, create_image, create_image_view},
   device_destroyable::{destroy, DeviceManuallyDestroyed},
+  errors::QueueSubmitError,
   initialization::device::{Device, PhysicalDevice, Queues},
   render_pass::create_framebuffer,
   utility::OnErr,
@@ -33,6 +36,29 @@ pub struct GPUData {
   memories: Vec<MemoryWithType>,
 }
 
+pub struct PendingDataInitialization {
+  command_buffer_submit: PendingInitialization,
+  staging_buffers: InitializationStagingBuffers<2>,
+}
+
+impl PendingDataInitialization {
+  // should not fail
+  pub unsafe fn wait_and_self_destroy(&self, device: &ash::Device) -> Result<(), QueueSubmitError> {
+    self.command_buffer_submit.wait_and_self_destroy(device)?;
+    self.staging_buffers.destroy_self(device);
+    Ok(())
+  }
+}
+
+impl DeviceManuallyDestroyed for PendingDataInitialization {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    log::warn!("Aborting and destroying PendingDataInitialization");
+    if let Err(err) = self.wait_and_self_destroy(device) {
+      log::error!("PendingDataInitialization failed to destroy self: {}", err);
+    }
+  }
+}
+
 impl GPUData {
   pub fn new(
     device: &Device,
@@ -41,8 +67,7 @@ impl GPUData {
     render_extent: vk::Extent2D,
     output_size: u64,
     queues: &Queues,
-    command_pool: &mut TransferCommandBufferPool,
-  ) -> Result<Self, MemoryInitializationError> {
+  ) -> Result<(Self, PendingDataInitialization), RecordMemoryInitializationFailedError> {
     let render_target = create_image(
       device,
       render_extent.width,
@@ -62,9 +87,6 @@ impl GPUData {
     )
     .on_err(|_| unsafe { destroy!(device => &vertex_buffer, &render_target) })?;
 
-    let host_output_buffer =
-      create_buffer(device, output_size, vk::BufferUsageFlags::TRANSFER_DST)?;
-
     let device_alloc = allocator::allocate_and_bind_memory(
       device,
       physical_device,
@@ -79,12 +101,21 @@ impl GPUData {
       #[cfg(feature = "log_alloc")]
       "DEVICE LOCAL OBJECTS",
     )
-    .on_err(|_| unsafe {
-      destroy!(device => &host_output_buffer, &index_buffer, &vertex_buffer, &render_target)
-    })?;
+    .on_err(|_| unsafe { destroy!(device => &index_buffer, &vertex_buffer, &render_target) })?;
 
-    unsafe {
-      initialize_device_buffers(
+    let destroy_created_objs = || unsafe {
+      destroy!(device => &index_buffer, &vertex_buffer, &render_target, &device_alloc)
+    };
+
+    let initialization_command_pool =
+      command_pools::initialization::InitTransferCommandBufferPool::create(
+        device,
+        &physical_device.queue_families,
+      )
+      .on_err(|_| destroy_created_objs())?;
+
+    let pending_initialization = unsafe {
+      let staging_buffers = allocator::record_device_buffer_initialization(
         device,
         physical_device,
         [vertex_buffer, index_buffer],
@@ -92,11 +123,22 @@ impl GPUData {
           (VERTICES.as_ptr() as *const u8, VERTEX_SIZE),
           (INDICES.as_ptr() as *const u8, INDEX_SIZE),
         ],
-        queues,
-        command_pool,
+        &initialization_command_pool,
+        #[cfg(feature = "log_alloc")]
         "DEVICE LOCAL OBJECTS",
-      )?;
-    }
+      )
+      .on_err(|_| destroy_created_objs())?;
+      let submit = initialization_command_pool
+        .end_and_submit(device, queues)
+        .on_err(|_| destroy_created_objs())?;
+      PendingDataInitialization {
+        command_buffer_submit: submit,
+        staging_buffers,
+      }
+    };
+
+    let host_output_buffer = create_buffer(device, output_size, vk::BufferUsageFlags::TRANSFER_DST)
+    .on_err(|_| unsafe { destroy!(device => &render_target, &pending_initialization, &index_buffer, &vertex_buffer, &device_alloc) })?;
 
     let host_output_buffer_alloc = allocator::allocate_and_bind_memory(
       device,
@@ -112,9 +154,7 @@ impl GPUData {
       #[cfg(feature = "log_alloc")]
       "OUTPUT BUFFER",
     )
-    .on_err(|_| unsafe {
-      destroy!(device => &host_output_buffer, &index_buffer, &vertex_buffer, &render_target, &device_alloc)
-    })?;
+    .on_err(|_| unsafe {destroy!(device => &host_output_buffer, &render_target, &pending_initialization, &index_buffer, &vertex_buffer, &device_alloc) })?;
     let host_output_buffer_memory_offset = host_output_buffer_alloc.obj_to_memory_assignment[0].1;
 
     const EXPECTED_MAX_MEM_COUNT: usize = 4;
@@ -130,25 +170,31 @@ impl GPUData {
     );
     log::info!("Allocated memory count: {}", memories.len());
 
-    let r_target_image_view =
-      create_image_view(device, render_target).on_err(|_| unsafe {
-        destroy!(device => &host_output_buffer, &index_buffer, &vertex_buffer, &render_target, memories.as_slice())
-      })?;
-    let r_target_framebuffer = create_framebuffer(device, render_pass, r_target_image_view, render_extent).on_err(|_| unsafe {
-      destroy!(device => &r_target_image_view, &host_output_buffer, &index_buffer, &vertex_buffer, &render_target, memories.as_slice())
-    })?;
+    let r_target_image_view = create_image_view(device, render_target)
+    .on_err(|_| unsafe {destroy!(device => &host_output_buffer, &render_target, &pending_initialization, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
 
-    Ok(Self {
-      render_target,
-      r_target_framebuffer,
+    let r_target_framebuffer = create_framebuffer(
+      device,
+      render_pass,
       r_target_image_view,
-      vertex_buffer,
-      index_buffer,
-      host_output_buffer,
-      memories,
-      host_output_buffer_memory_index,
-      host_output_buffer_memory_offset,
-    })
+      render_extent,
+    ).on_err(|_| unsafe {
+      destroy!(device => &r_target_image_view, &host_output_buffer, &render_target, &pending_initialization, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
+
+    Ok((
+      Self {
+        render_target,
+        r_target_framebuffer,
+        r_target_image_view,
+        vertex_buffer,
+        index_buffer,
+        host_output_buffer,
+        memories,
+        host_output_buffer_memory_index,
+        host_output_buffer_memory_offset,
+      },
+      pending_initialization,
+    ))
   }
 
   // returns a slice representing buffer contents after all operations have completed

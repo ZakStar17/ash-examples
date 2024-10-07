@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::{
-  allocator::MemoryInitializationError,
+  allocator::RecordMemoryInitializationFailedError,
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
@@ -48,6 +48,43 @@ impl From<OutOfMemoryError> for vk::Result {
   }
 }
 
+#[derive(thiserror::Error, Debug, Clone, Copy)]
+#[error("Vulkan returned ERROR_DEVICE_LOST. See https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html#devsandqueues-lost-device")]
+pub struct DeviceIsLost;
+
+#[derive(thiserror::Error, Debug, Clone, Copy)]
+pub enum QueueSubmitError {
+  #[error(transparent)]
+  OutOfMemory(#[from] OutOfMemoryError),
+  #[error(transparent)]
+  DeviceIsLost(#[from] DeviceIsLost),
+}
+
+impl From<vk::Result> for QueueSubmitError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
+        QueueSubmitError::OutOfMemory(value.into())
+      }
+      vk::Result::ERROR_DEVICE_LOST => QueueSubmitError::DeviceIsLost(DeviceIsLost {}),
+      _ => {
+        panic!("Invalid vk::Result to QueueSubmitError cast: {:?}", value);
+      }
+    }
+  }
+}
+
+impl From<QueueSubmitError> for RecordMemoryInitializationFailedError {
+  fn from(value: QueueSubmitError) -> Self {
+    match value {
+      QueueSubmitError::DeviceIsLost(_) => {
+        RecordMemoryInitializationFailedError::DeviceIsLost(DeviceIsLost {})
+      }
+      QueueSubmitError::OutOfMemory(v) => v.into(),
+    }
+  }
+}
+
 #[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("Instance creation failed: {0}")]
@@ -57,7 +94,7 @@ pub enum InitializationError {
   NoCompatibleDevices,
 
   #[error("Failed to allocate memory for some buffer or image\n{0}")]
-  AllocationFailed(#[from] MemoryInitializationError),
+  AllocationFailed(#[from] RecordMemoryInitializationFailedError),
 
   #[error("Ran out of memory while issuing some command or creating memory: {0}")]
   GenericOutOfMemoryError(#[from] OutOfMemoryError),
@@ -69,8 +106,8 @@ pub enum InitializationError {
   IOError(#[from] std::io::Error),
 
   // undefined behavior / driver or application bug (see vl)
-  #[error("Vulkan returned ERROR_DEVICE_LOST")]
-  DeviceLost,
+  #[error(transparent)]
+  DeviceIsLost(#[from] DeviceIsLost),
   #[error("Vulkan returned ERROR_UNKNOWN")]
   Unknown,
 }
@@ -95,7 +132,7 @@ impl From<vk::Result> for InitializationError {
       vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
         OutOfMemoryError::from(value).into()
       }
-      vk::Result::ERROR_DEVICE_LOST => InitializationError::DeviceLost,
+      vk::Result::ERROR_DEVICE_LOST => InitializationError::DeviceIsLost(DeviceIsLost {}),
       vk::Result::ERROR_UNKNOWN => InitializationError::Unknown,
       // validation layers may say more on this
       vk::Result::ERROR_INITIALIZATION_FAILED => InitializationError::Unknown,
@@ -106,6 +143,15 @@ impl From<vk::Result> for InitializationError {
         );
         InitializationError::Unknown
       }
+    }
+  }
+}
+
+impl From<QueueSubmitError> for InitializationError {
+  fn from(value: QueueSubmitError) -> Self {
+    match value {
+      QueueSubmitError::DeviceIsLost(_) => InitializationError::DeviceIsLost(DeviceIsLost {}),
+      QueueSubmitError::OutOfMemory(v) => v.into(),
     }
   }
 }

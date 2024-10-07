@@ -67,10 +67,26 @@ impl Renderer {
       destroy_instance();
     })?;
 
+    let (gpu_data, gpu_data_pending_initialization) = GPUData::new(
+      &device,
+      &physical_device,
+      render_pass,
+      vk::Extent2D {
+        width: image_width,
+        height: image_height,
+      },
+      buffer_size,
+      &queues,
+    )
+    .on_err(|_| unsafe {
+      destroy!(&device => &render_pass, &device);
+      destroy_instance();
+    })?;
+
     log::info!("Creating pipeline cache");
     let (pipeline_cache, created_from_file) =
       pipelines::create_pipeline_cache(&device, &physical_device).on_err(|_| unsafe {
-        destroy!(&device => &render_pass, &device);
+        destroy!(&device => &gpu_data_pending_initialization, &gpu_data, &render_pass, &device);
         destroy_instance();
       })?;
     if created_from_file {
@@ -82,7 +98,7 @@ impl Renderer {
     log::debug!("Creating pipeline");
     let pipeline =
       GraphicsPipeline::create(&device, pipeline_cache, render_pass).on_err(|_| unsafe {
-        destroy!(&device => &pipeline_cache, &render_pass, &device);
+        destroy!(&device => &pipeline_cache, &gpu_data_pending_initialization, &gpu_data, &render_pass, &device);
         destroy_instance();
       })?;
 
@@ -95,27 +111,17 @@ impl Renderer {
       pipeline_cache.destroy_self(&device);
     }
 
-    let mut command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
-      destroy!(&device => &pipeline, &render_pass, &device);
+    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+      destroy!(&device => &pipeline, &gpu_data_pending_initialization, &gpu_data_pending_initialization, &gpu_data, &render_pass, &device);
       destroy_instance();
     })?;
 
-    let gpu_data = GPUData::new(
-      &device,
-      &physical_device,
-      render_pass,
-      vk::Extent2D {
-        width: image_width,
-        height: image_height,
-      },
-      buffer_size,
-      &queues,
-      &mut command_pools.transfer_pool,
-    )
-    .on_err(|_| unsafe {
-      destroy!(&device => &command_pools, &pipeline, &render_pass, &device);
-      destroy_instance();
-    })?;
+    unsafe {
+      gpu_data_pending_initialization.wait_and_self_destroy(&device).on_err(|_| {
+        destroy!(&device => &command_pools, &pipeline, &gpu_data, &render_pass, &device);
+        destroy_instance();
+      })?;
+    }
 
     Ok(Self {
       _entry: entry,
