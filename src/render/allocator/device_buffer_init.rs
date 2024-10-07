@@ -8,11 +8,11 @@ use ash::vk;
 
 use crate::{
   render::{
-    command_pools::TransferCommandBufferPool,
-    create_objs::{create_buffer, create_fence},
+    command_pools::initialization::InitTransferCommandBufferPool,
+    create_objs::create_buffer,
     device_destroyable::{fill_destroyable_array_from_iter_using_default, DeviceManuallyDestroyed},
-    errors::OutOfMemoryError,
-    initialization::device::{Device, PhysicalDevice, Queues},
+    errors::{DeviceIsLost, OutOfMemoryError},
+    initialization::device::{Device, PhysicalDevice},
   },
   utility::OnErr,
 };
@@ -20,39 +20,58 @@ use crate::{
 use super::{AllocationError, MemoryBound, MemoryWithType};
 
 #[derive(Debug, thiserror::Error)]
-pub enum MemoryInitializationError {
+pub enum RecordMemoryInitializationFailedError {
   #[error("Failed to allocate memory for staging buffers:\n{}", {1})]
   AllocationError(#[from] AllocationError),
-  #[error("Object to memory type assignment did not succeed")]
+  #[error("Object to memory type assignment on staging buffers did not succeed")]
   MemoryMapFailed,
   #[error("Generic out of memory error not caused by a failed allocation ({})", {1})]
   GenericOutOfMemory(#[from] OutOfMemoryError),
+  #[error(transparent)]
+  DeviceIsLost(#[from] DeviceIsLost),
 }
 
-impl From<vk::Result> for MemoryInitializationError {
+impl From<vk::Result> for RecordMemoryInitializationFailedError {
   fn from(value: vk::Result) -> Self {
     match value {
       vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
         Self::GenericOutOfMemory(OutOfMemoryError::from(value))
       }
       vk::Result::ERROR_MEMORY_MAP_FAILED => Self::MemoryMapFailed,
-      _ => panic!("Unhandled vk::Result when converting to MemoryInitializationError"),
+      vk::Result::ERROR_DEVICE_LOST => Self::DeviceIsLost(DeviceIsLost {}),
+      _ => panic!("Unhandled vk::Result when converting to RecordMemoryInitializationFailedError"),
     }
   }
 }
 
-// copy data to buffers
-// buffers must already be bounded to valid memory
-pub unsafe fn initialize_device_buffers<const S: usize>(
+// to be destroyed after command buffer finishes
+#[must_use]
+#[derive(Debug)]
+pub struct InitializationStagingBuffers<const S: usize> {
+  buffers: [vk::Buffer; S],
+  memories: [vk::DeviceMemory; vk::MAX_MEMORY_TYPES],
+  memory_count: usize,
+}
+
+impl<const S: usize> DeviceManuallyDestroyed for InitializationStagingBuffers<S> {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    self.buffers.destroy_self(device);
+    self.memories[0..self.memory_count].destroy_self(device);
+  }
+}
+
+// creates staging buffers with data to be copied and records appropriate commands to the
+// initialization command buffer
+pub unsafe fn record_device_buffer_initialization<const S: usize>(
   device: &Device,
   physical_device: &PhysicalDevice,
   buffers: [vk::Buffer; S],
   data: [(*const u8, u64); S],
-  queues: &Queues,
-  command_pool: &mut TransferCommandBufferPool,
+  // contains one command buffer, must be already in recording state
+  record_pool: &InitTransferCommandBufferPool,
   #[cfg(feature = "log_alloc")] allocation_name: &str,
-) -> Result<(), MemoryInitializationError> {
-  assert!(buffers.len() > 0);
+) -> Result<InitializationStagingBuffers<S>, RecordMemoryInitializationFailedError> {
+  assert!(!buffers.is_empty());
   let staging_buffers: [vk::Buffer; S] = fill_destroyable_array_from_iter_using_default!(
     device,
     data
@@ -123,9 +142,6 @@ pub unsafe fn initialize_device_buffers<const S: usize>(
 
   // no explicit flushing: memory flushed implicitly on queue submit
 
-  command_pool
-    .start_temp_buffer_initialization_recording(device)
-    .on_err(|_| destroy_created_objs())?;
   for i in 0..S {
     let region = vk::BufferCopy2::default().size(data[i].1);
     let cp_info = vk::CopyBufferInfo2 {
@@ -137,40 +153,13 @@ pub unsafe fn initialize_device_buffers<const S: usize>(
       p_regions: &region,
       _marker: PhantomData,
     };
-    command_pool.record_copy_buffers_temp_buffer_initialization(device, &cp_info);
-  }
-  command_pool
-    .finish_temp_buffer_initialization_recording(device)
-    .on_err(|_| destroy_created_objs())?;
-
-  let fence =
-    create_fence(device, vk::FenceCreateFlags::empty()).on_err(|_| destroy_created_objs())?;
-  let destroy_created_objs2 = || unsafe {
-    destroy_created_objs();
-    fence.destroy_self(device);
-  };
-  let submit_info = vk::SubmitInfo {
-    s_type: vk::StructureType::SUBMIT_INFO,
-    p_next: ptr::null(),
-    wait_semaphore_count: 0,
-    p_wait_semaphores: ptr::null(),
-    p_wait_dst_stage_mask: ptr::null(),
-    command_buffer_count: 1,
-    p_command_buffers: &command_pool.temp_buffer_initialization,
-    signal_semaphore_count: 0,
-    p_signal_semaphores: ptr::null(),
-    _marker: PhantomData,
-  };
-  unsafe {
-    device
-      .queue_submit(queues.transfer, &[submit_info], fence)
-      .on_err(|_| destroy_created_objs2())?;
-    device
-      .wait_for_fences(&[fence], true, u64::MAX)
-      .on_err(|_| destroy_created_objs2())?;
+    record_pool.record_copy_buffer_cmd(device, &cp_info);
   }
 
-  destroy_created_objs2();
-
-  Ok(())
+  let memories = staging_alloc.memories.map(|m| m.memory);
+  Ok(InitializationStagingBuffers {
+    buffers: staging_buffers,
+    memories,
+    memory_count: staging_alloc.memory_count,
+  })
 }

@@ -21,7 +21,10 @@ mod logging;
 mod mem_type_assignment;
 mod memory_bound;
 
-pub use device_buffer_init::{initialize_device_buffers, MemoryInitializationError};
+pub use device_buffer_init::{
+  record_device_buffer_initialization, InitializationStagingBuffers,
+  RecordMemoryInitializationFailedError,
+};
 pub use memory_bound::MemoryBound;
 
 #[allow(unused_imports)]

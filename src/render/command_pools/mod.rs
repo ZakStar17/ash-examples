@@ -3,6 +3,7 @@ use std::{marker::PhantomData, ptr};
 use ash::vk;
 
 mod graphics;
+pub mod initialization;
 mod temporary_graphics;
 mod transfer;
 
@@ -10,7 +11,11 @@ pub use graphics::GraphicsCommandBufferPool;
 pub use temporary_graphics::TemporaryGraphicsCommandPool;
 pub use transfer::TransferCommandBufferPool;
 
-pub fn create_command_pool(
+use crate::render::{
+  device_destroyable::DeviceManuallyDestroyed, initialization::device::PhysicalDevice,
+};
+
+fn create_command_pool(
   device: &ash::Device,
   flags: vk::CommandPoolCreateFlags,
   queue_family_index: u32,
