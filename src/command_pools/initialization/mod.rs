@@ -3,14 +3,10 @@ use std::{marker::PhantomData, ptr};
 use ash::{vk, Device};
 
 use crate::{
-  create_objs::create_fence,
-  device_destroyable::DeviceManuallyDestroyed,
-  errors::QueueSubmitError,
-  initialization::device::{QueueFamilies, Queues},
-  utility::OnErr,
+  create_objs::create_fence, device_destroyable::DeviceManuallyDestroyed, errors::QueueSubmitError,
 };
 
-pub struct InitTransferCommandBufferPool {
+pub struct InitCommandBufferPool {
   pool: vk::CommandPool,
   cb: vk::CommandBuffer,
 }
@@ -24,8 +20,7 @@ pub struct PendingInitialization {
 
 impl PendingInitialization {
   pub unsafe fn wait_and_self_destroy(&self, device: &ash::Device) -> Result<(), QueueSubmitError> {
-    device
-      .wait_for_fences(&[self.fence], true, u64::MAX)?;
+    device.wait_for_fences(&[self.fence], true, u64::MAX)?;
 
     self.fence.destroy_self(device);
     self.pool.destroy_self(device);
@@ -33,10 +28,10 @@ impl PendingInitialization {
   }
 }
 
-impl InitTransferCommandBufferPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
+impl InitCommandBufferPool {
+  pub fn new(device: &ash::Device, queue_family_index: u32) -> Result<Self, vk::Result> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index())?;
+    let pool = super::create_command_pool(device, flags, queue_family_index)?;
 
     let command_buffers = super::allocate_primary_command_buffers(device, pool, 1)?;
     let cb = command_buffers[0];
@@ -49,19 +44,35 @@ impl InitTransferCommandBufferPool {
     Ok(Self { pool, cb })
   }
 
-  pub unsafe fn record_copy_buffer_cmd(&self, device: &ash::Device, info: &vk::CopyBufferInfo2) {
-    device.cmd_copy_buffer2(self.cb, info);
+  pub unsafe fn record_copy_staging_buffer_to_buffer(
+    &self,
+    device: &ash::Device,
+    staging: vk::Buffer,
+    dst: vk::Buffer,
+    size: vk::DeviceSize,
+  ) {
+    let region = vk::BufferCopy {
+      src_offset: 0,
+      dst_offset: 0,
+      size,
+    };
+    device.cmd_copy_buffer(self.cb, staging, dst, &[region]);
   }
 
   pub unsafe fn end_and_submit(
     self,
     device: &Device,
-    queues: &Queues,
-  ) -> Result<PendingInitialization, QueueSubmitError> {
+    queue: vk::Queue,
+  ) -> Result<PendingInitialization, (Self, QueueSubmitError)> {
     let cb: vk::CommandBuffer = self.cb;
-    device.end_command_buffer(cb)?;
+    if let Err(err) = device.end_command_buffer(cb) {
+      return Err((self, err.into()));
+    }
 
-    let fence = create_fence(device)?;
+    let fence = match create_fence(device) {
+      Ok(v) => v,
+      Err(err) => return Err((self, err.into())),
+    };
     let submit_info = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
       p_next: ptr::null(),
@@ -75,9 +86,9 @@ impl InitTransferCommandBufferPool {
       _marker: PhantomData,
     };
     unsafe {
-      device
-        .queue_submit(queues.transfer, &[submit_info], fence)
-        .on_err(|_| fence.destroy_self(device))?;
+      if let Err(err) = device.queue_submit(queue, &[submit_info], fence) {
+        return Err((self, err.into()));
+      }
     }
     Ok(PendingInitialization {
       pool: self.pool,
@@ -87,7 +98,7 @@ impl InitTransferCommandBufferPool {
 }
 
 // should not be called while buffer is in submission
-impl DeviceManuallyDestroyed for InitTransferCommandBufferPool {
+impl DeviceManuallyDestroyed for InitCommandBufferPool {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     device.destroy_command_pool(self.pool, None);
   }

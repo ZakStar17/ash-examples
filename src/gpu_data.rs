@@ -3,9 +3,7 @@ use std::{marker::PhantomData, mem::size_of, ops::BitOr, ptr};
 use ash::vk;
 
 use crate::{
-  allocator::{
-    self, InitializationStagingBuffers, MemoryWithType, RecordMemoryInitializationFailedError,
-  },
+  allocator::{self, DeviceMemoryInitializationError, MemoryWithType, SingleUseStagingBuffers},
   command_pools::{self, initialization::PendingInitialization},
   create_objs::{create_buffer, create_image, create_image_view},
   device_destroyable::{destroy, DeviceManuallyDestroyed},
@@ -40,7 +38,7 @@ pub struct GPUData {
 #[derive(Debug)]
 pub struct PendingDataInitialization {
   command_buffer_submit: PendingInitialization,
-  staging_buffers: InitializationStagingBuffers<2>,
+  staging_buffers: SingleUseStagingBuffers<2>,
 }
 
 impl PendingDataInitialization {
@@ -61,6 +59,56 @@ impl DeviceManuallyDestroyed for PendingDataInitialization {
   }
 }
 
+fn create_and_copy_from_staging_buffers(
+  device: &Device,
+  physical_device: &PhysicalDevice,
+  queues: &Queues,
+  vertex_buffer: vk::Buffer,
+  index_buffer: vk::Buffer,
+) -> Result<PendingDataInitialization, DeviceMemoryInitializationError> {
+  let graphics_pool = command_pools::initialization::InitCommandBufferPool::new(
+    device,
+    physical_device.queue_families.get_graphics_index(),
+  )?;
+
+  unsafe {
+    let staging_buffers = allocator::create_single_use_staging_buffers(
+      device,
+      physical_device,
+      [
+        (VERTICES.as_ptr() as *const u8, VERTEX_SIZE),
+        (INDICES.as_ptr() as *const u8, INDEX_SIZE),
+      ],
+      #[cfg(feature = "log_alloc")]
+      "DEVICE LOCAL OBJECTS",
+    )
+    .on_err(|_| graphics_pool.destroy_self(device))?;
+
+    graphics_pool.record_copy_staging_buffer_to_buffer(
+      device,
+      staging_buffers.buffers[0],
+      vertex_buffer,
+      VERTEX_SIZE,
+    );
+    graphics_pool.record_copy_staging_buffer_to_buffer(
+      device,
+      staging_buffers.buffers[1],
+      index_buffer,
+      INDEX_SIZE,
+    );
+
+    let submit = graphics_pool
+      .end_and_submit(device, queues.graphics)
+      .on_err(|(pool, _err)| destroy!(device => &staging_buffers, pool))
+      .map_err(|(_, err)| err)?;
+
+    Ok(PendingDataInitialization {
+      command_buffer_submit: submit,
+      staging_buffers,
+    })
+  }
+}
+
 impl GPUData {
   pub fn new(
     device: &Device,
@@ -69,7 +117,7 @@ impl GPUData {
     render_extent: vk::Extent2D,
     output_size: u64,
     queues: &Queues,
-  ) -> Result<(Self, PendingDataInitialization), RecordMemoryInitializationFailedError> {
+  ) -> Result<(Self, PendingDataInitialization), DeviceMemoryInitializationError> {
     let render_target = create_image(
       device,
       render_extent.width,
@@ -105,42 +153,19 @@ impl GPUData {
     )
     .on_err(|_| unsafe { destroy!(device => &index_buffer, &vertex_buffer, &render_target) })?;
 
-    let destroy_created_objs = || unsafe {
+    let pending_device_init = create_and_copy_from_staging_buffers(
+      device,
+      physical_device,
+      queues,
+      vertex_buffer,
+      index_buffer,
+    )
+    .on_err(|_| unsafe {
       destroy!(device => &index_buffer, &vertex_buffer, &render_target, &device_alloc)
-    };
-
-    let initialization_command_pool =
-      command_pools::initialization::InitTransferCommandBufferPool::create(
-        device,
-        &physical_device.queue_families,
-      )
-      .on_err(|_| destroy_created_objs())?;
-
-    let pending_initialization = unsafe {
-      let staging_buffers = allocator::record_device_buffer_initialization(
-        device,
-        physical_device,
-        [vertex_buffer, index_buffer],
-        [
-          (VERTICES.as_ptr() as *const u8, VERTEX_SIZE),
-          (INDICES.as_ptr() as *const u8, INDEX_SIZE),
-        ],
-        &initialization_command_pool,
-        #[cfg(feature = "log_alloc")]
-        "DEVICE LOCAL OBJECTS",
-      )
-      .on_err(|_| destroy_created_objs())?;
-      let submit = initialization_command_pool
-        .end_and_submit(device, queues)
-        .on_err(|_| destroy_created_objs())?;
-      PendingDataInitialization {
-        command_buffer_submit: submit,
-        staging_buffers,
-      }
-    };
+    })?;
 
     let host_output_buffer = create_buffer(device, output_size, vk::BufferUsageFlags::TRANSFER_DST)
-    .on_err(|_| unsafe { destroy!(device => &render_target, &pending_initialization, &index_buffer, &vertex_buffer, &device_alloc) })?;
+    .on_err(|_| unsafe { destroy!(device => &render_target, &pending_device_init, &index_buffer, &vertex_buffer, &device_alloc) })?;
 
     let host_output_buffer_alloc = allocator::allocate_and_bind_memory(
       device,
@@ -156,7 +181,7 @@ impl GPUData {
       #[cfg(feature = "log_alloc")]
       "OUTPUT BUFFER",
     )
-    .on_err(|_| unsafe {destroy!(device => &host_output_buffer, &render_target, &pending_initialization, &index_buffer, &vertex_buffer, &device_alloc) })?;
+    .on_err(|_| unsafe {destroy!(device => &host_output_buffer, &render_target, &pending_device_init, &index_buffer, &vertex_buffer, &device_alloc) })?;
     let host_output_buffer_memory_offset = host_output_buffer_alloc.obj_to_memory_assignment[0].1;
 
     const EXPECTED_MAX_MEM_COUNT: usize = 4;
@@ -173,7 +198,7 @@ impl GPUData {
     log::info!("Allocated memory count: {}", memories.len());
 
     let r_target_image_view = create_image_view(device, render_target)
-    .on_err(|_| unsafe {destroy!(device => &host_output_buffer, &render_target, &pending_initialization, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
+    .on_err(|_| unsafe {destroy!(device => &host_output_buffer, &render_target, &pending_device_init, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
 
     let r_target_framebuffer = create_framebuffer(
       device,
@@ -181,7 +206,7 @@ impl GPUData {
       r_target_image_view,
       render_extent,
     ).on_err(|_| unsafe {
-      destroy!(device => &r_target_image_view, &host_output_buffer, &render_target, &pending_initialization, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
+      destroy!(device => &r_target_image_view, &host_output_buffer, &render_target, &pending_device_init, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
 
     Ok((
       Self {
@@ -195,7 +220,7 @@ impl GPUData {
         host_output_buffer_memory_index,
         host_output_buffer_memory_offset,
       },
-      pending_initialization,
+      pending_device_init,
     ))
   }
 
@@ -216,7 +241,7 @@ impl GPUData {
       let range = vk::MappedMemoryRange {
         s_type: vk::StructureType::MAPPED_MEMORY_RANGE,
         p_next: ptr::null(),
-        memory: memory,
+        memory,
         offset: 0,
         size: vk::WHOLE_SIZE,
         _marker: PhantomData,

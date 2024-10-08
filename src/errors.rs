@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::{
-  allocator::RecordMemoryInitializationFailedError,
+  allocator::DeviceMemoryInitializationError,
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
 };
@@ -74,11 +74,11 @@ impl From<vk::Result> for QueueSubmitError {
   }
 }
 
-impl From<QueueSubmitError> for RecordMemoryInitializationFailedError {
+impl From<QueueSubmitError> for DeviceMemoryInitializationError {
   fn from(value: QueueSubmitError) -> Self {
     match value {
       QueueSubmitError::DeviceIsLost(_) => {
-        RecordMemoryInitializationFailedError::DeviceIsLost(DeviceIsLost {})
+        DeviceMemoryInitializationError::DeviceIsLost(DeviceIsLost {})
       }
       QueueSubmitError::OutOfMemory(v) => v.into(),
     }
@@ -94,7 +94,7 @@ pub enum InitializationError {
   NoCompatibleDevices,
 
   #[error("Failed to allocate memory for some buffer or image\n{0}")]
-  AllocationFailed(#[from] RecordMemoryInitializationFailedError),
+  AllocationFailed(#[from] DeviceMemoryInitializationError),
 
   #[error("Ran out of memory while issuing some command or creating memory: {0}")]
   GenericOutOfMemoryError(#[from] OutOfMemoryError),
