@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::BitOr, ptr};
+use std::{marker::PhantomData, ptr};
 
 use ash::{vk, Device};
 

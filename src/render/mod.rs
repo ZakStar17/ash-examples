@@ -4,6 +4,7 @@ mod create_objs;
 mod descriptor_sets;
 mod device_destroyable;
 mod errors;
+mod format_conversions;
 mod gpu_data;
 mod initialization;
 mod pipelines;

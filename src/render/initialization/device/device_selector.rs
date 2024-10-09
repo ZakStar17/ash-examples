@@ -4,6 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
+    format_conversions::KNOWN_FORMATS,
     initialization::{Surface, SurfaceError},
     RenderPosition, TARGET_API_VERSION,
   },
@@ -41,15 +42,6 @@ fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   );
 }
 
-// fn supports_texture_format(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
-//   let properties =
-//     unsafe { instance.get_physical_device_format_properties(physical_device, TEXTURE_FORMAT) };
-
-//   properties
-//     .optimal_tiling_features
-//     .contains(TEXTURE_FORMAT_FEATURES)
-// }
-
 fn supports_swapchain(device: vk::PhysicalDevice, surface: &Surface) -> Result<bool, SurfaceError> {
   let formats = unsafe { surface.get_formats(device) }?;
   let present_modes = unsafe { surface.get_present_modes(device) }?;
@@ -75,11 +67,14 @@ fn check_physical_device_capabilities(
     return Ok(false);
   }
 
-  // todo
-  // if !supports_texture_format(instance, physical_device) {
-  //   log::warn!("Skipped physical device: Device does not support texture format");
-  //   return Ok(false);
-  // }
+  // device supports any of the known formats
+  if !KNOWN_FORMATS
+    .iter()
+    .any(|&f| super::format_is_supported(instance, physical_device, f))
+  {
+    log::error!("Skipped physical device: Device does not support any known format required by the application");
+    return Ok(false);
+  }
 
   if !supported_extensions.swapchain || !supports_swapchain(physical_device, surface)? {
     log::warn!("Skipped physical device: Device does not support swapchain");

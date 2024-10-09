@@ -16,7 +16,20 @@ pub use logical_device::Device;
 pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, Queues};
 
-use crate::utility;
+use crate::{render::gpu_data::TEXTURE_FORMAT_FEATURES, utility};
+
+pub fn format_is_supported(
+  instance: &ash::Instance,
+  physical_device: vk::PhysicalDevice,
+  format: vk::Format,
+) -> bool {
+  let properties =
+    unsafe { instance.get_physical_device_format_properties(physical_device, format) };
+
+  properties
+    .optimal_tiling_features
+    .contains(TEXTURE_FORMAT_FEATURES)
+}
 
 #[derive(Debug, Default)]
 pub struct EnabledDeviceExtensions {

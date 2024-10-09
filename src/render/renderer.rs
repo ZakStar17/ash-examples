@@ -9,7 +9,13 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
+  ferris::Ferris,
+  render::{
+    format_conversions::{self, KNOWN_FORMATS},
+    initialization::device,
+  },
+  utility::OnErr,
+  INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
 };
 
 use super::{
@@ -25,7 +31,7 @@ use super::{
     device::{Device, PhysicalDevice, Queues},
     Surface,
   },
-  pipelines::{self, GraphicsPipeline, PipelineCreationError},
+  pipelines::{self, GraphicsPipeline},
   render_object::RenderPosition,
   render_pass::{
     create_framebuffer, create_framebuffers_from_swapchain_images, create_render_pass,
@@ -160,21 +166,6 @@ impl Renderer {
       Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
     destructor.push(&device);
 
-    let (width, height, texture_data) = read_texture_bytes_as_rgba8()?;
-    let texture_extent = vk::Extent2D { width, height };
-
-    let (gpu_data, gpu_data_pending_initialization) = GPUData::new(
-      &device,
-      &physical_device,
-      texture_extent,
-      vk::Format::R8G8B8A8_SRGB, // todo
-      texture_data,
-      &queues,
-    )
-    .on_err(|_| unsafe { destructor.fire(&device) })?;
-    destructor.push(&gpu_data);
-    destructor.push(&gpu_data_pending_initialization);
-
     let swapchains = Swapchains::new(
       &instance,
       &physical_device,
@@ -185,6 +176,33 @@ impl Renderer {
     )
     .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&swapchains);
+
+    let swapchain_format = swapchains.get_format();
+    let texture_format = if KNOWN_FORMATS.contains(&swapchain_format) {
+      swapchain_format
+    } else {
+      KNOWN_FORMATS
+        .into_iter()
+        .find(|&f| device::format_is_supported(&instance, *physical_device, f))
+        .unwrap()
+    };
+
+    let (width, height, mut texture_data) = read_texture_bytes_as_rgba8()?;
+    let texture_extent = vk::Extent2D { width, height };
+    format_conversions::convert_rgba_data_to_format(&mut texture_data, texture_format);
+    log::info!("Creating texture with the format {:?}", texture_format);
+
+    let (gpu_data, gpu_data_pending_initialization) = GPUData::new(
+      &device,
+      &physical_device,
+      texture_extent,
+      texture_format,
+      texture_data,
+      &queues,
+    )
+    .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(&gpu_data);
+    destructor.push(&gpu_data_pending_initialization);
 
     let render_pass = create_render_pass(&device, swapchains.get_format())
       .on_err(|_| unsafe { destructor.fire(&device) })?;
@@ -234,7 +252,7 @@ impl Renderer {
     unsafe {
       gpu_data_pending_initialization
         .wait_and_self_destroy(&device)
-        .on_err(|_| unsafe { destructor.fire(&device) })?;
+        .on_err(|_| destructor.fire(&device))?;
     }
 
     Ok(Self {
