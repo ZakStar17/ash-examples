@@ -4,9 +4,7 @@ use ash::vk;
 
 use crate::{
   render::{
-    allocator::{
-      self, InitializationStagingBuffers, MemoryWithType, RecordMemoryInitializationFailedError,
-    },
+    allocator::{self, MemoryWithType},
     command_pools::{self, initialization::PendingInitialization},
     create_objs::{create_buffer, create_image, create_image_view},
     device_destroyable::{destroy, DeviceManuallyDestroyed},
@@ -16,6 +14,8 @@ use crate::{
   },
   utility::{const_flag_bitor, OnErr},
 };
+
+use super::allocator::{DeviceMemoryInitializationError, SingleUseStagingBuffers};
 
 const TEXTURE_PATH: &str = "./ferris.png";
 pub const TEXTURE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
@@ -56,7 +56,7 @@ pub struct GPUData {
 #[derive(Debug)]
 pub struct PendingDataInitialization {
   command_buffer_submit: PendingInitialization,
-  staging_buffers: InitializationStagingBuffers<2>,
+  staging_buffers: SingleUseStagingBuffers<2>,
 }
 
 impl PendingDataInitialization {
@@ -77,6 +77,58 @@ impl DeviceManuallyDestroyed for PendingDataInitialization {
   }
 }
 
+fn create_and_copy_from_staging_buffers(
+  device: &Device,
+  physical_device: &PhysicalDevice,
+  queues: &Queues,
+  vertex_buffer: vk::Buffer,
+  index_buffer: vk::Buffer,
+  texture: vk::Image,
+  texture_data: (u32, u32, Vec<u8>),
+) -> Result<PendingDataInitialization, DeviceMemoryInitializationError> {
+  let graphics_pool = command_pools::initialization::InitCommandBufferPool::new(
+    device,
+    physical_device.queue_families.get_graphics_index(),
+  )?;
+
+  unsafe {
+    let staging_buffers = allocator::create_single_use_staging_buffers(
+      device,
+      physical_device,
+      [
+        (VERTICES.as_ptr() as *const u8, VERTICES_SIZE),
+        (QUAD_INDICES.as_ptr() as *const u8, QUAD_INDICES_SIZE),
+      ],
+      #[cfg(feature = "log_alloc")]
+      "DEVICE LOCAL OBJECTS",
+    )
+    .on_err(|_| graphics_pool.destroy_self(device))?;
+
+    graphics_pool.record_copy_staging_buffer_to_buffer(
+      device,
+      staging_buffers.buffers[0],
+      vertex_buffer,
+      VERTICES_SIZE,
+    );
+    graphics_pool.record_copy_staging_buffer_to_buffer(
+      device,
+      staging_buffers.buffers[1],
+      index_buffer,
+      QUAD_INDICES_SIZE,
+    );
+
+    let submit = graphics_pool
+      .end_and_submit(device, queues.graphics)
+      .on_err(|(pool, _err)| destroy!(device => &staging_buffers, pool))
+      .map_err(|(_, err)| err)?;
+
+    Ok(PendingDataInitialization {
+      command_buffer_submit: submit,
+      staging_buffers,
+    })
+  }
+}
+
 impl GPUData {
   pub fn new(
     device: &Device,
@@ -84,7 +136,7 @@ impl GPUData {
     texture_extent: vk::Extent2D,
     texture_format: vk::Format,
     queues: &Queues,
-  ) -> Result<(Self, PendingDataInitialization), RecordMemoryInitializationFailedError> {
+  ) -> Result<(Self, PendingDataInitialization), DeviceMemoryInitializationError> {
     let texture = create_image(
       device,
       texture_format,
@@ -121,42 +173,19 @@ impl GPUData {
     )
     .on_err(|_| unsafe { destroy!(device => &index_buffer, &vertex_buffer, &texture) })?;
 
-    let destroy_created_objs =
-      || unsafe { destroy!(device => &index_buffer, &vertex_buffer, &texture, &device_alloc) };
-
-    let initialization_command_pool =
-      command_pools::initialization::InitTransferCommandBufferPool::create(
-        device,
-        &physical_device.queue_families,
-      )
-      .on_err(|_| destroy_created_objs())?;
+    let pending_device_init = create_and_copy_from_staging_buffers(
+      device,
+      physical_device,
+      queues,
+      vertex_buffer,
+      index_buffer,
+    )
+    .on_err(|_| unsafe {
+      destroy!(device => &index_buffer, &vertex_buffer, &texture, &device_alloc)
+    })?;
 
     // todo
     let (image_width, image_height, image_bytes) = read_texture_bytes_as_rgba8()?;
-
-    let pending_initialization = unsafe {
-      // todo: incorporate texture loading inside as well
-      let staging_buffers = allocator::record_device_buffer_initialization(
-        device,
-        physical_device,
-        [vertex_buffer, index_buffer],
-        [
-          (VERTICES.as_ptr() as *const u8, VERTICES_SIZE),
-          (QUAD_INDICES.as_ptr() as *const u8, QUAD_INDICES_SIZE),
-        ],
-        &initialization_command_pool,
-        #[cfg(feature = "log_alloc")]
-        "DEVICE LOCAL OBJECTS",
-      )
-      .on_err(|_| destroy_created_objs())?;
-      let submit = initialization_command_pool
-        .end_and_submit(device, queues)
-        .on_err(|_| destroy_created_objs())?;
-      PendingDataInitialization {
-        command_buffer_submit: submit,
-        staging_buffers,
-      }
-    };
 
     const EXPECTED_MAX_MEM_COUNT: usize = 3;
     let mut memories = Vec::with_capacity(EXPECTED_MAX_MEM_COUNT);

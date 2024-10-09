@@ -34,7 +34,14 @@ use crate::{
 };
 
 use super::{
-  data::ConstantData, descriptor_sets::DescriptorPool, gpu_data::GPUData, initialization::Surface, pipelines::PipelineCreationError, render_object::RenderPosition, swapchain::{SwapchainCreationError, Swapchains}, RenderInit, FRAMES_IN_FLIGHT
+  data::ConstantData,
+  descriptor_sets::DescriptorPool,
+  gpu_data::GPUData,
+  initialization::Surface,
+  pipelines::PipelineCreationError,
+  render_object::RenderPosition,
+  swapchain::{SwapchainCreationError, Swapchains},
+  RenderInit, FRAMES_IN_FLIGHT,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -177,15 +184,11 @@ impl Renderer {
       Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
     destructor.push(&device);
 
-    let (gpu_data, gpu_data_pending_initialization) = GPUData::new(
-      &device,
-      &physical_device,
-      buffer_size,
-      &queues,
-    )
-    .on_err(|_| unsafe { destructor.fire(&device) })?;
-  destructor.push(&gpu_data);
-  destructor.push(&gpu_data_pending_initialization);
+    let (gpu_data, gpu_data_pending_initialization) =
+      GPUData::new(&device, &physical_device, buffer_size, &queues)
+        .on_err(|_| unsafe { destructor.fire(&device) })?;
+    destructor.push(&gpu_data);
+    destructor.push(&gpu_data_pending_initialization);
 
     let swapchains = Swapchains::new(
       &instance,

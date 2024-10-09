@@ -15,17 +15,16 @@ use crate::{
   utility::{self, OnErr},
 };
 
-mod device_buffer_init;
 #[cfg(feature = "log_alloc")]
 mod logging;
 mod mem_type_assignment;
 mod memory_bound;
+mod staging_buffers;
 
-pub use device_buffer_init::{
-  record_device_buffer_initialization, InitializationStagingBuffers,
-  RecordMemoryInitializationFailedError,
-};
 pub use memory_bound::MemoryBound;
+pub use staging_buffers::{
+  create_single_use_staging_buffers, DeviceMemoryInitializationError, SingleUseStagingBuffers,
+};
 
 #[allow(unused_imports)]
 #[cfg(feature = "log_alloc")]

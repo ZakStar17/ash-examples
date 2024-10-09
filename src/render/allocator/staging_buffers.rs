@@ -1,5 +1,4 @@
 use std::{
-  marker::PhantomData,
   ops::BitOr,
   ptr::{self, copy_nonoverlapping},
 };
@@ -8,7 +7,6 @@ use ash::vk;
 
 use crate::{
   render::{
-    command_pools::initialization::InitTransferCommandBufferPool,
     create_objs::create_buffer,
     device_destroyable::{fill_destroyable_array_from_iter_using_default, DeviceManuallyDestroyed},
     errors::{DeviceIsLost, OutOfMemoryError},
@@ -20,7 +18,7 @@ use crate::{
 use super::{AllocationError, MemoryBound, MemoryWithType};
 
 #[derive(Debug, thiserror::Error)]
-pub enum RecordMemoryInitializationFailedError {
+pub enum DeviceMemoryInitializationError {
   #[error("Failed to allocate memory for staging buffers:\n{}", {1})]
   AllocationError(#[from] AllocationError),
   #[error("Object to memory type assignment on staging buffers did not succeed")]
@@ -31,7 +29,7 @@ pub enum RecordMemoryInitializationFailedError {
   DeviceIsLost(#[from] DeviceIsLost),
 }
 
-impl From<vk::Result> for RecordMemoryInitializationFailedError {
+impl From<vk::Result> for DeviceMemoryInitializationError {
   fn from(value: vk::Result) -> Self {
     match value {
       vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
@@ -47,13 +45,13 @@ impl From<vk::Result> for RecordMemoryInitializationFailedError {
 // to be destroyed after command buffer finishes
 #[must_use]
 #[derive(Debug)]
-pub struct InitializationStagingBuffers<const S: usize> {
-  buffers: [vk::Buffer; S],
+pub struct SingleUseStagingBuffers<const S: usize> {
+  pub buffers: [vk::Buffer; S],
   memories: [vk::DeviceMemory; vk::MAX_MEMORY_TYPES],
   memory_count: usize,
 }
 
-impl<const S: usize> DeviceManuallyDestroyed for InitializationStagingBuffers<S> {
+impl<const S: usize> DeviceManuallyDestroyed for SingleUseStagingBuffers<S> {
   unsafe fn destroy_self(&self, device: &ash::Device) {
     self.buffers.destroy_self(device);
     self.memories[0..self.memory_count].destroy_self(device);
@@ -62,16 +60,13 @@ impl<const S: usize> DeviceManuallyDestroyed for InitializationStagingBuffers<S>
 
 // creates staging buffers with data to be copied and records appropriate commands to the
 // initialization command buffer
-pub unsafe fn record_device_buffer_initialization<const S: usize>(
+pub unsafe fn create_single_use_staging_buffers<const S: usize>(
   device: &Device,
   physical_device: &PhysicalDevice,
-  buffers: [vk::Buffer; S],
-  data: [(*const u8, u64); S],
-  // contains one command buffer, must be already in recording state
-  record_pool: &InitTransferCommandBufferPool,
+  data: [(*const u8, vk::DeviceSize); S],
   #[cfg(feature = "log_alloc")] allocation_name: &str,
-) -> Result<InitializationStagingBuffers<S>, RecordMemoryInitializationFailedError> {
-  assert!(!buffers.is_empty());
+) -> Result<SingleUseStagingBuffers<S>, DeviceMemoryInitializationError> {
+  assert!(!data.is_empty());
   let staging_buffers: [vk::Buffer; S] = fill_destroyable_array_from_iter_using_default!(
     device,
     data
@@ -142,22 +137,12 @@ pub unsafe fn record_device_buffer_initialization<const S: usize>(
 
   // no explicit flushing: memory flushed implicitly on queue submit
 
-  for i in 0..S {
-    let region = vk::BufferCopy2::default().size(data[i].1);
-    let cp_info = vk::CopyBufferInfo2 {
-      s_type: vk::StructureType::COPY_BUFFER_INFO_2,
-      p_next: ptr::null(),
-      src_buffer: staging_buffers[i],
-      dst_buffer: buffers[i],
-      region_count: 1,
-      p_regions: &region,
-      _marker: PhantomData,
-    };
-    record_pool.record_copy_buffer_cmd(device, &cp_info);
+  let memories = staging_alloc.memories.map(|m| m.memory);
+  for &memory in &memories[0..staging_alloc.memory_count] {
+    device.unmap_memory(memory);
   }
 
-  let memories = staging_alloc.memories.map(|m| m.memory);
-  Ok(InitializationStagingBuffers {
+  Ok(SingleUseStagingBuffers {
     buffers: staging_buffers,
     memories,
     memory_count: staging_alloc.memory_count,

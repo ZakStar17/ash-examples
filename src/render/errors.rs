@@ -1,13 +1,10 @@
 use ash::vk;
 use raw_window_handle::HandleError;
 
-use crate::render::{
+use super::{
+  allocator::DeviceMemoryInitializationError,
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
-};
-
-use super::{
-  allocator::RecordMemoryInitializationFailedError,
   renderer::SwapchainRecreationError,
   swapchain::{AcquireNextImageError, SwapchainCreationError},
 };
@@ -88,11 +85,11 @@ impl From<vk::Result> for QueueSubmitError {
   }
 }
 
-impl From<QueueSubmitError> for RecordMemoryInitializationFailedError {
+impl From<QueueSubmitError> for DeviceMemoryInitializationError {
   fn from(value: QueueSubmitError) -> Self {
     match value {
       QueueSubmitError::DeviceIsLost(_) => {
-        RecordMemoryInitializationFailedError::DeviceIsLost(DeviceIsLost {})
+        DeviceMemoryInitializationError::DeviceIsLost(DeviceIsLost {})
       }
       QueueSubmitError::OutOfMemory(v) => v.into(),
     }
@@ -114,7 +111,7 @@ pub enum InitializationError {
   ImageError(#[source] image::ImageError),
 
   #[error("Failed to allocate memory for some buffer or image\n{0}")]
-  AllocationFailed(#[from] RecordMemoryInitializationFailedError),
+  AllocationFailed(#[from] DeviceMemoryInitializationError),
 
   #[error("Ran out of memory while issuing some command or creating memory: {0}")]
   GenericOutOfMemoryError(#[from] OutOfMemoryError),
