@@ -4,13 +4,13 @@ use ash::vk;
 
 use crate::{
   render::{
-    data::{ConstantData, INDEX_COUNT},
     descriptor_sets::DescriptorPool,
     device_destroyable::DeviceManuallyDestroyed,
     errors::OutOfMemoryError,
+    gpu_data::GPUData,
     initialization::device::QueueFamilies,
     pipelines::GraphicsPipeline,
-    render_object::RenderPosition,
+    render_object::{RenderPosition, QUAD_INDICES},
   },
   utility, BACKGROUND_COLOR,
 };
@@ -44,7 +44,7 @@ impl GraphicsCommandBufferPool {
     framebuffer: vk::Framebuffer,
     pipeline: &GraphicsPipeline,
     descriptor_pool: &DescriptorPool,
-    data: &ConstantData,
+    data: &GPUData,
     position: &RenderPosition, // Ferris's position
   ) -> Result<(), OutOfMemoryError> {
     let cb = self.main;
@@ -89,9 +89,9 @@ impl GraphicsCommandBufferPool {
         utility::any_as_u8_slice(position),
       );
       device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline.current);
-      device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex], &[0]);
-      device.cmd_bind_index_buffer(cb, data.index, 0, vk::IndexType::UINT16);
-      device.cmd_draw_indexed(cb, INDEX_COUNT, 1, 0, 0, 0);
+      device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+      device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT16);
+      device.cmd_draw_indexed(cb, QUAD_INDICES.len() as u32, 1, 0, 0, 0);
 
       device.cmd_end_render_pass(cb);
     }

@@ -9,67 +9,43 @@ use winit::{
 };
 
 use crate::{
-  ferris::Ferris,
-  render::{
-    command_pools::{
-      GraphicsCommandBufferPool, TemporaryGraphicsCommandPool, TransferCommandBufferPool,
-    },
-    data::create_and_populate_constant_data,
-    device_destroyable::{
-      destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
-    },
-    errors::{InitializationError, OutOfMemoryError},
-    initialization::{
-      self,
-      device::{Device, PhysicalDevice, Queues},
-    },
-    pipelines::{self, GraphicsPipeline},
-    render_pass::{
-      create_framebuffer, create_framebuffers_from_swapchain_images, create_render_pass,
-    },
-    SWAPCHAIN_IMAGE_USAGES,
-  },
-  utility::OnErr,
-  INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
+  ferris::Ferris, utility::OnErr, INITIAL_WINDOW_HEIGHT, INITIAL_WINDOW_WIDTH, WINDOW_TITLE,
 };
 
 use super::{
-  data::ConstantData,
+  command_pools::GraphicsCommandBufferPool,
   descriptor_sets::DescriptorPool,
+  device_destroyable::{
+    destroy, fill_destroyable_array_with_expression, DeviceManuallyDestroyed, ManuallyDestroyed,
+  },
+  errors::{InitializationError, OutOfMemoryError, SwapchainRecreationError},
   gpu_data::GPUData,
-  initialization::Surface,
-  pipelines::PipelineCreationError,
+  initialization::{
+    self,
+    device::{Device, PhysicalDevice, Queues},
+    Surface,
+  },
+  pipelines::{self, GraphicsPipeline, PipelineCreationError},
   render_object::RenderPosition,
+  render_pass::{
+    create_framebuffer, create_framebuffers_from_swapchain_images, create_render_pass,
+  },
   swapchain::{SwapchainCreationError, Swapchains},
-  RenderInit, FRAMES_IN_FLIGHT,
+  RenderInit, FRAMES_IN_FLIGHT, SWAPCHAIN_IMAGE_USAGES,
 };
 
-#[derive(Debug, thiserror::Error)]
-pub enum SwapchainRecreationError {
-  #[error("Out of memory")]
-  OutOfMemory(OutOfMemoryError),
-  #[error("Failed to create a swapchain")]
-  SwapchainError(SwapchainCreationError),
-  #[error("Failed to create a pipeline")]
-  PipelineCreationError(PipelineCreationError),
-}
+const TEXTURE_PATH: &str = "./ferris.png";
 
-impl From<OutOfMemoryError> for SwapchainRecreationError {
-  fn from(value: OutOfMemoryError) -> Self {
-    SwapchainRecreationError::OutOfMemory(value)
-  }
-}
+fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), image::ImageError> {
+  let img = image::ImageReader::open(TEXTURE_PATH)?
+    .decode()?
+    .into_rgba8();
+  let width = img.width();
+  let height = img.height();
 
-impl From<SwapchainCreationError> for SwapchainRecreationError {
-  fn from(value: SwapchainCreationError) -> Self {
-    SwapchainRecreationError::SwapchainError(value)
-  }
-}
-
-impl From<PipelineCreationError> for SwapchainRecreationError {
-  fn from(value: PipelineCreationError) -> Self {
-    SwapchainRecreationError::PipelineCreationError(value)
-  }
+  let bytes = img.into_raw();
+  assert!(bytes.len() == width as usize * height as usize * 4);
+  Ok((width, height, bytes))
 }
 
 pub struct Renderer {
@@ -145,7 +121,7 @@ impl Renderer {
       // .with_resizable(false)
       .build(target)?;
 
-    let mut destructor: Destructor<13> = Destructor::new();
+    let mut destructor: Destructor<14> = Destructor::new();
 
     #[cfg(feature = "vl")]
     let (entry, instance, debug_utils) = pre_window.deconstruct();
@@ -184,9 +160,18 @@ impl Renderer {
       Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
     destructor.push(&device);
 
-    let (gpu_data, gpu_data_pending_initialization) =
-      GPUData::new(&device, &physical_device, buffer_size, &queues)
-        .on_err(|_| unsafe { destructor.fire(&device) })?;
+    let (width, height, texture_data) = read_texture_bytes_as_rgba8()?;
+    let texture_extent = vk::Extent2D { width, height };
+
+    let (gpu_data, gpu_data_pending_initialization) = GPUData::new(
+      &device,
+      &physical_device,
+      texture_extent,
+      vk::Format::R8G8B8A8_SRGB, // todo
+      texture_data,
+      &queues,
+    )
+    .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&gpu_data);
     destructor.push(&gpu_data_pending_initialization);
 
@@ -197,7 +182,8 @@ impl Renderer {
       &surface,
       window.inner_size(),
       SWAPCHAIN_IMAGE_USAGES,
-    )?;
+    )
+    .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&swapchains);
 
     let render_pass = create_render_pass(&device, swapchains.get_format())
@@ -222,42 +208,7 @@ impl Renderer {
     }
     destructor.push(&pipeline_cache);
 
-    let data = {
-      let mut temp_transfer_pool =
-        TransferCommandBufferPool::create(&device, &physical_device.queue_families)
-          .on_err(|_| unsafe { destructor.fire(&device) })?;
-      let mut temp_graphics_pool =
-        TemporaryGraphicsCommandPool::create(&device, &physical_device.queue_families).on_err(
-          |_| unsafe {
-            temp_transfer_pool.destroy_self(&device);
-            destructor.fire(&device);
-          },
-        )?;
-
-      let data = create_and_populate_constant_data(
-        &device,
-        &physical_device,
-        &queues,
-        &mut temp_transfer_pool,
-        &mut temp_graphics_pool,
-      )
-      .on_err(|_| unsafe {
-        temp_transfer_pool.destroy_self(&device);
-        temp_graphics_pool.destroy_self(&device);
-        destructor.fire(&device)
-      })?;
-
-      log::debug!("GPU data addresses: {:#?}", data);
-
-      unsafe {
-        temp_transfer_pool.destroy_self(&device);
-        temp_graphics_pool.destroy_self(&device);
-      }
-
-      data
-    };
-
-    let descriptor_pool = DescriptorPool::new(&device, data.texture_view)
+    let descriptor_pool = DescriptorPool::new(&device, gpu_data.texture_view)
       .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(&descriptor_pool);
 
@@ -280,6 +231,12 @@ impl Renderer {
     .on_err(|_| unsafe { destructor.fire(&device) })?;
     destructor.push(command_pools.as_ptr());
 
+    unsafe {
+      gpu_data_pending_initialization
+        .wait_and_self_destroy(&device)
+        .on_err(|_| unsafe { destructor.fire(&device) })?;
+    }
+
     Ok(Self {
       window,
       surface,
@@ -291,7 +248,7 @@ impl Renderer {
       device,
       queues,
       command_pools,
-      data,
+      data: gpu_data,
       render_pass,
       pipeline: graphics_pipeline,
       pipeline_cache,

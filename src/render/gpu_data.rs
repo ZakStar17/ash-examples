@@ -17,7 +17,6 @@ use crate::{
 
 use super::allocator::{DeviceMemoryInitializationError, SingleUseStagingBuffers};
 
-const TEXTURE_PATH: &str = "./ferris.png";
 pub const TEXTURE_USAGES: vk::ImageUsageFlags = const_flag_bitor!(
   vk::ImageUsageFlags =>
   vk::ImageUsageFlags::SAMPLED,
@@ -29,22 +28,10 @@ pub const TEXTURE_FORMAT_FEATURES: vk::FormatFeatureFlags = const_flag_bitor!(
   vk::FormatFeatureFlags::SAMPLED_IMAGE
 );
 
-fn read_texture_bytes_as_rgba8() -> Result<(u32, u32, Vec<u8>), image::ImageError> {
-  let img = image::ImageReader::open(TEXTURE_PATH)?
-    .decode()?
-    .into_rgba8();
-  let width = img.width();
-  let height = img.height();
-
-  let bytes = img.into_raw();
-  assert!(bytes.len() == width as usize * height as usize * 4);
-  Ok((width, height, bytes))
-}
-
 #[derive(Debug)]
 pub struct GPUData {
   pub texture: vk::Image,
-  pub texture_image_view: vk::ImageView,
+  pub texture_view: vk::ImageView,
 
   pub vertex_buffer: vk::Buffer,
   pub index_buffer: vk::Buffer,
@@ -56,7 +43,7 @@ pub struct GPUData {
 #[derive(Debug)]
 pub struct PendingDataInitialization {
   command_buffer_submit: PendingInitialization,
-  staging_buffers: SingleUseStagingBuffers<2>,
+  staging_buffers: SingleUseStagingBuffers<3>,
 }
 
 impl PendingDataInitialization {
@@ -84,18 +71,22 @@ fn create_and_copy_from_staging_buffers(
   vertex_buffer: vk::Buffer,
   index_buffer: vk::Buffer,
   texture: vk::Image,
-  texture_data: (u32, u32, Vec<u8>),
+  texture_extent: vk::Extent2D,
+  texture_data: Vec<u8>,
 ) -> Result<PendingDataInitialization, DeviceMemoryInitializationError> {
   let graphics_pool = command_pools::initialization::InitCommandBufferPool::new(
     device,
     physical_device.queue_families.get_graphics_index(),
   )?;
-
   unsafe {
     let staging_buffers = allocator::create_single_use_staging_buffers(
       device,
       physical_device,
       [
+        (
+          texture_data.as_ptr() as *const u8,
+          texture_data.len() as u64,
+        ),
         (VERTICES.as_ptr() as *const u8, VERTICES_SIZE),
         (QUAD_INDICES.as_ptr() as *const u8, QUAD_INDICES_SIZE),
       ],
@@ -104,15 +95,22 @@ fn create_and_copy_from_staging_buffers(
     )
     .on_err(|_| graphics_pool.destroy_self(device))?;
 
-    graphics_pool.record_copy_staging_buffer_to_buffer(
+    graphics_pool.record_copy_staging_buffer_to_image(
       device,
       staging_buffers.buffers[0],
+      texture,
+      texture_extent,
+      vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    );
+    graphics_pool.record_copy_staging_buffer_to_buffer(
+      device,
+      staging_buffers.buffers[1],
       vertex_buffer,
       VERTICES_SIZE,
     );
     graphics_pool.record_copy_staging_buffer_to_buffer(
       device,
-      staging_buffers.buffers[1],
+      staging_buffers.buffers[2],
       index_buffer,
       QUAD_INDICES_SIZE,
     );
@@ -135,6 +133,7 @@ impl GPUData {
     physical_device: &PhysicalDevice,
     texture_extent: vk::Extent2D,
     texture_format: vk::Format,
+    texture_data: Vec<u8>,
     queues: &Queues,
   ) -> Result<(Self, PendingDataInitialization), DeviceMemoryInitializationError> {
     let texture = create_image(
@@ -164,14 +163,14 @@ impl GPUData {
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
         vk::MemoryPropertyFlags::empty(),
       ],
-      [&vertex_buffer, &index_buffer, &texture],
+      [&texture, &vertex_buffer, &index_buffer],
       0.5,
       #[cfg(feature = "log_alloc")]
-      Some(["Vertex buffer", "Index buffer", "Target image"]),
+      Some(["Target image", "Vertex buffer", "Index buffer"]),
       #[cfg(feature = "log_alloc")]
       "DEVICE LOCAL OBJECTS",
     )
-    .on_err(|_| unsafe { destroy!(device => &index_buffer, &vertex_buffer, &texture) })?;
+    .on_err(|_| unsafe { destroy!(device => &texture, &index_buffer, &vertex_buffer) })?;
 
     let pending_device_init = create_and_copy_from_staging_buffers(
       device,
@@ -179,13 +178,13 @@ impl GPUData {
       queues,
       vertex_buffer,
       index_buffer,
+      texture,
+      texture_extent,
+      texture_data,
     )
     .on_err(|_| unsafe {
-      destroy!(device => &index_buffer, &vertex_buffer, &texture, &device_alloc)
+      destroy!(device => &texture, &index_buffer, &vertex_buffer, &device_alloc)
     })?;
-
-    // todo
-    let (image_width, image_height, image_bytes) = read_texture_bytes_as_rgba8()?;
 
     const EXPECTED_MAX_MEM_COUNT: usize = 3;
     let mut memories = Vec::with_capacity(EXPECTED_MAX_MEM_COUNT);
@@ -198,24 +197,25 @@ impl GPUData {
     );
     log::info!("Allocated memory count: {}", memories.len());
 
-    let texture_image_view = create_image_view(device, texture, texture_format)
-    .on_err(|_| unsafe {destroy!(device => &texture, &pending_initialization, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
+    let texture_view = create_image_view(device, texture, texture_format)
+    .on_err(|_| unsafe {destroy!(device => &pending_device_init, &texture, &index_buffer, &vertex_buffer, memories.as_slice()) })?;
 
     Ok((
       Self {
         texture,
-        texture_image_view,
+        texture_view,
         vertex_buffer,
         index_buffer,
         memories,
       },
-      pending_initialization,
+      pending_device_init,
     ))
   }
 }
 
 impl DeviceManuallyDestroyed for GPUData {
   unsafe fn destroy_self(&self, device: &ash::Device) {
+    self.texture_view.destroy_self(device);
     self.texture.destroy_self(device);
 
     self.vertex_buffer.destroy_self(device);

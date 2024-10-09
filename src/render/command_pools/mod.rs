@@ -4,16 +4,25 @@ use ash::vk;
 
 mod graphics;
 pub mod initialization;
-mod temporary_graphics;
-mod transfer;
 
 pub use graphics::GraphicsCommandBufferPool;
-pub use temporary_graphics::TemporaryGraphicsCommandPool;
-pub use transfer::TransferCommandBufferPool;
 
-use crate::render::{
-  device_destroyable::DeviceManuallyDestroyed, initialization::device::PhysicalDevice,
-};
+const ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_RANGE: vk::ImageSubresourceRange =
+  vk::ImageSubresourceRange {
+    aspect_mask: vk::ImageAspectFlags::COLOR,
+    base_mip_level: 0,
+    level_count: 1,
+    base_array_layer: 0,
+    layer_count: 1,
+  };
+
+const ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_LAYERS: vk::ImageSubresourceLayers =
+  vk::ImageSubresourceLayers {
+    aspect_mask: vk::ImageAspectFlags::COLOR,
+    mip_level: 0,
+    base_array_layer: 0,
+    layer_count: 1,
+  };
 
 fn create_command_pool(
   device: &ash::Device,

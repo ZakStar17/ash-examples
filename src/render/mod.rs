@@ -1,7 +1,6 @@
 mod allocator;
 mod command_pools;
 mod create_objs;
-mod data;
 mod descriptor_sets;
 mod device_destroyable;
 mod errors;

@@ -5,7 +5,6 @@ use super::{
   allocator::DeviceMemoryInitializationError,
   initialization::InstanceCreationError,
   pipelines::{PipelineCacheError, PipelineCreationError},
-  renderer::SwapchainRecreationError,
   swapchain::{AcquireNextImageError, SwapchainCreationError},
 };
 
@@ -96,6 +95,16 @@ impl From<QueueSubmitError> for DeviceMemoryInitializationError {
   }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SwapchainRecreationError {
+  #[error(transparent)]
+  OutOfMemory(#[from] OutOfMemoryError),
+  #[error("Failed to create a swapchain: {0}")]
+  SwapchainError(#[from] SwapchainCreationError),
+  #[error("Failed to create a pipeline: {0}")]
+  PipelineCreationError(#[from] PipelineCreationError),
+}
+
 #[derive(thiserror::Error)]
 pub enum InitializationError {
   #[error("Instance creation failed: {0}")]
@@ -107,8 +116,8 @@ pub enum InitializationError {
   #[error(transparent)]
   WindowError(#[from] WindowError),
 
-  #[error("Image error")]
-  ImageError(#[source] image::ImageError),
+  #[error("Image error: {0}")]
+  ImageError(#[from] image::ImageError),
 
   #[error("Failed to allocate memory for some buffer or image\n{0}")]
   AllocationFailed(#[from] DeviceMemoryInitializationError),

@@ -1,9 +1,14 @@
-use std::{marker::PhantomData, ptr};
+use std::{marker::PhantomData, ops::BitOr, ptr};
 
 use ash::{vk, Device};
 
 use crate::render::{
   create_objs::create_fence, device_destroyable::DeviceManuallyDestroyed, errors::QueueSubmitError,
+};
+
+use super::{
+  dependency_info, ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_LAYERS,
+  ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_RANGE,
 };
 
 pub struct InitCommandBufferPool {
@@ -57,6 +62,72 @@ impl InitCommandBufferPool {
       size,
     };
     device.cmd_copy_buffer(self.cb, staging, dst, &[region]);
+  }
+
+  pub unsafe fn record_copy_staging_buffer_to_image(
+    &self,
+    device: &ash::Device,
+    staging: vk::Buffer,
+    dst: vk::Image,
+    image_extent: vk::Extent2D,
+    final_layout: vk::ImageLayout,
+  ) {
+    let transfer_dst_layout = vk::ImageMemoryBarrier2 {
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+      p_next: ptr::null(),
+      src_stage_mask: vk::PipelineStageFlags2::NONE,
+      dst_stage_mask: vk::PipelineStageFlags2::COPY,
+      src_access_mask: vk::AccessFlags2::NONE,
+      dst_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+      old_layout: vk::ImageLayout::UNDEFINED,
+      new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      image: dst,
+      subresource_range: ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_RANGE,
+      _marker: PhantomData,
+    };
+    device.cmd_pipeline_barrier2(self.cb, &dependency_info(&[], &[], &[transfer_dst_layout]));
+
+    let copy_region = vk::BufferImageCopy {
+      buffer_offset: 0,
+      buffer_row_length: 0,   // 0 because buffer is tightly packed
+      buffer_image_height: 0, // 0 because buffer is tightly packed
+      image_subresource: ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_LAYERS,
+      image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+      image_extent: vk::Extent3D {
+        width: image_extent.width,
+        height: image_extent.height,
+        depth: 1,
+      },
+    };
+    device.cmd_copy_buffer_to_image(
+      self.cb,
+      staging,
+      dst,
+      vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      &[copy_region],
+    );
+
+    let change_to_final_layout = vk::ImageMemoryBarrier2 {
+      s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
+      p_next: ptr::null(),
+      src_stage_mask: vk::PipelineStageFlags2::COPY,
+      dst_stage_mask: vk::PipelineStageFlags2::NONE,
+      src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+      dst_access_mask: vk::AccessFlags2::NONE, // later fence flushes all memory
+      old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+      new_layout: final_layout,
+      src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+      image: dst,
+      subresource_range: ONE_LAYER_COLOR_IMAGE_SUBRESOURCE_RANGE,
+      _marker: PhantomData,
+    };
+    device.cmd_pipeline_barrier2(
+      self.cb,
+      &dependency_info(&[], &[], &[change_to_final_layout]),
+    );
   }
 
   pub unsafe fn end_and_submit(
