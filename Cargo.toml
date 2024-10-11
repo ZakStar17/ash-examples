@@ -12,7 +12,22 @@ env_logger = "0.11.0"
 thiserror = "1.0.64"
 
 [features]
-"default" = ["load", "vl"]
+"default" = ["load", "vl", "graphics_family", "compute_family"]
 "load" = ["ash/loaded"]
 "link" = ["ash/linked"]
 "vl" = []
+"graphics_family" = []
+"compute_family" = []
+"transfer_family" = []
+
+[profile.ok]
+inherits = "dev"
+"default" = ["load", "vl", "graphics_family", "compute_family", "transfer_family"]
+
+[profile.release-validation]
+inherits = "release"
+"default" = ["link", "vl", "graphics_family", "compute_family", "transfer_family"]
+
+[profile.release-full]
+inherits = "release"
+"default" = ["load", "graphics_family", "compute_family", "transfer_family"]

@@ -6,7 +6,7 @@ use std::{
   ptr::{self},
 };
 
-use super::{EnabledDeviceExtensions, PhysicalDevice, Queues};
+use super::{EnabledDeviceExtensions, PhysicalDevice, SingleQueues};
 
 pub struct Device {
   pub inner: ash::Device,
@@ -25,14 +25,18 @@ impl Device {
   pub fn create(
     instance: &ash::Instance,
     physical_device: &PhysicalDevice,
-  ) -> Result<(Self, Queues), vk::Result> {
-    let queue_create_infos = Queues::get_queue_create_infos(&physical_device.queue_families);
+  ) -> Result<(Self, SingleQueues), vk::Result> {
+    let (queue_create_infos, unique_queue_size) =
+      super::queues::get_single_queue_create_infos(&physical_device.queue_families);
 
     let to_enable_extensions =
       EnabledDeviceExtensions::mark_supported_by_physical_device(instance, **physical_device)?;
     let extension_ptrs = to_enable_extensions.get_extension_list();
 
-    log::debug!("Enabling the following device extensions:\n{:?}", to_enable_extensions);
+    log::debug!(
+      "Enabling the following device extensions:\n{:#?}",
+      to_enable_extensions
+    );
 
     // enabled features
     let features10 = vk::PhysicalDeviceFeatures::default();
@@ -52,7 +56,7 @@ impl Device {
     let create_info = vk::DeviceCreateInfo {
       s_type: vk::StructureType::DEVICE_CREATE_INFO,
       p_queue_create_infos: queue_create_infos.as_ptr(),
-      queue_create_info_count: queue_create_infos.len() as u32,
+      queue_create_info_count: unique_queue_size as u32,
       p_enabled_features: &features10,
       p_next: &features12 as *const vk::PhysicalDeviceVulkan12Features as *const c_void,
       pp_enabled_layer_names: ptr::null(), // deprecated
@@ -66,8 +70,16 @@ impl Device {
     let device: ash::Device =
       unsafe { instance.create_device(**physical_device, &create_info, None)? };
 
-    log::debug!("Retrieving queues");
-    let queues = unsafe { Queues::retrieve(&device, &physical_device.queue_families) };
+    let queues = unsafe {
+      let queue_create_infos = &queue_create_infos[0..unique_queue_size];
+      super::queues::retrieve_single_queues(
+        &device,
+        &physical_device.queue_families,
+        queue_create_infos,
+      )
+    };
+    log::debug!("Queue families:\n{:#?}", physical_device.queue_families);
+    log::debug!("Queue addresses:\n{:#?}", queues);
 
     Ok((
       Self {

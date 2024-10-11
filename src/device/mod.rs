@@ -7,7 +7,7 @@ mod vendor;
 use device_selector::select_physical_device;
 pub use logical_device::Device;
 pub use physical_device::PhysicalDevice;
-pub use queues::{QueueFamilies, Queues};
+pub use queues::{QueueFamilies, SingleQueues};
 
 use std::{
   ffi::{c_void, CStr},

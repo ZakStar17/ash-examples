@@ -93,8 +93,23 @@ pub unsafe fn select_physical_device(
         let device_score_importance = 0;
 
         // rank devices by number of specialized queue families
-        let queue_score = if families.compute.is_some() { 0 } else { 1 }
-          + if families.transfer.is_some() { 0 } else { 1 };
+        let compute_score = {
+          #[cfg(not(feature = "graphics_family"))]
+          let score = 0;
+          #[cfg(all(feature = "graphics_family", not(feature = "compute_family")))]
+          let score = 0;
+          #[cfg(all(feature = "graphics_family", feature = "compute_family"))]
+          let score = if families.compute.is_some() { 0 } else { 2 };
+          score
+        };
+        let transfer_score = {
+          #[cfg(not(feature = "transfer_family"))]
+          let score = 0;
+          #[cfg(feature = "transfer_family")]
+          let score = if families.transfer.is_some() { 0 } else { 1 };
+          score
+        };
+        let queue_score = compute_score + transfer_score;
 
         // rank devices by commonly most powerful device type
         let device_score = match instance

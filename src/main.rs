@@ -12,6 +12,7 @@ use ash::vk;
 use std::ffi::CStr;
 
 use crate::device::{Device, PhysicalDevice};
+use env_logger::Env;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
 #[cfg(feature = "vl")]
@@ -33,7 +34,10 @@ static APPLICATION_NAME: &CStr = c"Vulkan Device Creation";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 fn main() {
-  env_logger::init();
+  #[cfg(feature = "vl")]
+  env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+  #[cfg(not(feature = "vl"))]
+  env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
