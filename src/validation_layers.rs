@@ -2,7 +2,7 @@ use ash::vk::{self};
 
 use std::{ffi::CStr, os::raw::c_void, ptr};
 
-use crate::{errors::OutOfMemoryError, VALIDATION_LAYERS};
+use crate::{device::SingleQueues, errors::OutOfMemoryError, VALIDATION_LAYERS};
 
 // returns a list of supported and unsupported instance layers
 fn filter_supported(
@@ -98,5 +98,47 @@ impl DebugUtils {
     self
       .loader
       .destroy_debug_utils_messenger(self.messenger, None);
+  }
+}
+
+pub struct DebugUtilsMarker {
+  loader: ash::ext::debug_utils::Device,
+}
+
+impl DebugUtilsMarker {
+  pub fn new(instance: &ash::Instance, device: &ash::Device) -> Self {
+    Self {
+      loader: ash::ext::debug_utils::Device::new(instance, device),
+    }
+  }
+
+  pub unsafe fn set_queue_labels(&self, queues: SingleQueues) {
+    #[cfg(feature = "graphics_family")]
+    {
+      let label_info = vk::DebugUtilsLabelEXT::default()
+        .label_name(crate::device::GRAPHICS_QUEUE_LABEL)
+        .color([1.0, 0.0, 0.0, 1.0]);
+      self
+        .loader
+        .queue_insert_debug_utils_label(*queues.graphics, &label_info);
+    }
+    #[cfg(feature = "compute_family")]
+    {
+      let label_info = vk::DebugUtilsLabelEXT::default()
+        .label_name(crate::device::COMPUTE_QUEUE_LABEL)
+        .color([0.0, 1.0, 0.0, 1.0]);
+      self
+        .loader
+        .queue_insert_debug_utils_label(*queues.compute, &label_info);
+    }
+    #[cfg(feature = "transfer_family")]
+    {
+      let label_info = vk::DebugUtilsLabelEXT::default()
+        .label_name(crate::device::TRANSFER_QUEUE_LABEL)
+        .color([0.0, 0.0, 1.0, 1.0]);
+      self
+        .loader
+        .queue_insert_debug_utils_label(*queues.transfer, &label_info);
+    }
   }
 }

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr};
+use std::{marker::PhantomData, ops::Deref, ptr};
 
 use ash::vk::{self};
 
@@ -11,6 +11,21 @@ pub struct QueueFamily {
 impl PartialEq for QueueFamily {
   fn eq(&self, other: &Self) -> bool {
     self.index == other.index
+  }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Queue {
+  pub handle: vk::Queue,
+  pub family_index: u32,
+  pub index_in_family: u32,
+}
+
+impl Deref for Queue {
+  type Target = vk::Queue;
+
+  fn deref(&self) -> &Self::Target {
+    &self.handle
   }
 }
 
@@ -32,11 +47,11 @@ pub struct QueueFamilies {
 #[derive(Debug, Clone, Copy)]
 pub struct SingleQueues {
   #[cfg(feature = "graphics_family")]
-  pub graphics: vk::Queue,
+  pub graphics: Queue,
   #[cfg(feature = "compute_family")]
-  pub compute: vk::Queue,
+  pub compute: Queue,
   #[cfg(feature = "transfer_family")]
-  pub transfer: vk::Queue,
+  pub transfer: Queue,
 }
 
 fn queue_create_info<'a>(
@@ -144,16 +159,28 @@ pub unsafe fn retrieve_single_queues(
   c_infos: &[vk::DeviceQueueCreateInfo],
 ) -> SingleQueues {
   #[cfg(feature = "graphics_family")]
-  let graphics = device.get_device_queue(queue_families.graphics.index, 0);
+  let graphics = Queue {
+    handle: device.get_device_queue(queue_families.graphics.index, 0),
+    family_index: queue_families.graphics.index,
+    index_in_family: 0,
+  };
 
   #[cfg(not(feature = "graphics_family"))]
-  let compute = device.get_device_queue(queue_families.compute.index, 0);
+  let compute = Queue {
+    handle: device.get_device_queue(queue_families.compute.index, 0),
+    family_index: queue_families.compute.index,
+    index_in_family: 0,
+  };
 
   // #[cfg(all(not(feature = "graphics_family"), feature = "compute_family"))]
   let mut non_specialized_i = 1;
   let mut next_non_specialized_queue = || {
     if non_specialized_i < c_infos[0].queue_count {
-      let r = Some(device.get_device_queue(c_infos[0].queue_family_index, non_specialized_i));
+      let r = Some(Queue {
+        handle: device.get_device_queue(c_infos[0].queue_family_index, non_specialized_i),
+        family_index: c_infos[0].queue_family_index,
+        index_in_family: non_specialized_i,
+      });
       non_specialized_i += 1;
       r
     } else {
@@ -163,14 +190,22 @@ pub unsafe fn retrieve_single_queues(
 
   #[cfg(all(feature = "graphics_family", feature = "compute_family"))]
   let compute = if let Some(compute_f) = queue_families.compute {
-    device.get_device_queue(compute_f.index, 0)
+    Queue {
+      handle: device.get_device_queue(compute_f.index, 0),
+      family_index: compute_f.index,
+      index_in_family: 0,
+    }
   } else {
     next_non_specialized_queue().unwrap_or(graphics)
   };
 
   #[cfg(feature = "transfer_family")]
   let transfer = if let Some(transfer_f) = queue_families.transfer {
-    device.get_device_queue(transfer_f.index, 0)
+    Queue {
+      handle: device.get_device_queue(transfer_f.index, 0),
+      family_index: transfer_f.index,
+      index_in_family: 0,
+    }
   } else {
     #[cfg(feature = "graphics_family")]
     let default = graphics;

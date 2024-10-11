@@ -14,6 +14,7 @@ use super::QueueFamilies;
 pub struct PhysicalDevice {
   inner: vk::PhysicalDevice,
   pub queue_families: QueueFamilies,
+  pub queue_family_properties: Box<[vk::QueueFamilyProperties]>,
 }
 
 impl Deref for PhysicalDevice {
@@ -29,8 +30,9 @@ impl PhysicalDevice {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);
-        let queue_family_properties =
-          instance.get_physical_device_queue_family_properties(physical_device);
+        let queue_family_properties = instance
+          .get_physical_device_queue_family_properties(physical_device)
+          .into_boxed_slice();
 
         log::info!(
           "Using physical device {:?}",
@@ -42,6 +44,7 @@ impl PhysicalDevice {
         Ok(Some(PhysicalDevice {
           inner: physical_device,
           queue_families,
+          queue_family_properties,
         }))
       }
       None => Ok(None),
@@ -49,8 +52,8 @@ impl PhysicalDevice {
   }
 }
 
-fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
-  log::debug!("Queue family properties: {:#?}", properties);
+fn print_queue_families_debug_info(properties: &[vk::QueueFamilyProperties]) {
+  log::debug!("Physical device queue family properties: {:#?}", properties);
 }
 
 fn debug_print_device_memory_info(

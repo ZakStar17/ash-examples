@@ -1,10 +1,13 @@
 use ash::vk::{self};
 use std::{
+  fmt::Write,
   marker::PhantomData,
   ops::Deref,
   os::raw::c_void,
   ptr::{self},
 };
+
+use crate::device::queues::Queue;
 
 use super::{EnabledDeviceExtensions, PhysicalDevice, SingleQueues};
 
@@ -33,7 +36,7 @@ impl Device {
       EnabledDeviceExtensions::mark_supported_by_physical_device(instance, **physical_device)?;
     let extension_ptrs = to_enable_extensions.get_extension_list();
 
-    log::debug!(
+    log::info!(
       "Enabling the following device extensions:\n{:#?}",
       to_enable_extensions
     );
@@ -78,8 +81,7 @@ impl Device {
         queue_create_infos,
       )
     };
-    log::debug!("Queue families:\n{:#?}", physical_device.queue_families);
-    log::debug!("Queue addresses:\n{:#?}", queues);
+    debug_print_queues(physical_device, &queues).unwrap();
 
     Ok((
       Self {
@@ -89,4 +91,110 @@ impl Device {
       queues,
     ))
   }
+}
+
+fn debug_print_queues(physical_device: &PhysicalDevice, queues: &SingleQueues) -> std::fmt::Result {
+  let queue_family_properties = &physical_device.queue_family_properties;
+
+  let mut output = String::from("\nAllocated queue properties:");
+
+  let write_full = |output: &mut String, label, queue: Queue, family: vk::QueueFamilyProperties| {
+    output.write_fmt(format_args!(
+      "\n    <{}>:
+        Address: {:?}
+        Queue family index: {}
+        Family's internal queue index: {}
+        Queue family flags: {:?}
+        image_transfer_granularity: ({}, {}, {})",
+      label,
+      queue.handle,
+      queue.family_index,
+      queue.index_in_family,
+      family.queue_flags,
+      family.min_image_transfer_granularity.width,
+      family.min_image_transfer_granularity.height,
+      family.min_image_transfer_granularity.depth
+    ))
+  };
+
+  #[cfg(feature = "graphics_family")]
+  {
+    write_full(
+      &mut output,
+      super::GRAPHICS_QUEUE_LABEL.to_str().unwrap(),
+      queues.graphics,
+      queue_family_properties[queues.graphics.family_index as usize],
+    )?;
+
+    #[cfg(feature = "compute_family")]
+    {
+      let compute_equal_to_graphics = queues.graphics.handle == queues.compute.handle;
+      if compute_equal_to_graphics {
+        output.write_fmt(format_args!(
+          "\n   <{}>: <Same as {}>",
+          super::COMPUTE_QUEUE_LABEL.to_str().unwrap(),
+          super::GRAPHICS_QUEUE_LABEL.to_str().unwrap()
+        ))?;
+      } else {
+        write_full(
+          &mut output,
+          super::COMPUTE_QUEUE_LABEL.to_str().unwrap(),
+          queues.compute,
+          queue_family_properties[queues.compute.family_index as usize],
+        )?;
+      }
+    }
+
+    #[cfg(feature = "transfer_family")]
+    {
+      let transfer_equal_to_graphics = queues.graphics.handle == queues.transfer.handle;
+      if transfer_equal_to_graphics {
+        output.write_fmt(format_args!(
+          "\n    <{}>: Same as <{}>",
+          super::TRANSFER_QUEUE_LABEL.to_str().unwrap(),
+          super::GRAPHICS_QUEUE_LABEL.to_str().unwrap()
+        ))?;
+      } else {
+        write_full(
+          &mut output,
+          super::TRANSFER_QUEUE_LABEL.to_str().unwrap(),
+          queues.transfer,
+          queue_family_properties[queues.transfer.family_index as usize],
+        )?;
+      }
+    }
+  }
+
+  #[cfg(not(feature = "graphics_family"))]
+  {
+    write_full(
+      &mut output,
+      super::COMPUTE_QUEUE_LABEL.to_str().unwrap(),
+      queues.compute,
+      queue_family_properties[queues.compute.family_index as usize],
+    )?;
+
+    #[cfg(feature = "transfer_family")]
+    {
+      let transfer_equal_to_compute = queues.compute.handle == queues.transfer.handle;
+      if transfer_equal_to_compute {
+        output.write_fmt(format_args!(
+          "\n    <{}>: Same as <{}>",
+          super::TRANSFER_QUEUE_LABEL.to_str().unwrap(),
+          super::COMPUTE_QUEUE_LABEL.to_str().unwrap()
+        ))?;
+      } else {
+        write_full(
+          &mut output,
+          super::TRANSFER_QUEUE_LABEL.to_str().unwrap(),
+          queues.transfer,
+          queue_family_properties[queues.transfer.family_index as usize],
+        )?;
+      }
+    }
+  }
+
+  log::debug!("{}", output);
+
+  Ok(())
 }

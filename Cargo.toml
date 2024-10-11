@@ -12,7 +12,7 @@ env_logger = "0.11.0"
 thiserror = "1.0.64"
 
 [features]
-"default" = ["load", "vl", "graphics_family", "compute_family"]
+"default" = ["load", "vl", "graphics_family", "compute_family", "transfer_family"]
 "load" = ["ash/loaded"]
 "link" = ["ash/linked"]
 "vl" = []

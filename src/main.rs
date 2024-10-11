@@ -10,6 +10,7 @@ mod validation_layers;
 
 use ash::vk;
 use std::ffi::CStr;
+use validation_layers::DebugUtilsMarker;
 
 use crate::device::{Device, PhysicalDevice};
 use env_logger::Env;
@@ -70,13 +71,20 @@ fn main() {
     }
   };
 
-  let (logical_device, _queues) = match Device::create(&instance, &physical_device) {
+  let (logical_device, queues) = match Device::create(&instance, &physical_device) {
     Ok(v) => v,
     Err(err) => {
       log::error!("Failed to create an logical device: {}", err);
       std::process::exit(1);
     }
   };
+
+  #[cfg(feature = "vl")]
+  let debug_marker = DebugUtilsMarker::new(&instance, &logical_device);
+  #[cfg(feature = "vl")]
+  unsafe {
+    debug_marker.set_queue_labels(queues);
+  }
 
   println!("Successfully created the logical device!");
 

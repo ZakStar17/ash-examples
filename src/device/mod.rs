@@ -19,6 +19,13 @@ use ash::vk;
 
 use crate::utility::{self};
 
+#[cfg(feature = "graphics_family")]
+pub const GRAPHICS_QUEUE_LABEL: &CStr = c"GRAPHICS QUEUE";
+#[cfg(feature = "compute_family")]
+pub const COMPUTE_QUEUE_LABEL: &CStr = c"COMPUTE QUEUE";
+#[cfg(feature = "transfer_family")]
+pub const TRANSFER_QUEUE_LABEL: &CStr = c"TRANSFER QUEUE";
+
 static MEMORY_PRIORITY: &CStr = c"VK_EXT_memory_priority";
 static PAGEABLE_DEVICE_LOCAL_MEMORY: &CStr = c"VK_EXT_pageable_device_local_memory";
 
