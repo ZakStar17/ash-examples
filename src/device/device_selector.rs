@@ -2,9 +2,29 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::{utility, TARGET_API_VERSION};
+use crate::{errors::OutOfMemoryError, utility, TARGET_API_VERSION};
 
 use super::{vendor::Vendor, PhysicalDeviceFeatures, PhysicalDeviceProperties, QueueFamilies};
+
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceSelectionError {
+  #[error(transparent)]
+  OutOfMemory(#[from] OutOfMemoryError),
+  #[error("instance.enumerate_physical_devices() returned VK_ERROR_INITIALIZATION_FAILED")]
+  VulkanInitializationFailed,
+}
+
+impl From<vk::Result> for DeviceSelectionError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        Self::OutOfMemory(value.into())
+      }
+      vk::Result::ERROR_INITIALIZATION_FAILED => Self::VulkanInitializationFailed,
+      _ => panic!(),
+    }
+  }
+}
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
@@ -41,7 +61,7 @@ pub unsafe fn select_physical_device(
     PhysicalDeviceFeatures,
     QueueFamilies,
   )>,
-  vk::Result,
+  DeviceSelectionError,
 > {
   Ok(
     instance

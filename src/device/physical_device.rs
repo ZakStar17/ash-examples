@@ -6,7 +6,7 @@ use std::{
 
 use ash::vk;
 
-use super::select_physical_device;
+use super::{device_selector::DeviceSelectionError, select_physical_device};
 
 use super::QueueFamilies;
 
@@ -26,7 +26,9 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select(instance: &ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
+  pub unsafe fn select(
+    instance: &ash::Instance,
+  ) -> Result<Option<PhysicalDevice>, DeviceSelectionError> {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);

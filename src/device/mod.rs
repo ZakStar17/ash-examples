@@ -5,7 +5,8 @@ mod queues;
 mod vendor;
 
 use device_selector::select_physical_device;
-pub use logical_device::Device;
+pub use device_selector::DeviceSelectionError;
+pub use logical_device::{Device, DeviceCreationError};
 pub use physical_device::PhysicalDevice;
 pub use queues::{QueueFamilies, SingleQueues};
 
@@ -17,7 +18,10 @@ use std::{
 
 use ash::vk;
 
-use crate::utility::{self};
+use crate::{
+  errors::OutOfMemoryError,
+  utility::{self},
+};
 
 #[cfg(feature = "graphics_family")]
 pub const GRAPHICS_QUEUE_LABEL: &CStr = c"GRAPHICS QUEUE";
@@ -40,7 +44,7 @@ impl EnabledDeviceExtensions {
   pub fn mark_supported_by_physical_device(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
-  ) -> Result<Self, vk::Result> {
+  ) -> Result<Self, OutOfMemoryError> {
     let properties = unsafe { instance.enumerate_device_extension_properties(physical_device)? };
 
     let mut supported = Self::default();

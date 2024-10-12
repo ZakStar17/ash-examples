@@ -9,6 +9,7 @@ mod utility;
 mod validation_layers;
 
 use ash::vk;
+use device::{DeviceCreationError, DeviceSelectionError};
 use instance::InstanceCreationError;
 use std::ffi::CStr;
 use validation_layers::DebugUtilsMarker;
@@ -34,7 +35,19 @@ const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 static APPLICATION_NAME: &CStr = c"Vulkan Device Creation";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-fn run_app() -> Result<(), InstanceCreationError> {
+#[derive(Debug, thiserror::Error)]
+pub enum ApplicationError {
+  #[error("Failed to create a instance\n    {0}")]
+  InstanceCreationFailed(#[from] InstanceCreationError),
+  #[error("An error occurred during device selection:\n    {0}")]
+  DeviceSelectionError(#[from] DeviceSelectionError),
+  #[error("No suitable physical devices found")]
+  NoSuitableDevices,
+  #[error("Failed to create a logical device:\n    {0}")]
+  DeviceCreationFailed(#[from] DeviceCreationError),
+}
+
+fn run_app() -> Result<(), ApplicationError> {
   // initialize env_logger with debug if validation layers are enabled, warn otherwise
   #[cfg(feature = "vl")]
   env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
@@ -48,27 +61,14 @@ fn run_app() -> Result<(), InstanceCreationError> {
   #[cfg(not(feature = "vl"))]
   let instance = instance::create_instance(&entry)?;
 
-  let physical_device = match unsafe { PhysicalDevice::select(&instance) } {
-    Ok(device_opt) => match device_opt {
-      Some(device) => device,
-      None => {
-        log::error!("No suitable device found");
-        std::process::exit(1);
-      }
-    },
-    Err(err) => {
-      log::error!("Failed to query physical devices: {:?}", err);
-      std::process::exit(1);
+  let physical_device = match unsafe { PhysicalDevice::select(&instance)? } {
+    Some(device) => device,
+    None => {
+      return Err(ApplicationError::NoSuitableDevices);
     }
   };
 
-  let (logical_device, queues) = match Device::create(&instance, &physical_device) {
-    Ok(v) => v,
-    Err(err) => {
-      log::error!("Failed to create an logical device: {}", err);
-      std::process::exit(1);
-    }
-  };
+  let (logical_device, queues) = Device::create(&instance, &physical_device)?;
 
   #[cfg(feature = "vl")]
   let debug_marker = DebugUtilsMarker::new(&instance, &logical_device);

@@ -7,7 +7,7 @@ use std::{
   ptr::{self},
 };
 
-use crate::device::queues::Queue;
+use crate::{device::queues::Queue, errors::OutOfMemoryError};
 
 use super::{EnabledDeviceExtensions, PhysicalDevice, SingleQueues};
 
@@ -24,11 +24,24 @@ impl Deref for Device {
   }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceCreationError {
+  #[error("Device creation returned VK_ERROR_INITIALIZATION_FAILED")]
+  VulkanInitializationFailed,
+  #[error(
+    "Device creation returned VK_ERROR_DEVICE_LOST.\
+This may indicate problems with the graphics driver or instability with the physical device"
+  )]
+  DeviceLost,
+  #[error(transparent)]
+  OutOfMemory(#[from] OutOfMemoryError),
+}
+
 impl Device {
   pub fn create(
     instance: &ash::Instance,
     physical_device: &PhysicalDevice,
-  ) -> Result<(Self, SingleQueues), vk::Result> {
+  ) -> Result<(Self, SingleQueues), DeviceCreationError> {
     let (queue_create_infos, unique_queue_size) =
       super::queues::get_single_queue_create_infos(&physical_device.queue_families);
 
@@ -71,7 +84,18 @@ impl Device {
     };
     log::debug!("Creating logical device");
     let device: ash::Device =
-      unsafe { instance.create_device(**physical_device, &create_info, None)? };
+      unsafe { instance.create_device(**physical_device, &create_info, None) }.map_err(
+        |vkerr| match vkerr {
+          vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+            DeviceCreationError::OutOfMemory(vkerr.into())
+          }
+          vk::Result::ERROR_INITIALIZATION_FAILED => {
+            DeviceCreationError::VulkanInitializationFailed
+          }
+          vk::Result::ERROR_DEVICE_LOST => DeviceCreationError::DeviceLost,
+          _ => panic!("Unhandled device creation error: {:?}", vkerr),
+        },
+      )?;
 
     let queues = unsafe {
       let queue_create_infos = &queue_create_infos[0..unique_queue_size];
