@@ -8,6 +8,7 @@ mod utility;
 mod validation_layers;
 
 use ash::vk;
+use instance::InstanceCreationError;
 use std::ffi::CStr;
 
 // validation layers names should be valid cstrings (not contain null bytes nor invalid characters)
@@ -29,26 +30,19 @@ const TARGET_API_VERSION: u32 = vk::API_VERSION_1_3;
 static APPLICATION_NAME: &CStr = c"Vulkan Instance Creation";
 const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
-fn main() {
-  env_logger::init();
+fn run_app() -> Result<(), InstanceCreationError> {
+  // initialize env_logger with debug if validation layers are enabled, warn otherwise
+  #[cfg(feature = "vl")]
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+  #[cfg(not(feature = "vl"))]
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
   let entry: ash::Entry = unsafe { entry::get_entry() };
 
-  let on_instance_fail = |err| {
-    eprintln!("Failed to create an instance: {}", err);
-    std::process::exit(1);
-  };
-
   #[cfg(feature = "vl")]
-  let (instance, mut debug_utils) = match instance::create_instance(&entry) {
-    Ok(v) => v,
-    Err(err) => on_instance_fail(err),
-  };
+  let (instance, mut debug_utils) = instance::create_instance(&entry)?;
   #[cfg(not(feature = "vl"))]
-  let instance = match instance::create_instance(&entry) {
-    Ok(v) => v,
-    Err(err) => on_instance_fail(err),
-  };
+  let instance = instance::create_instance(&entry)?;
 
   println!("Successfully created an instance!");
 
@@ -57,5 +51,13 @@ fn main() {
     #[cfg(feature = "vl")]
     debug_utils.destroy_self();
     instance.destroy_instance(None);
+  }
+
+  Ok(())
+}
+
+fn main() {
+  if let Err(err) = run_app() {
+    eprintln!("Instance creation failed:\n    {}", err);
   }
 }

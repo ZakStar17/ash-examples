@@ -154,13 +154,13 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
   _p_user_data: *mut c_void,
 ) -> vk::Bool32 {
   let types = match message_type {
-    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-    vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-    vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
-    _ => "[Unknown]",
+    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General] ",
+    vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]\n",
+    vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]\n",
+    _ => "[Unknown]\n",
   };
   let message = CStr::from_ptr((*p_callback_data).p_message);
-  let message = format!("{} {}", types, message.to_str().unwrap());
+  let message = format!("{}{}", types, message.to_str().unwrap());
   match message_severity {
     vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::debug!("{message}"),
     vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => log::warn!("{message}"),
