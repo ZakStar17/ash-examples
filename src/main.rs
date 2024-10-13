@@ -16,7 +16,11 @@ mod utility;
 mod validation_layers;
 
 use ash::vk;
+use device::{DeviceCreationError, DeviceSelectionError};
+use instance::InstanceCreationError;
 use std::ffi::CStr;
+#[cfg(feature = "vl")]
+use validation_layers::DebugUtilsMarker;
 
 use crate::renderer::Renderer;
 
@@ -49,7 +53,13 @@ const IMAGE_COLOR: vk::ClearColorValue = vk::ClearColorValue {
 
 const IMAGE_SAVE_PATH: &str = "image.png";
 
-fn initialize_and_run() -> Result<(), String> {
+fn run_app() -> Result<(), String> {
+  // initialize env_logger with debug if validation layers are enabled, warn otherwise
+  #[cfg(feature = "vl")]
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+  #[cfg(not(feature = "vl"))]
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+
   let mut renderer = Renderer::initialize(IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE)
     .map_err(|err| format!("Failed to initialize: {}", err))?;
   unsafe { renderer.record_work() }.map_err(|err| format!("Failed to record work: {}", err))?;
@@ -79,15 +89,8 @@ fn initialize_and_run() -> Result<(), String> {
 }
 
 fn main() {
-  env_logger::init();
-
-  if let Err(s) = initialize_and_run() {
-    eprintln!(
-      "{}\nRun with RUST_LOG=error or RUST_LOG=warn to see possible causes.",
-      s
-    );
+  if let Err(err) = run_app() {
+    eprintln!("{}", err);
     std::process::exit(1);
   }
-
-  println!("Done!");
 }

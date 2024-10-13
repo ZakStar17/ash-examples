@@ -5,7 +5,7 @@ use crate::{
   allocator::{self, MemoryWithType},
   command_pools::CommandPools,
   create_objs::{create_buffer, create_fence, create_image, create_semaphore},
-  device::{Device, PhysicalDevice, Queues},
+  device::{Device, PhysicalDevice, SingleQueues},
   device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
   entry,
   errors::{InitializationError, OutOfMemoryError},
@@ -20,7 +20,7 @@ pub struct Renderer {
   debug_utils: crate::validation_layers::DebugUtils,
   physical_device: PhysicalDevice,
   device: Device,
-  queues: Queues,
+  queues: SingleQueues,
   command_pools: CommandPools,
   gpu_data: GPUData,
 }
@@ -152,14 +152,18 @@ impl Renderer {
       self
         .device
         .queue_submit(
-          self.queues.compute,
+          self.queues.compute.handle,
           &[clear_image_submit],
           vk::Fence::null(),
         )
         .on_err(|_| destroy_objs())?;
       self
         .device
-        .queue_submit(self.queues.transfer, &[transfer_image_submit], all_done)
+        .queue_submit(
+          self.queues.transfer.handle,
+          &[transfer_image_submit],
+          all_done,
+        )
         .on_err(|_| destroy_objs())?;
 
       self

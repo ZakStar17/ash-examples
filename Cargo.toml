@@ -13,8 +13,19 @@ image = "0.24.8"
 thiserror = "1.0.64"
 
 [features]
-"default" = ["load", "vl", "log_alloc"]
+"default" = ["load", "vl", "compute_family", "transfer_family", "log_alloc"]
 "load" = ["ash/loaded"]
 "link" = ["ash/linked"]
 "vl" = []
+"graphics_family" = []
+"compute_family" = []
+"transfer_family" = []
 "log_alloc" = ["ash/debug"] # log extended allocation info to debug or error streams
+
+[profile.release-validation]
+inherits = "release"
+"default" = ["link", "vl", "compute_family", "transfer_family", "log_alloc"]
+
+[profile.release-fast]
+inherits = "release"
+"default" = ["link", "compute_family", "transfer_family"]

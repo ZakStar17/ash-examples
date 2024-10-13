@@ -2,7 +2,10 @@ use ash::vk::{self};
 
 use std::{ffi::CStr, os::raw::c_void, ptr};
 
-use crate::{device_destroyable::ManuallyDestroyed, errors::OutOfMemoryError, VALIDATION_LAYERS};
+use crate::{
+  device::SingleQueues, device_destroyable::ManuallyDestroyed, errors::OutOfMemoryError,
+  VALIDATION_LAYERS,
+};
 
 // returns a list of supported and unsupported instance layers
 fn filter_supported(
@@ -42,13 +45,13 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
   _p_user_data: *mut c_void,
 ) -> vk::Bool32 {
   let types = match message_type {
-    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-    vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-    vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
-    _ => "[Unknown]",
+    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General] ",
+    vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]\n",
+    vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]\n",
+    _ => "[Unknown] ",
   };
   let message = CStr::from_ptr((*p_callback_data).p_message);
-  let message = format!("{} {}", types, message.to_str().unwrap());
+  let message = format!("{}{}", types, message.to_str().unwrap());
   match message_severity {
     vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::debug!("{message}"),
     vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => log::warn!("{message}"),
@@ -104,5 +107,47 @@ impl DebugUtils {
 impl ManuallyDestroyed for DebugUtils {
   unsafe fn destroy_self(&self) {
     self.destroy_self();
+  }
+}
+
+pub struct DebugUtilsMarker {
+  loader: ash::ext::debug_utils::Device,
+}
+
+impl DebugUtilsMarker {
+  pub fn new(instance: &ash::Instance, device: &ash::Device) -> Self {
+    Self {
+      loader: ash::ext::debug_utils::Device::new(instance, device),
+    }
+  }
+
+  pub unsafe fn set_queue_labels(&self, queues: SingleQueues) {
+    #[cfg(feature = "graphics_family")]
+    {
+      let label_info = vk::DebugUtilsLabelEXT::default()
+        .label_name(crate::device::GRAPHICS_QUEUE_LABEL)
+        .color([1.0, 0.0, 0.0, 1.0]);
+      self
+        .loader
+        .queue_insert_debug_utils_label(*queues.graphics, &label_info);
+    }
+    #[cfg(feature = "compute_family")]
+    {
+      let label_info = vk::DebugUtilsLabelEXT::default()
+        .label_name(crate::device::COMPUTE_QUEUE_LABEL)
+        .color([0.0, 1.0, 0.0, 1.0]);
+      self
+        .loader
+        .queue_insert_debug_utils_label(*queues.compute, &label_info);
+    }
+    #[cfg(feature = "transfer_family")]
+    {
+      let label_info = vk::DebugUtilsLabelEXT::default()
+        .label_name(crate::device::TRANSFER_QUEUE_LABEL)
+        .color([0.0, 0.0, 1.0, 1.0]);
+      self
+        .loader
+        .queue_insert_debug_utils_label(*queues.transfer, &label_info);
+    }
   }
 }
