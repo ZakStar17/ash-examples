@@ -42,7 +42,7 @@ pub enum ApplicationError {
   InstanceCreationFailed(#[from] InstanceCreationError),
   #[error("An error occurred during device selection:\n    {0}")]
   DeviceSelectionError(#[from] DeviceSelectionError),
-  #[error("No suitable physical devices found")]
+  #[error("No physical device is suitable for running this application")]
   NoSuitableDevices,
   #[error("Failed to create a logical device:\n    {0}")]
   DeviceCreationFailed(#[from] DeviceCreationError),
@@ -100,7 +100,7 @@ fn run_app() -> Result<(), ApplicationError> {
 
 fn main() {
   if let Err(err) = run_app() {
-    eprintln!("Instance creation failed:\n    {}", err);
+    eprintln!("An urecoverable error occurred:\n    {}", err);
     std::process::exit(1);
   }
 }
