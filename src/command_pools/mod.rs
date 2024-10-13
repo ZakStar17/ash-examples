@@ -8,13 +8,15 @@ mod transfer;
 pub use compute::ComputeCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
-use crate::{device::PhysicalDevice, device_destroyable::DeviceManuallyDestroyed};
+use crate::{
+  device::PhysicalDevice, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+};
 
 pub fn create_command_pool(
   device: &ash::Device,
   flags: vk::CommandPoolCreateFlags,
   queue_family_index: u32,
-) -> Result<vk::CommandPool, vk::Result> {
+) -> Result<vk::CommandPool, OutOfMemoryError> {
   let command_pool_create_info = vk::CommandPoolCreateInfo {
     s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
     p_next: ptr::null(),
@@ -23,14 +25,14 @@ pub fn create_command_pool(
     _marker: PhantomData,
   };
   log::debug!("Creating command pool");
-  unsafe { device.create_command_pool(&command_pool_create_info, None) }
+  unsafe { device.create_command_pool(&command_pool_create_info, None) }.map_err(|err| err.into())
 }
 
 fn allocate_primary_command_buffers(
   device: &ash::Device,
   command_pool: vk::CommandPool,
   command_buffer_count: u32,
-) -> Result<Vec<vk::CommandBuffer>, vk::Result> {
+) -> Result<Vec<vk::CommandBuffer>, OutOfMemoryError> {
   let allocate_info = vk::CommandBufferAllocateInfo {
     s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
     p_next: ptr::null(),
@@ -41,7 +43,7 @@ fn allocate_primary_command_buffers(
   };
 
   log::debug!("Allocating command buffers");
-  unsafe { device.allocate_command_buffers(&allocate_info) }
+  unsafe { device.allocate_command_buffers(&allocate_info) }.map_err(|err| err.into())
 }
 
 fn dependency_info<'a>(
@@ -69,18 +71,12 @@ pub struct CommandPools {
 }
 
 impl CommandPools {
-  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
+  pub fn new(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+  ) -> Result<Self, OutOfMemoryError> {
     let compute_pool = ComputeCommandBufferPool::create(device, &physical_device.queue_families)?;
-    let transfer_pool =
-      match TransferCommandBufferPool::create(device, &physical_device.queue_families) {
-        Ok(pool) => pool,
-        Err(err) => {
-          unsafe {
-            compute_pool.destroy_self(device);
-          }
-          return Err(err);
-        }
-      };
+    let transfer_pool = TransferCommandBufferPool::create(device, &physical_device.queue_families)?;
     Ok(Self {
       compute_pool,
       transfer_pool,

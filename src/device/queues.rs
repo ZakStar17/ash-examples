@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ops::Deref, ptr};
 
 use ash::vk::{self};
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct QueueFamily {
   pub index: u32,
   pub queue_count: u32,

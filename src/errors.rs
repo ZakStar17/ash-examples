@@ -1,6 +1,10 @@
 use ash::vk;
 
-use crate::{allocator::AllocationError, instance::InstanceCreationError};
+use crate::{
+  allocator::AllocationError,
+  device::{DeviceCreationError, DeviceSelectionError},
+  instance::InstanceCreationError,
+};
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
 pub enum OutOfMemoryError {
@@ -33,42 +37,18 @@ impl From<OutOfMemoryError> for vk::Result {
 
 #[derive(thiserror::Error, Debug)]
 pub enum InitializationError {
-  #[error("Instance creation failed")]
+  #[error("Instance creation failed:\n    {0}")]
   InstanceCreationFailed(#[from] InstanceCreationError),
 
+  #[error("An error occurred during device selection: {0}")]
+  DeviceSelectionError(#[from] DeviceSelectionError),
   #[error("No physical device supports the application")]
   NoCompatibleDevices,
+  #[error("An error occurred during the creation of the logical device:\n    {0}")]
+  DeviceCreationError(#[from] DeviceCreationError),
 
-  #[error("Not enough memory / memory allocation failed")]
-  NotEnoughMemory(#[source] Option<AllocationError>),
-
-  // undefined behavior / driver or application bug (see vl)
-  #[error("Device is lost")]
-  DeviceLost,
-  #[error("Unknown")]
-  Unknown,
-}
-
-impl From<AllocationError> for InitializationError {
-  fn from(value: AllocationError) -> Self {
-    Self::NotEnoughMemory(Some(value))
-  }
-}
-
-impl From<vk::Result> for InitializationError {
-  fn from(value: vk::Result) -> Self {
-    match value {
-      vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
-        InitializationError::NotEnoughMemory(None)
-      }
-      vk::Result::ERROR_DEVICE_LOST => InitializationError::DeviceLost,
-      vk::Result::ERROR_UNKNOWN => InitializationError::Unknown,
-      // validation layers may say more on this
-      vk::Result::ERROR_INITIALIZATION_FAILED => InitializationError::Unknown,
-      _ => {
-        log::error!("Invalid vk::Result: {:?}", value);
-        InitializationError::Unknown
-      }
-    }
-  }
+  #[error("Some command failed because of a generic OutOfMemory error: {0}")]
+  OutOfMemoryError(#[from] OutOfMemoryError),
+  #[error("Failed to allocate device memory:\n    ")]
+  AllocationError(#[from] AllocationError),
 }

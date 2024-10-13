@@ -15,9 +15,19 @@ pub struct TransferCommandBufferPool {
 }
 
 impl TransferCommandBufferPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
+  pub fn create(
+    device: &ash::Device,
+    queue_families: &QueueFamilies,
+  ) -> Result<Self, OutOfMemoryError> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_transfer_index())?;
+    let pool = super::create_command_pool(
+      device,
+      flags,
+      queue_families
+        .transfer
+        .unwrap_or(queue_families.compute)
+        .index,
+    )?;
 
     let copy_image_to_buffer = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
@@ -27,8 +37,10 @@ impl TransferCommandBufferPool {
     })
   }
 
-  pub unsafe fn reset(&self, device: &ash::Device) -> Result<(), vk::Result> {
-    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+  pub unsafe fn reset(&self, device: &ash::Device) -> Result<(), OutOfMemoryError> {
+    device
+      .reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+      .map_err(|err| err.into())
   }
 
   pub unsafe fn record_copy_img_to_buffer(
@@ -51,7 +63,12 @@ impl TransferCommandBufferPool {
       layer_count: 1,
     };
 
-    if queue_families.get_compute_index() != queue_families.get_transfer_index() {
+    let compute_family = queue_families.compute.index;
+    let transfer_family = queue_families
+      .transfer
+      .unwrap_or(queue_families.compute)
+      .index;
+    if compute_family != transfer_family {
       // matches to release found in compute
       let src_acquire = vk::ImageMemoryBarrier2 {
         s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
@@ -62,8 +79,8 @@ impl TransferCommandBufferPool {
         dst_stage_mask: vk::PipelineStageFlags2::COPY,
         old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-        src_queue_family_index: queue_families.get_compute_index(),
-        dst_queue_family_index: queue_families.get_transfer_index(),
+        src_queue_family_index: compute_family,
+        dst_queue_family_index: transfer_family,
         image: src_image,
         subresource_range,
         _marker: PhantomData,

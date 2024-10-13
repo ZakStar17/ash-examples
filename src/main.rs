@@ -16,8 +16,6 @@ mod utility;
 mod validation_layers;
 
 use ash::vk;
-use device::{DeviceCreationError, DeviceSelectionError};
-use instance::InstanceCreationError;
 use std::ffi::CStr;
 #[cfg(feature = "vl")]
 use validation_layers::DebugUtilsMarker;

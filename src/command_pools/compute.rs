@@ -15,17 +15,22 @@ pub struct ComputeCommandBufferPool {
 }
 
 impl ComputeCommandBufferPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
+  pub fn create(
+    device: &ash::Device,
+    queue_families: &QueueFamilies,
+  ) -> Result<Self, OutOfMemoryError> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_compute_index())?;
+    let pool = super::create_command_pool(device, flags, queue_families.compute.index)?;
 
     let clear_img = super::allocate_primary_command_buffers(device, pool, 1)?[0];
 
     Ok(Self { pool, clear_img })
   }
 
-  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), vk::Result> {
-    device.reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+  pub unsafe fn reset(&mut self, device: &ash::Device) -> Result<(), OutOfMemoryError> {
+    device
+      .reset_command_pool(self.pool, vk::CommandPoolResetFlags::empty())
+      .map_err(|err| err.into())
   }
 
   pub unsafe fn record_clear_img(
@@ -73,7 +78,12 @@ impl ComputeCommandBufferPool {
       &[subresource_range],
     );
 
-    if queue_families.get_compute_index() != queue_families.get_transfer_index() {
+    let compute_family = queue_families.compute.index;
+    let transfer_family = queue_families
+      .transfer
+      .unwrap_or(queue_families.compute)
+      .index;
+    if compute_family != transfer_family {
       // Release image to transfer queue family and change image layout at the same time
       // Even though the layout transition operation is submitted twice, it only executes once in
       // between queue ownership transfer
@@ -87,8 +97,8 @@ impl ComputeCommandBufferPool {
         dst_access_mask: vk::AccessFlags2::NONE,        // NONE for ownership release
         old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-        src_queue_family_index: queue_families.get_compute_index(),
-        dst_queue_family_index: queue_families.get_transfer_index(),
+        src_queue_family_index: compute_family,
+        dst_queue_family_index: transfer_family,
         image,
         subresource_range,
         _marker: PhantomData,
