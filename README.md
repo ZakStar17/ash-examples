@@ -6,7 +6,7 @@ It covers physical device selection, logical device creation and queue retrieval
 
 You can run this example with:
 
-`RUST_LOG=debug cargo run`
+`cargo run`
 
 ## Overview
 
@@ -59,11 +59,22 @@ This example implements the following cargo features:
 - `vl`: Enable validation layers.
 - `load`: Load the system Vulkan Library at runtime.
 - `link`: Link the system Vulkan Library at compile time.
+- `graphics_family`: Create a graphics queue.
+- `compute_family`: Create a compute queue.
+- `transfer_family`: Create a transfer queue.
 
-`vl` and `load` are enabled by default. To disable them, pass `--no-default-features` to cargo.
+These are used in the following profiles:
+
+ - default `dev`: enables `vl` and `load`.
+ - `release-validation`: runs in --release with validation enabled.
+ - `release-fast`: runs in --release with validation disabled.
+
 For example:
 
-`cargo run --release --no-default-features --features link`
+`cargo run --profile release-fast`
+
+You may pass a custom feature list by using `--no-default-features` and a list of features to 
+enable, for example by passing `--features link,graphics_family`.
 
 For more information about linking and loading check
 [https://docs.rs/ash/latest/ash/struct.Entry.html](https://docs.rs/ash/latest/ash/struct.Entry.html).

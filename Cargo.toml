@@ -20,14 +20,10 @@ thiserror = "1.0.64"
 "compute_family" = []
 "transfer_family" = []
 
-[profile.ok]
-inherits = "dev"
-"default" = ["load", "vl", "graphics_family", "compute_family", "transfer_family"]
-
 [profile.release-validation]
 inherits = "release"
 "default" = ["link", "vl", "graphics_family", "compute_family", "transfer_family"]
 
-[profile.release-full]
+[profile.release-fast]
 inherits = "release"
-"default" = ["load", "graphics_family", "compute_family", "transfer_family"]
+"default" = ["link", "graphics_family", "compute_family", "transfer_family"]
