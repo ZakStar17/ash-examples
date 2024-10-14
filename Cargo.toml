@@ -19,11 +19,3 @@ thiserror = "1.0.64"
 "graphics_family" = []
 "compute_family" = []
 "transfer_family" = []
-
-[profile.release-validation]
-inherits = "release"
-"default" = ["link", "vl", "graphics_family", "compute_family", "transfer_family"]
-
-[profile.release-fast]
-inherits = "release"
-"default" = ["link", "graphics_family", "compute_family", "transfer_family"]

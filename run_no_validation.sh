@@ -1,0 +1,1 @@
+cargo run --release --no-default-features --features link,graphics_family,compute_family,transfer_family

@@ -8,6 +8,10 @@ You can run this example with:
 
 `cargo run`
 
+By default, it runs with all validation enabled. To run without validation, take look at `run_no_validation.sh` or just execute the script.
+
+`sh run_no_validation.sh`
+
 ## Overview
 
 ### Physical device selection
@@ -63,18 +67,7 @@ This example implements the following cargo features:
 - `compute_family`: Create a compute queue.
 - `transfer_family`: Create a transfer queue.
 
-These are used in the following profiles:
-
- - default `dev`: enables `vl` and `load`.
- - `release-validation`: runs in --release with validation enabled.
- - `release-fast`: runs in --release with validation disabled.
-
-For example:
-
-`cargo run --profile release-fast`
-
-You may pass a custom feature list by using `--no-default-features` and a list of features to 
-enable, for example by passing `--features link,graphics_family`.
+`vl`, `load` and all queue family features are enabled by default. To disable them, pass `--no-default-features` to cargo.
 
 For more information about linking and loading check
 [https://docs.rs/ash/latest/ash/struct.Entry.html](https://docs.rs/ash/latest/ash/struct.Entry.html).
