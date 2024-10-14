@@ -1,6 +1,6 @@
 use ash::vk::{self};
 
-use std::{ffi::CStr, os::raw::c_void, ptr};
+use std::{ffi::CStr, marker::PhantomData, os::raw::c_void, ptr};
 
 use crate::{
   device::SingleQueues, device_destroyable::ManuallyDestroyed, errors::OutOfMemoryError,
@@ -149,5 +149,25 @@ impl DebugUtilsMarker {
         .loader
         .queue_insert_debug_utils_label(*queues.transfer, &label_info);
     }
+  }
+
+  pub unsafe fn set_obj_name(
+    &self,
+    object_type: vk::ObjectType,
+    object_handle: u64,
+    name: &CStr,
+  ) -> Result<(), OutOfMemoryError> {
+    let info = vk::DebugUtilsObjectNameInfoEXT {
+      s_type: vk::StructureType::DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+      p_next: ptr::null(),
+      object_type,
+      object_handle,
+      p_object_name: name.as_ptr(),
+      _marker: PhantomData,
+    };
+    self
+      .loader
+      .set_debug_utils_object_name(&info)
+      .map_err(|err| err.into())
   }
 }

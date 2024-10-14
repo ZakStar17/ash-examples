@@ -18,6 +18,8 @@ pub struct Renderer {
   instance: ash::Instance,
   #[cfg(feature = "vl")]
   debug_utils: crate::validation_layers::DebugUtils,
+  #[cfg(feature = "vl")]
+  marker: crate::validation_layers::DebugUtilsMarker,
   physical_device: PhysicalDevice,
   device: Device,
   queues: SingleQueues,
@@ -65,7 +67,20 @@ impl Renderer {
     let (device, queues) =
       Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
 
-    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+    #[cfg(feature = "vl")]
+    let marker = crate::validation_layers::DebugUtilsMarker::new(&instance, &device);
+    #[cfg(feature = "vl")]
+    unsafe {
+      marker.set_queue_labels(queues);
+    }
+
+    let command_pools = CommandPools::new(
+      &device,
+      &physical_device,
+      #[cfg(feature = "vl")]
+      &marker,
+    )
+    .on_err(|_| unsafe {
       destroy!(&device);
       destroy_instance();
     })?;
@@ -76,6 +91,8 @@ impl Renderer {
       image_width,
       image_height,
       buffer_size,
+      #[cfg(feature = "vl")]
+      &marker,
     )
     .on_err(|_| unsafe {
       destroy!(&device => &command_pools, &device);
@@ -87,6 +104,8 @@ impl Renderer {
       instance,
       #[cfg(feature = "vl")]
       debug_utils,
+      #[cfg(feature = "vl")]
+      marker,
       physical_device,
       device,
       queues,
@@ -116,9 +135,21 @@ impl Renderer {
 
   // can return vk::Result::ERROR_DEVICE_LOST
   pub fn submit_and_wait(&self) -> Result<(), vk::Result> {
-    let image_clear_finished = create_semaphore(&self.device)?;
-    let all_done = create_fence(&self.device)
-      .on_err(|_| unsafe { destroy!(&self.device => &image_clear_finished) })?;
+    let image_clear_finished = create_semaphore(
+      &self.device,
+      #[cfg(feature = "vl")]
+      &self.marker,
+      #[cfg(feature = "vl")]
+      c"image_clear_finished",
+    )?;
+    let all_done = create_fence(
+      &self.device,
+      #[cfg(feature = "vl")]
+      &self.marker,
+      #[cfg(feature = "vl")]
+      c"all_done",
+    )
+    .on_err(|_| unsafe { destroy!(&self.device => &image_clear_finished) })?;
 
     let clear_image_submit = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
@@ -214,6 +245,7 @@ impl GPUData {
     image_width: u32,
     image_height: u32,
     buffer_size: u64,
+    #[cfg(feature = "vl")] marker: &super::validation_layers::DebugUtilsMarker,
   ) -> Result<Self, allocator::AllocationError> {
     // GPU image with DEVICE_LOCAL flags
     let clear_image = create_image(
@@ -221,6 +253,10 @@ impl GPUData {
       image_width,
       image_height,
       vk::ImageUsageFlags::TRANSFER_SRC.bitor(vk::ImageUsageFlags::TRANSFER_DST),
+      #[cfg(feature = "vl")]
+      marker,
+      #[cfg(feature = "vl")]
+      c"clear_image",
     )?;
     let clear_image_alloc = allocator::allocate_and_bind_memory(
       device,
@@ -242,10 +278,18 @@ impl GPUData {
     .on_err(|_| unsafe { clear_image.destroy_self(device) })?;
     let clear_image_memory = clear_image_alloc.get_memories()[0].memory;
 
-    let final_buffer = create_buffer(device, buffer_size, vk::BufferUsageFlags::TRANSFER_DST)
-      .on_err(|_| unsafe {
-        destroy!(device => &clear_image_memory, &clear_image);
-      })?;
+    let final_buffer = create_buffer(
+      device,
+      buffer_size,
+      vk::BufferUsageFlags::TRANSFER_DST,
+      #[cfg(feature = "vl")]
+      marker,
+      #[cfg(feature = "vl")]
+      c"final_buffer",
+    )
+    .on_err(|_| unsafe {
+      destroy!(device => &clear_image_memory, &clear_image);
+    })?;
     let final_buffer_alloc = allocator::allocate_and_bind_memory(
       device,
       physical_device,
@@ -270,7 +314,7 @@ impl GPUData {
       clear_image_memory,
       final_buffer,
       final_buffer_size: buffer_size,
-      final_buffer_memory: final_buffer_memory,
+      final_buffer_memory,
     })
   }
 

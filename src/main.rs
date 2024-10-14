@@ -9,6 +9,7 @@ mod entry;
 mod errors;
 mod instance;
 mod renderer;
+#[allow(dead_code)]
 mod utility;
 
 // validation layers module will only exist if validation layers are enabled
@@ -17,8 +18,6 @@ mod validation_layers;
 
 use ash::vk;
 use std::ffi::CStr;
-#[cfg(feature = "vl")]
-use validation_layers::DebugUtilsMarker;
 
 use crate::renderer::Renderer;
 

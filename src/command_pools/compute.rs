@@ -18,11 +18,28 @@ impl ComputeCommandBufferPool {
   pub fn create(
     device: &ash::Device,
     queue_families: &QueueFamilies,
+    #[cfg(feature = "vl")] marker: &crate::validation_layers::DebugUtilsMarker,
   ) -> Result<Self, OutOfMemoryError> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.compute.index)?;
+    let pool = super::create_command_pool(
+      device,
+      flags,
+      queue_families.compute.index,
+      #[cfg(feature = "vl")]
+      marker,
+      #[cfg(feature = "vl")]
+      c"compute",
+    )?;
 
-    let clear_img = super::allocate_primary_command_buffers(device, pool, 1)?[0];
+    let clear_img = super::allocate_primary_command_buffers(
+      device,
+      pool,
+      1,
+      #[cfg(feature = "vl")]
+      marker,
+      #[cfg(feature = "vl")]
+      &[c"compute"],
+    )?[0];
 
     Ok(Self { pool, clear_img })
   }

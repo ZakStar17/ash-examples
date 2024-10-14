@@ -1,8 +1,4 @@
-use std::{
-  ffi::CStr,
-  fmt::{self, Write},
-  ops::Deref,
-};
+use std::{ffi::CStr, ops::Deref};
 
 use ash::vk;
 
