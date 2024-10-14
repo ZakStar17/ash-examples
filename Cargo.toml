@@ -21,11 +21,3 @@ thiserror = "1.0.64"
 "compute_family" = []
 "transfer_family" = []
 "log_alloc" = ["ash/debug"] # log extended allocation info to debug or error streams
-
-[profile.release-validation]
-inherits = "release"
-"default" = ["link", "vl", "compute_family", "transfer_family", "log_alloc"]
-
-[profile.release-fast]
-inherits = "release"
-"default" = ["link", "compute_family", "transfer_family"]

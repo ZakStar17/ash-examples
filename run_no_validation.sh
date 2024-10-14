@@ -1,0 +1,1 @@
+cargo run --release --no-default-features --features link,compute_family,transfer_family,log_alloc
