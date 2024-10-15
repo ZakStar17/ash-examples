@@ -82,6 +82,8 @@ fn run_app() -> Result<(), String> {
   )
   .map_err(|err| format!("Failed to save image: {}", err))?;
 
+  println!("Done!");
+
   Ok(())
 }
 

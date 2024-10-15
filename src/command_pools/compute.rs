@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   device::QueueFamilies, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
-  IMAGE_COLOR,
+  utility::OnErr, IMAGE_COLOR,
 };
 
 use super::dependency_info;
@@ -39,7 +39,8 @@ impl ComputeCommandBufferPool {
       marker,
       #[cfg(feature = "vl")]
       &[c"compute"],
-    )?[0];
+    )
+    .on_err(|_| unsafe { pool.destroy_self(device) })?[0];
 
     Ok(Self { pool, clear_img })
   }
@@ -149,6 +150,6 @@ impl ComputeCommandBufferPool {
 
 impl DeviceManuallyDestroyed for ComputeCommandBufferPool {
   unsafe fn destroy_self(&self, device: &ash::Device) {
-    device.destroy_command_pool(self.pool, None);
+    self.pool.destroy_self(device);
   }
 }

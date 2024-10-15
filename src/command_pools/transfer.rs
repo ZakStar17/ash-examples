@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::{
   device::QueueFamilies, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
-  IMAGE_HEIGHT, IMAGE_WIDTH,
+  utility::OnErr, IMAGE_HEIGHT, IMAGE_WIDTH,
 };
 
 use super::dependency_info;
@@ -41,8 +41,9 @@ impl TransferCommandBufferPool {
       #[cfg(feature = "vl")]
       marker,
       #[cfg(feature = "vl")]
-      &[c"compute"],
-    )?[0];
+      &[c"transfer"],
+    )
+    .on_err(|_| unsafe { pool.destroy_self(device) })?[0];
 
     Ok(Self {
       pool,
@@ -155,6 +156,6 @@ impl TransferCommandBufferPool {
 
 impl DeviceManuallyDestroyed for TransferCommandBufferPool {
   unsafe fn destroy_self(&self, device: &ash::Device) {
-    device.destroy_command_pool(self.pool, None);
+    self.pool.destroy_self(device);
   }
 }

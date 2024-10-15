@@ -79,3 +79,9 @@ impl DeviceManuallyDestroyed for vk::DeviceMemory {
     device.free_memory(*self, None);
   }
 }
+
+impl DeviceManuallyDestroyed for vk::CommandPool {
+  unsafe fn destroy_self(&self, device: &ash::Device) {
+    device.destroy_command_pool(*self, None);
+  }
+}

@@ -370,7 +370,7 @@ This example implements the following cargo features:
 - `compute_family`: Create a compute queue.
 - `transfer_family`: Create a transfer queue.
 
-`vl`, `load`, `log_alloc` and all queue family features are enabled by default. To disable them, pass `--no-default-features` to cargo.
+`vl`, `load`, `log_alloc`, `compute_family` and `transfer_family` are enabled by default. To disable them, pass `--no-default-features` to cargo.
 
 For more information about linking and loading check
 [https://docs.rs/ash/latest/ash/struct.Entry.html](https://docs.rs/ash/latest/ash/struct.Entry.html).

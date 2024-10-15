@@ -10,6 +10,7 @@ pub use transfer::TransferCommandBufferPool;
 
 use crate::{
   device::PhysicalDevice, device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+  utility::OnErr,
 };
 
 pub fn create_command_pool(
@@ -111,7 +112,8 @@ impl CommandPools {
       &physical_device.queue_families,
       #[cfg(feature = "vl")]
       marker,
-    )?;
+    )
+    .on_err(|_| unsafe { compute_pool.destroy_self(device) })?;
     Ok(Self {
       compute_pool,
       transfer_pool,
