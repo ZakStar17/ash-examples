@@ -3,13 +3,34 @@ use std::ffi::CStr;
 use ash::vk;
 
 use crate::{
-  utility, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE, IMAGE_WIDTH, TARGET_API_VERSION,
+  errors::OutOfMemoryError, utility, IMAGE_FORMAT, IMAGE_HEIGHT, IMAGE_MINIMAL_SIZE, IMAGE_WIDTH,
+  TARGET_API_VERSION,
 };
 
 use super::{
   vendor::Vendor, PhysicalDeviceFeatures, PhysicalDeviceProperties, QueueFamilies,
   REQUIRED_IMAGE_FORMAT_FEATURES, REQUIRED_IMAGE_USAGES,
 };
+
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceSelectionError {
+  #[error(transparent)]
+  OutOfMemory(#[from] OutOfMemoryError),
+  #[error("instance.enumerate_physical_devices() returned VK_ERROR_INITIALIZATION_FAILED")]
+  VulkanInitializationFailed,
+}
+
+impl From<vk::Result> for DeviceSelectionError {
+  fn from(value: vk::Result) -> Self {
+    match value {
+      vk::Result::ERROR_OUT_OF_HOST_MEMORY | vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
+        Self::OutOfMemory(value.into())
+      }
+      vk::Result::ERROR_INITIALIZATION_FAILED => Self::VulkanInitializationFailed,
+      _ => panic!(),
+    }
+  }
+}
 
 fn log_device_properties(properties: &vk::PhysicalDeviceProperties) {
   let vendor = Vendor::from_id(properties.vendor_id);
@@ -88,7 +109,7 @@ pub unsafe fn select_physical_device(
     PhysicalDeviceFeatures,
     QueueFamilies,
   )>,
-  vk::Result,
+  DeviceSelectionError,
 > {
   Ok(
     instance
@@ -163,7 +184,23 @@ pub unsafe fn select_physical_device(
         let device_score_importance = 0;
 
         // rank devices by number of specialized queue families
-        let queue_score = if families.transfer.is_some() { 0 } else { 1 };
+        let compute_score = {
+          #[cfg(not(feature = "graphics_family"))]
+          let score = 0;
+          #[cfg(all(feature = "graphics_family", not(feature = "compute_family")))]
+          let score = 0;
+          #[cfg(all(feature = "graphics_family", feature = "compute_family"))]
+          let score = if families.compute.is_some() { 0 } else { 2 };
+          score
+        };
+        let transfer_score = {
+          #[cfg(not(feature = "transfer_family"))]
+          let score = 0;
+          #[cfg(feature = "transfer_family")]
+          let score = if families.transfer.is_some() { 0 } else { 1 };
+          score
+        };
+        let queue_score = compute_score + transfer_score;
 
         // rank devices by commonly most powerful device type
         let device_score = match instance

@@ -6,7 +6,11 @@ It uses [Image clear example](https://github.com/ZakStar17/ash-by-example/tree/m
 
 You can run this example with:
 
-`RUST_LOG=debug cargo run --bin triangle-image`
+`cargo run`
+
+By default, it runs with all validation enabled. To run without validation, take look at `run_no_validation.sh` or just execute the script.
+
+`sh run_no_validation.sh`
 
 ## Shaders
 
@@ -41,11 +45,12 @@ This example implements the following cargo features:
 - `vl`: Enable validation layers.
 - `load`: Load the system Vulkan Library at runtime.
 - `link`: Link the system Vulkan Library at compile time.
+- `log_alloc`: Log allocations in a friendly manner.
+- `graphics_family`: Create a graphics queue.
+- `compute_family`: Create a compute queue.
+- `transfer_family`: Create a transfer queue.
 
-`vl` and `load` are enabled by default. To disable them, pass `--no-default-features` to cargo.
-For example:
-
-`cargo run --release --no-default-features --features link`
+`vl`, `load`, `log_alloc`, `graphics_family` and `transfer_family` are enabled by default. To disable them, pass `--no-default-features` to cargo.
 
 For more information about linking and loading check
 [https://docs.rs/ash/latest/ash/struct.Entry.html](https://docs.rs/ash/latest/ash/struct.Entry.html).

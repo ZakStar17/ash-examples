@@ -16,11 +16,31 @@ pub struct GraphicsCommandBufferPool {
 }
 
 impl GraphicsCommandBufferPool {
-  pub fn create(device: &ash::Device, queue_families: &QueueFamilies) -> Result<Self, vk::Result> {
+  pub fn create(
+    device: &ash::Device,
+    queue_families: &QueueFamilies,
+    #[cfg(feature = "vl")] marker: &crate::initialization::DebugUtilsMarker,
+  ) -> Result<Self, OutOfMemoryError> {
     let flags = vk::CommandPoolCreateFlags::TRANSIENT;
-    let pool = super::create_command_pool(device, flags, queue_families.get_graphics_index())?;
+    let pool = super::create_command_pool(
+      device,
+      flags,
+      queue_families.graphics.index,
+      #[cfg(feature = "vl")]
+      marker,
+      #[cfg(feature = "vl")]
+      c"graphics",
+    )?;
 
-    let triangle = super::allocate_primary_command_buffers(device, pool, 1)?[0];
+    let triangle = super::allocate_primary_command_buffers(
+      device,
+      pool,
+      1,
+      #[cfg(feature = "vl")]
+      marker,
+      #[cfg(feature = "vl")]
+      &[c"graphics"],
+    )?[0];
 
     Ok(Self { pool, triangle })
   }
@@ -84,7 +104,12 @@ impl GraphicsCommandBufferPool {
 
     // After the render pass finishes the image will already have the correct layout, so only a
     // queue ownership transfer is necessary
-    if queue_families.get_graphics_index() != queue_families.get_transfer_index() {
+    let graphics_family = queue_families.graphics.index;
+    let transfer_family = queue_families
+      .transfer
+      .unwrap_or(queue_families.graphics)
+      .index;
+    if graphics_family != transfer_family {
       let release = vk::ImageMemoryBarrier2 {
         s_type: vk::StructureType::IMAGE_MEMORY_BARRIER_2,
         p_next: ptr::null(),
@@ -94,8 +119,8 @@ impl GraphicsCommandBufferPool {
         dst_access_mask: vk::AccessFlags2::NONE, // NONE for ownership release
         old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-        src_queue_family_index: queue_families.get_graphics_index(),
-        dst_queue_family_index: queue_families.get_transfer_index(),
+        src_queue_family_index: graphics_family,
+        dst_queue_family_index: transfer_family,
         image: data.render_target,
         subresource_range,
         _marker: PhantomData,

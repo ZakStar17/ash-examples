@@ -9,13 +9,18 @@ mod transfer;
 pub use graphics::GraphicsCommandBufferPool;
 pub use transfer::TransferCommandBufferPool;
 
-use crate::{device_destroyable::DeviceManuallyDestroyed, initialization::device::PhysicalDevice};
+use crate::{
+  device_destroyable::DeviceManuallyDestroyed, errors::OutOfMemoryError,
+  initialization::device::PhysicalDevice, utility::OnErr,
+};
 
 fn create_command_pool(
   device: &ash::Device,
   flags: vk::CommandPoolCreateFlags,
   queue_family_index: u32,
-) -> Result<vk::CommandPool, vk::Result> {
+  #[cfg(feature = "vl")] marker: &crate::initialization::DebugUtilsMarker,
+  #[cfg(feature = "vl")] name: &std::ffi::CStr,
+) -> Result<vk::CommandPool, OutOfMemoryError> {
   let command_pool_create_info = vk::CommandPoolCreateInfo {
     s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
     p_next: ptr::null(),
@@ -23,15 +28,25 @@ fn create_command_pool(
     queue_family_index,
     _marker: PhantomData,
   };
-  log::debug!("Creating command pool");
-  unsafe { device.create_command_pool(&command_pool_create_info, None) }
+  unsafe {
+    let command_pool = device.create_command_pool(&command_pool_create_info, None)?;
+    #[cfg(feature = "vl")]
+    marker.set_obj_name(
+      vk::ObjectType::COMMAND_POOL,
+      vk::Handle::as_raw(command_pool),
+      name,
+    )?;
+    Ok(command_pool)
+  }
 }
 
 fn allocate_primary_command_buffers(
   device: &ash::Device,
   command_pool: vk::CommandPool,
   command_buffer_count: u32,
-) -> Result<Vec<vk::CommandBuffer>, vk::Result> {
+  #[cfg(feature = "vl")] marker: &super::initialization::DebugUtilsMarker,
+  #[cfg(feature = "vl")] names: &[&std::ffi::CStr],
+) -> Result<Vec<vk::CommandBuffer>, OutOfMemoryError> {
   let allocate_info = vk::CommandBufferAllocateInfo {
     s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
     p_next: ptr::null(),
@@ -41,8 +56,20 @@ fn allocate_primary_command_buffers(
     _marker: PhantomData,
   };
 
-  log::debug!("Allocating command buffers");
-  unsafe { device.allocate_command_buffers(&allocate_info) }
+  unsafe {
+    let buffers = device.allocate_command_buffers(&allocate_info)?;
+    #[cfg(feature = "vl")]
+    {
+      for (&buffer, &name) in buffers.iter().zip(names.iter()) {
+        marker.set_obj_name(
+          vk::ObjectType::COMMAND_BUFFER,
+          vk::Handle::as_raw(buffer),
+          name,
+        )?;
+      }
+    }
+    Ok(buffers)
+  }
 }
 
 fn dependency_info<'a>(
@@ -70,18 +97,24 @@ pub struct CommandPools {
 }
 
 impl CommandPools {
-  pub fn new(device: &ash::Device, physical_device: &PhysicalDevice) -> Result<Self, vk::Result> {
-    let graphics_pool = GraphicsCommandBufferPool::create(device, &physical_device.queue_families)?;
-    let transfer_pool =
-      match TransferCommandBufferPool::create(device, &physical_device.queue_families) {
-        Ok(pool) => pool,
-        Err(err) => {
-          unsafe {
-            graphics_pool.destroy_self(device);
-          }
-          return Err(err);
-        }
-      };
+  pub fn new(
+    device: &ash::Device,
+    physical_device: &PhysicalDevice,
+    #[cfg(feature = "vl")] marker: &crate::initialization::DebugUtilsMarker,
+  ) -> Result<Self, OutOfMemoryError> {
+    let graphics_pool = GraphicsCommandBufferPool::create(
+      device,
+      &physical_device.queue_families,
+      #[cfg(feature = "vl")]
+      marker,
+    )?;
+    let transfer_pool = TransferCommandBufferPool::create(
+      device,
+      &physical_device.queue_families,
+      #[cfg(feature = "vl")]
+      marker,
+    )
+    .on_err(|_| unsafe { graphics_pool.destroy_self(device) })?;
     Ok(Self {
       graphics_pool,
       transfer_pool,

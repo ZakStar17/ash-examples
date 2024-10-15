@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::allocator;
 
-use super::select_physical_device;
+use super::{device_selector::DeviceSelectionError, select_physical_device};
 
 use super::QueueFamilies;
 
@@ -25,6 +25,7 @@ pub struct PhysicalDevice {
   pub queue_families: QueueFamilies,
   pub mem_properties: vk::PhysicalDeviceMemoryProperties,
   pub properties: CustomProperties,
+  pub queue_family_properties: Box<[vk::QueueFamilyProperties]>,
 }
 
 impl Deref for PhysicalDevice {
@@ -36,15 +37,18 @@ impl Deref for PhysicalDevice {
 }
 
 impl PhysicalDevice {
-  pub unsafe fn select(instance: &ash::Instance) -> Result<Option<PhysicalDevice>, vk::Result> {
+  pub unsafe fn select(
+    instance: &ash::Instance,
+  ) -> Result<Option<PhysicalDevice>, DeviceSelectionError> {
     match select_physical_device(instance)? {
       Some((physical_device, properties, _features, queue_families)) => {
         let mem_properties = instance.get_physical_device_memory_properties(physical_device);
-        let queue_family_properties =
-          instance.get_physical_device_queue_family_properties(physical_device);
+        let queue_family_properties = instance
+          .get_physical_device_queue_family_properties(physical_device)
+          .into_boxed_slice();
 
         log::info!(
-          "Using physical device \"{:?}\"",
+          "Using physical device {:?}",
           unsafe { CStr::from_ptr(properties.p10.device_name.as_ptr()) }, // expected to be a valid cstr
         );
         print_queue_families_debug_info(&queue_family_properties);
@@ -63,6 +67,7 @@ impl PhysicalDevice {
 
             max_memory_allocation_size: properties.p11.max_memory_allocation_size,
           },
+          queue_family_properties,
         }))
       }
       None => Ok(None),
@@ -74,6 +79,6 @@ impl PhysicalDevice {
   }
 }
 
-fn print_queue_families_debug_info(properties: &Vec<vk::QueueFamilyProperties>) {
-  log::debug!("Queue family properties: {:#?}", properties);
+fn print_queue_families_debug_info(properties: &[vk::QueueFamilyProperties]) {
+  log::debug!("Physical device queue family properties: {:#?}", properties);
 }

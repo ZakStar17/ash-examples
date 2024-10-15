@@ -5,11 +5,11 @@ use crate::{
   command_pools::CommandPools,
   create_objs::{create_fence, create_semaphore},
   device_destroyable::{destroy, DeviceManuallyDestroyed, ManuallyDestroyed},
-  errors::{InitializationError, OutOfMemoryError},
+  errors::{InitializationError, OutOfMemoryError, QueueSubmitError},
   gpu_data::GPUData,
   initialization::{
     self, create_instance,
-    device::{Device, PhysicalDevice, Queues},
+    device::{Device, PhysicalDevice, SingleQueues},
   },
   pipelines::{self, GraphicsPipeline},
   render_pass::create_render_pass,
@@ -21,13 +21,17 @@ pub struct Renderer {
   instance: ash::Instance,
   #[cfg(feature = "vl")]
   debug_utils: crate::initialization::DebugUtils,
+  #[cfg(feature = "vl")]
+  marker: crate::initialization::DebugUtilsMarker,
   physical_device: PhysicalDevice,
   device: Device,
-  queues: Queues,
+  queues: SingleQueues,
+
+  command_pools: CommandPools,
 
   render_pass: vk::RenderPass,
   pipeline: GraphicsPipeline,
-  command_pools: CommandPools,
+
   gpu_data: GPUData,
 }
 
@@ -62,6 +66,13 @@ impl Renderer {
     let (device, queues) =
       Device::create(&instance, &physical_device).on_err(|_| destroy_instance())?;
 
+    #[cfg(feature = "vl")]
+    let marker = crate::initialization::DebugUtilsMarker::new(&instance, &device);
+    #[cfg(feature = "vl")]
+    unsafe {
+      marker.set_queue_labels(queues);
+    }
+
     let render_pass = create_render_pass(&device).on_err(|_| unsafe {
       destroy!(&device);
       destroy_instance();
@@ -77,6 +88,8 @@ impl Renderer {
       },
       buffer_size,
       &queues,
+      #[cfg(feature = "vl")]
+      &marker,
     )
     .on_err(|_| unsafe {
       destroy!(&device => &render_pass, &device);
@@ -111,7 +124,8 @@ impl Renderer {
       pipeline_cache.destroy_self(&device);
     }
 
-    let command_pools = CommandPools::new(&device, &physical_device).on_err(|_| unsafe {
+    let command_pools = CommandPools::new(&device, &physical_device,#[cfg(feature = "vl")]
+    &marker,).on_err(|_| unsafe {
       destroy!(&device => &pipeline, &gpu_data_pending_initialization, &gpu_data_pending_initialization, &gpu_data, &render_pass, &device);
       destroy_instance();
     })?;
@@ -130,6 +144,8 @@ impl Renderer {
       instance,
       #[cfg(feature = "vl")]
       debug_utils,
+      #[cfg(feature = "vl")]
+      marker,
       physical_device,
       device,
       queues,
@@ -162,10 +178,22 @@ impl Renderer {
   }
 
   // can return vk::Result::ERROR_DEVICE_LOST
-  pub fn submit_and_wait(&self) -> Result<(), vk::Result> {
-    let image_clear_finished = create_semaphore(&self.device)?;
-    let all_done = create_fence(&self.device)
-      .on_err(|_| unsafe { destroy!(&self.device => &image_clear_finished) })?;
+  pub fn submit_and_wait(&self) -> Result<(), QueueSubmitError> {
+    let image_clear_finished = create_semaphore(
+      &self.device,
+      #[cfg(feature = "vl")]
+      &self.marker,
+      #[cfg(feature = "vl")]
+      c"image_clear_finished",
+    )?;
+    let all_done = create_fence(
+      &self.device,
+      #[cfg(feature = "vl")]
+      &self.marker,
+      #[cfg(feature = "vl")]
+      c"all_done",
+    )
+    .on_err(|_| unsafe { destroy!(&self.device => &image_clear_finished) })?;
 
     let clear_image_submit = vk::SubmitInfo {
       s_type: vk::StructureType::SUBMIT_INFO,
@@ -199,14 +227,18 @@ impl Renderer {
       self
         .device
         .queue_submit(
-          self.queues.graphics,
+          self.queues.graphics.handle,
           &[clear_image_submit],
           vk::Fence::null(),
         )
         .on_err(|_| destroy_objs())?;
       self
         .device
-        .queue_submit(self.queues.transfer, &[transfer_image_submit], all_done)
+        .queue_submit(
+          self.queues.transfer.handle,
+          &[transfer_image_submit],
+          all_done,
+        )
         .on_err(|_| destroy_objs())?;
 
       self
