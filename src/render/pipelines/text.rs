@@ -7,53 +7,18 @@ use std::{
 };
 
 use ash::vk::{self, Handle};
-use cgmath::{Matrix4, Vector4};
+use ash_slug::{SlugPushConstants, SlugVertex};
 
 use crate::{
   render::{
     descriptor_sets::DescriptorPool,
     shaders::{self, TextShader},
   },
-  slug::SlugVertex,
   vertex_input_state_create_info,
 };
 use vkobjects::{errors::OutOfMemoryError, DeviceManuallyDestroyed};
 
 use super::PipelineCreationError;
-
-#[derive(Debug, Clone, Copy)]
-pub struct TextPushConstants {
-  pub mvp_matrix: Matrix4<f32>,
-  pub viewport_dimensions: [f32; 4],
-}
-
-impl TextPushConstants {
-  pub fn new(viewport_dimensions: vk::Extent2D, offset: [f32; 2]) -> Self {
-    let dim_x = viewport_dimensions.width as f32;
-    let dim_y = viewport_dimensions.height as f32;
-
-    let matrix = Matrix4 {
-      x: Vector4::new(2.0 / dim_x, 0.0, 0.0, offset[0] * 2.0 / dim_x - 1.0),
-      y: Vector4::new(0.0, 2.0 / dim_y, 0.0, offset[1] * 2.0 / dim_y - 1.0),
-      z: Vector4 {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        w: 0.0,
-      },
-      w: Vector4 {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        w: 1.0,
-      },
-    };
-    Self {
-      mvp_matrix: matrix,
-      viewport_dimensions: [dim_x, dim_y, 0.0, 0.0],
-    }
-  }
-}
 
 pub struct TextPipeline {
   pub layout: vk::PipelineLayout,
@@ -146,7 +111,7 @@ impl TextPipeline {
     let push_constant_range = vk::PushConstantRange {
       stage_flags: vk::ShaderStageFlags::VERTEX,
       offset: 0,
-      size: size_of::<TextPushConstants>() as u32,
+      size: size_of::<SlugPushConstants>() as u32,
     };
     let layout_create_info = vk::PipelineLayoutCreateInfo {
       set_layout_count: 1,

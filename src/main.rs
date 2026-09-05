@@ -2,7 +2,6 @@ mod ferris;
 mod font;
 mod last_frames_durations;
 mod render;
-mod slug;
 
 use ash::vk;
 use ferris::Ferris;

@@ -4,7 +4,7 @@ mod text;
 
 pub use cache::{create_pipeline_cache, save_pipeline_cache, PipelineCacheError};
 pub use graphics::GraphicsPipeline;
-pub use text::{TextPipeline, TextPushConstants};
+pub use text::TextPipeline;
 use vkobjects::errors::OutOfMemoryError;
 
 use crate::render::shaders::ShaderError;

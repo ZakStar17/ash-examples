@@ -5,20 +5,18 @@ pub mod text_manager;
 
 use std::{ops::BitOr, ptr};
 
-use crate::{
-  render::{
-    command_pools::graphics::GraphicsCommandBufferPool,
-    create_objs::{create_image, create_image_view},
-    gpu_data::{
-      sprite_buffers::{SpriteBuffers, SpriteTextureData},
-      text_buffers::TextBuffers,
-      text_manager::TextManager,
-    },
-    render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, VERTICES, VERTICES_SIZE},
+use crate::render::{
+  command_pools::graphics::GraphicsCommandBufferPool,
+  create_objs::{create_image, create_image_view},
+  gpu_data::{
+    sprite_buffers::{SpriteBuffers, SpriteTextureData},
+    text_buffers::TextBuffers,
+    text_manager::TextManager,
   },
-  slug::MultilineRect,
+  render_object::{QUAD_INDICES, QUAD_INDICES_SIZE, VERTICES, VERTICES_SIZE},
 };
 use ash::vk;
+use ash_slug::PointRect;
 use vkinitialization::device::{Device, PhysicalDevice};
 use vkobjects::{
   const_flag_bitor, destroy,
@@ -75,7 +73,7 @@ pub struct GPUData {
   pub text_band_view: vk::ImageView,
 
   pub text_ui: vk::Image,
-  pub text_ui_rect: MultilineRect,
+  pub text_ui_line_size: f32,
   pub text_ui_view: vk::ImageView,
   pub text_ui_size: vk::Extent2D,
 
@@ -133,13 +131,14 @@ impl GPUData {
       marker,
     )?;
 
-    let (mut text_manager, text_window_rect, staging_size_required) = TextManager::new(
-      device,
-      #[cfg(feature = "vl")]
-      marker,
-    )
-    .on_err(|_| unsafe { destroy!(device => &sprite_buffers) })?;
-    let text_extent = text_window_rect.total.to_vk_extent();
+    let (mut text_manager, (line_size, text_window_rect), staging_size_required) =
+      TextManager::new(
+        device,
+        #[cfg(feature = "vl")]
+        marker,
+      )
+      .on_err(|_| unsafe { destroy!(device => &sprite_buffers) })?;
+    let text_extent = text_window_rect.into_vk_extent();
 
     let text_ui = create_image(
       device,
@@ -187,7 +186,7 @@ impl GPUData {
       text_curve_view: views.text_curve,
 
       text_ui,
-      text_ui_rect: text_window_rect,
+      text_ui_line_size: line_size,
       text_ui_view: views.ui,
       text_ui_size: text_extent,
 

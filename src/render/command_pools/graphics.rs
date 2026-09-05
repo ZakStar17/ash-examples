@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, marker::PhantomData, ops::BitOr, ptr};
 
 use ash::vk;
+use ash_slug::SlugPushConstants;
 use vkinitialization::device::QueueFamilies;
 use vkobjects::{errors::OutOfMemoryError, utility, DeviceManuallyDestroyed};
 
@@ -11,7 +12,7 @@ use crate::{
     },
     descriptor_sets::DescriptorPool,
     gpu_data::GPUData,
-    pipelines::{GraphicsPipeline, TextPipeline, TextPushConstants},
+    pipelines::{GraphicsPipeline, TextPipeline},
     render_object::{RenderPosition, QUAD_INDICES},
     render_targets::RenderTargets,
     RENDER_EXTENT,
@@ -196,8 +197,11 @@ impl GraphicsCommandBufferPool {
     };
     device.cmd_begin_rendering(cb, &rendering_info);
 
-    let text_pc =
-      TextPushConstants::new(RENDER_EXTENT, [0.0, data.text_ui_rect.first_line.height()]);
+    let text_pc = SlugPushConstants::new_2d(
+      RENDER_EXTENT.width as f32,
+      RENDER_EXTENT.height as f32,
+      [0.0, data.text_ui_line_size],
+    );
 
     device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, text_pipeline.current);
     device.cmd_bind_descriptor_sets(
@@ -380,9 +384,10 @@ impl GraphicsCommandBufferPool {
         }
 
         {
-          let text_pc = TextPushConstants::new(
-            RENDER_EXTENT,
-            [10.0, data.text_ui_rect.first_line.height() + 10.0],
+          let text_pc = SlugPushConstants::new_2d(
+            RENDER_EXTENT.width as f32,
+            RENDER_EXTENT.height as f32,
+            [10.0, data.text_ui_line_size + 10.0],
           );
 
           device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, text_pipeline.current);

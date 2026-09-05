@@ -1,6 +1,10 @@
 use std::ptr;
 
 use ash::vk;
+use ash_slug::{
+  slug_rendering::{SlugRendering, TextBuildResult},
+  PointRect, SlugVertex,
+};
 use vkallocator::{HostMemorySyncError, MappedHostBuffer};
 use vkobjects::DeviceManuallyDestroyed;
 
@@ -14,7 +18,6 @@ use crate::{
       GPUDataAllocationError,
     },
   },
-  slug::{self, MultilineRect, SlugRendering, SlugVertex, TextBuildBounds},
 };
 
 pub struct TextManager {
@@ -43,7 +46,7 @@ impl TextManager {
   pub fn new(
     device: &ash::Device,
     #[cfg(feature = "vl")] marker: &vkinitialization::DebugUtilsMarker,
-  ) -> Result<(Self, MultilineRect, u64), GPUDataAllocationError> {
+  ) -> Result<(Self, (f32, PointRect), u64), GPUDataAllocationError> {
     let shaper = font::SHAPER_DATA.shaper(&font::FONT_REF).build();
     let mut slug = SlugRendering::new(&font::FONT_FACE, shaper);
 
@@ -52,9 +55,10 @@ impl TextManager {
     let mut device_vertices = Vec::new();
     let mut device_indices = Vec::new();
     let line_dist = slug.get_line_dist(1.5);
-    let TextBuildBounds {
+    let TextBuildResult {
       rect: rect_fps,
-      offset: fps_offset,
+      end_offset: fps_offset,
+      ..
     } = slug.build_text(
       "fps: ",
       Self::FONT_SIZE,
@@ -62,9 +66,15 @@ impl TextManager {
       &mut device_vertices,
       &mut device_indices,
     );
-    let TextBuildBounds {
+    // simulate fps numbers
+    let TextBuildResult {
+      rect: rect_fps_values,
+      ..
+    } = slug.simulate_build_text("1000.0, 1000.0, 1000.0", Self::FONT_SIZE, fps_offset);
+    let TextBuildResult {
       rect: rect_gpu_idle,
-      offset: gpu_idle_offset,
+      end_offset: gpu_idle_offset,
+      ..
     } = slug.build_text(
       "GPU bound: ",
       Self::FONT_SIZE,
@@ -75,11 +85,11 @@ impl TextManager {
       &mut device_vertices,
       &mut device_indices,
     );
-    let mut full_size = MultilineRect::from_line_rects(&[rect_fps, rect_gpu_idle]);
+    let mut full_size = rect_fps.or(rect_gpu_idle).or(rect_fps_values);
 
     // todo: fix full slug size calculations
-    full_size.total.max.x += 10.0;
-    full_size.total.max.y += 20.0;
+    full_size.max[0] += 10.0;
+    full_size.max[1] += 15.0;
 
     let textures = slug.get_texture_data();
 
@@ -90,10 +100,10 @@ impl TextManager {
       device_vertices_size: text_vertices_size,
       device_indices_size: text_indices_size,
       cpu_vertices_size: (Self::HOST_BUFFER_VERTICES_GLYPH_CAPACITY
-        * slug::VERTICES_PER_GLYPH
+        * ash_slug::VERTICES_PER_GLYPH
         * size_of::<SlugVertex>()) as u64,
       cpu_indices_size: (Self::HOST_BUFFER_INDICES_GLYPH_CAPACITY
-        * slug::INDICES_PER_GLYPH
+        * ash_slug::INDICES_PER_GLYPH
         * size_of::<u32>()) as u64,
     };
 
@@ -110,6 +120,9 @@ impl TextManager {
       + dimensions.device_vertices_size
       + dimensions.device_indices_size;
 
+    let scale = Self::FONT_SIZE as f32 / (slug.shaper.units_per_em() as f32);
+    let line_size = slug.get_line_dist(1.0) as f32 * scale;
+
     Ok((
       Self {
         slug,
@@ -124,7 +137,7 @@ impl TextManager {
         fps_offset,
         gpu_idle_offset,
       },
-      full_size,
+      (line_size, full_size),
       device_staging_required,
     ))
   }
@@ -356,7 +369,7 @@ impl TextManager {
       );
       self
         .host_vertices
-        .truncate(Self::HOST_BUFFER_VERTICES_GLYPH_CAPACITY * slug::VERTICES_PER_GLYPH);
+        .truncate(Self::HOST_BUFFER_VERTICES_GLYPH_CAPACITY * ash_slug::VERTICES_PER_GLYPH);
       vertices_size = self.host_vertices_size();
     }
     if indices_size > self.buffers.host[frame_i].indices.buffer_size {
@@ -367,7 +380,7 @@ impl TextManager {
       );
       self
         .host_indices
-        .truncate(Self::HOST_BUFFER_INDICES_GLYPH_CAPACITY * slug::INDICES_PER_GLYPH);
+        .truncate(Self::HOST_BUFFER_INDICES_GLYPH_CAPACITY * ash_slug::INDICES_PER_GLYPH);
       indices_size = self.host_indices_size();
     }
 
