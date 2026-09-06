@@ -2,7 +2,6 @@ mod destructor;
 mod font;
 mod last_frames_durations;
 mod render;
-mod slug;
 mod threads_manager;
 
 use ash::vk;

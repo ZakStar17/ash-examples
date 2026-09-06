@@ -1,14 +1,12 @@
 use std::{ops::BitOr, ptr::NonNull};
 
-use crate::{
-  render::{
-    create_objs::{create_buffer, create_image},
-    gpu_data::{GPUDataAllocationError, TEXTURE_USAGES},
-    GRAPHICS_FRAMES_IN_FLIGHT,
-  },
-  slug::{self, SlugTextureData, SlugVertex},
+use crate::render::{
+  create_objs::{create_buffer, create_image},
+  gpu_data::{GPUDataAllocationError, TEXTURE_USAGES},
+  GRAPHICS_FRAMES_IN_FLIGHT,
 };
 use ash::vk;
+use ash_slug::{slug_rendering::SlugTextureData, SlugVertex};
 use vkallocator::MappedHostBuffer;
 use vkobjects::{
   destroy, fill_destroyable_array_with_expression, utility::OnErr, DeviceManuallyDestroyed,
@@ -56,11 +54,11 @@ impl TextBuffers {
     #[cfg(feature = "vl")] marker: &vkinitialization::DebugUtilsMarker,
   ) -> Result<Self, GPUDataAllocationError> {
     let curve_texture_extent = vk::Extent2D {
-      width: slug::TEX_WIDTH as u32,
+      width: ash_slug::TEX_WIDTH as u32,
       height: textures.curve_tex_height as u32,
     };
     let band_texture_extent = vk::Extent2D {
-      width: slug::TEX_WIDTH as u32,
+      width: ash_slug::TEX_WIDTH as u32,
       height: textures.band_tex_height as u32,
     };
 
